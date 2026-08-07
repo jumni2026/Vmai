@@ -15,6 +15,10 @@ android {
         versionName = "2.6"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -47,7 +51,7 @@ dependencies {
     implementation(project(":payment-engine"))
 
     implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.activity:activity-ktx:1.10.1")
+    implementation("androidx.activity:activity:1.10.1")
 
     testImplementation("junit:junit:4.13.2")
 }
