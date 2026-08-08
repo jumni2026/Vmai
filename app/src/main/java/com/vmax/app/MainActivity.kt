@@ -2,21 +2,18 @@ package com.vmax.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
 
-/**
- * VMAX Enterprise v2.6
- *
- * Stage 1 — Skeleton
- * File 31 — MainActivity
- *
- * Main entry point for the VMAX Enterprise application.
- * Platform: Android.
- * No business logic.
- */
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Stage 1 — Skeleton
+        // Set the Compose entry point
+        setContent {
+            VMAXTheme {
+                // Empty Scaffold/Placeholder as per Blueprint rule
+                // (UI content is not invented here, only entry point is set)
+            }
+        }
     }
 }
