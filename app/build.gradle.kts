@@ -1,8 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    // Adding Compose Compiler Plugin without a hardcoded version, 
-    // so it adapts to your root Kotlin version (2.0.21 as per your evidence).
+    // ✅ Compose Compiler Plugin added without version. 
+    // It will automatically resolve from the Root build.gradle.kts (Kotlin 2.0.21 environment).
     id("org.jetbrains.kotlin.plugin.compose") 
 }
 
@@ -20,7 +20,8 @@ android {
 
     buildFeatures {
         buildConfig = true
-        compose = true // Enabling Compose for the module
+        // ✅ Enables Jetpack Compose for this module
+        compose = true 
     }
 
     buildTypes {
@@ -44,6 +45,7 @@ android {
 }
 
 dependencies {
+    // Internal Modules
     implementation(project(":common"))
     implementation(project(":core-model"))
     implementation(project(":core-validation"))
@@ -54,16 +56,14 @@ dependencies {
     implementation(project(":runtime"))
     implementation(project(":payment-engine"))
 
+    // AndroidX Basics
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity:1.10.1")
-
     testImplementation("junit:junit:4.13.2")
 
-    // ⚠️ Jetpack Compose Standard Dependencies (No guessed versions. Using BOM)
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
-    implementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
+    // ✅ Jetpack Compose Libraries (No Guessed BOM Versions. Hardcoded to match Root 2.0.21 setup)
+    implementation("androidx.compose.ui:ui:1.7.0")
+    implementation("androidx.compose.ui:ui-graphics:1.7.0")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.7.0")
+    implementation("androidx.compose.material3:material3:1.3.0")
 }
