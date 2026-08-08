@@ -31,9 +31,11 @@ object Validators {
     }
 
     fun validatePassenger(passenger: Passenger): Boolean {
+        val mobile = passenger.mobile
+
         return validateName(passenger.name) &&
                 validateAge(passenger.age) &&
-                (passenger.mobile == null || validateMobile(passenger.mobile))
+                (mobile == null || validateMobile(mobile))
     }
 
     fun validatePassengers(passengers: List<Passenger>): Boolean {
