@@ -8,17 +8,16 @@ import androidx.compose.runtime.Composable
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Set the Compose entry point with correct Composable context
         setContent {
             VMAXApp()
         }
     }
 }
 
+// Adding @Composable annotation ensures it's recognized inside setContent
 @Composable
 fun VMAXApp() {
     VMAXTheme {
-        // Empty scaffold/entry point as per Blueprint rule
-        // UI content is not invented, only structure is made valid
+        // Empty Entry Point - UI will be defined strictly as per Blueprint later
     }
 }
