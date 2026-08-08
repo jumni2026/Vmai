@@ -4,7 +4,21 @@ on:
   push:
     branches:
       - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: "17"
+  JAVA_DISTRIBUTION: "temurin"
 
 jobs:
   build:
@@ -12,26 +26,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout source code
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
+      # 2. Configure Java 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
 
+      # 3. Configure Gradle environment/cache
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 4. IMPORTANT:
+      # GitHub checkout may not preserve the executable bit
+      # for gradlew. Make it executable before verification.
+      - name: Make Gradle Wrapper executable
+        run: chmod +x ./gradlew
+
+      # 5. Verify Gradle Wrapper
       - name: Verify Gradle Wrapper
         run: |
           echo "Checking Gradle Wrapper..."
-          ls -la
-          ls -la gradle/wrapper
-          test -f gradlew
-          test -f gradle/wrapper/gradle-wrapper.jar
-          test -f gradle/wrapper/gradle-wrapper.properties
+          ls -la ./gradlew
+          test -f ./gradlew
+          test -x ./gradlew
+          test -f ./gradle/wrapper/gradle-wrapper.jar
+          test -f ./gradle/wrapper/gradle-wrapper.properties
+          echo "Gradle Wrapper verification successful."
 
-      - name: Make Gradle Wrapper executable
-        run: chmod +x gradlew
+      # 6. Display Java and Gradle versions
+      - name: Display build environment
+        run: |
+          java -version
+          ./gradlew --version
 
+      # 7. Build entire VMAX project
       - name: Build with Gradle
-        run: ./gradlew build --stacktrace
+        run: ./gradlew build --stacktrace --no-daemon
+
+      # 8. Always show final status
+      - name: Build completed
+        if: success()
+        run: echo "VMAX Enterprise build completed successfully."
