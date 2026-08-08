@@ -8,16 +8,18 @@ import androidx.compose.runtime.Composable
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Explicitly calling the extension function from the package
         setContent {
             VMAXApp()
         }
     }
 }
 
-// Adding @Composable annotation ensures it's recognized inside setContent
+// Declaring VMAXApp as a Composable function to satisfy the compiler
 @Composable
 fun VMAXApp() {
+    // Using the Theme defined in Theme.kt
     VMAXTheme {
-        // Empty Entry Point - UI will be defined strictly as per Blueprint later
+        // Placeholder for UI (Will be built in next stages per Blueprint)
     }
 }
