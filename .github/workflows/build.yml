@@ -41,9 +41,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. IMPORTANT:
-      # GitHub checkout may not preserve the executable bit
-      # for gradlew. Make it executable before verification.
+      # 4. Make Gradle Wrapper executable
       - name: Make Gradle Wrapper executable
         run: chmod +x ./gradlew
 
@@ -68,7 +66,23 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew build --stacktrace --no-daemon
 
-      # 8. Always show final status
+      # 8. Verify Debug APK exists
+      - name: Verify Debug APK
+        run: |
+          echo "Checking for generated Debug APK..."
+          ls -la app/build/outputs/apk/debug/
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          echo "Debug APK found successfully."
+
+      # 9. Upload Debug APK as GitHub Actions artifact
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VMAX-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # 10. Always show final status
       - name: Build completed
         if: success()
-        run: echo "VMAX Enterprise build completed successfully."
+        run: echo "VMAX Enterprise build and APK artifact completed successfully."
