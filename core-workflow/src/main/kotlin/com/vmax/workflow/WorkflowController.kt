@@ -1,5 +1,7 @@
 package com.vmax.workflow
 
+import com.vmax.common.Result
+
 /**
  * VMAX Enterprise v2.6
  *
