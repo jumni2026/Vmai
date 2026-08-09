@@ -2,7 +2,6 @@ package com.vmax.app
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
-import com.vmax.intelligence.ScreenAnalyzer
 
 /**
  * VMAX Enterprise v2.6
@@ -11,14 +10,13 @@ import com.vmax.intelligence.ScreenAnalyzer
  * File 34 — VMAXAccessibilityService
  *
  * Accessibility service for VMAX Enterprise automation.
- * Stage 2: Receives Android Accessibility Events and forwards to Analysis Layer.
+ * Stage 2: Receives Android Accessibility Events.
  * No business logic.
  */
 class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Stage 2 — Evidence Capture Phase
-        // Check if the event is valid
         if (event == null) return
 
         // Log the basic event for evidence
@@ -30,14 +28,9 @@ class VMAXAccessibilityService : AccessibilityService() {
             else -> "OTHER"
         }
 
-        // Placeholder: Send this event to the Intelligence Layer for analysis
-        // Note: ScreenAnalyzer is currently a skeleton (Stage 1)
-        val screenAnalysis = ScreenAnalyzer.analyzeScreen(event)
-        
-        // For now, we will just print to system log to prove it's working
-        // In the real implementation, this will trigger the WorkflowController
-        android.util.Log.d("VMAX_SERVICE", "Event Received: $eventType")
-        android.util.Log.d("VMAX_SERVICE", "Screen Analysis Result: $screenAnalysis")
+        // ScreenAnalyzer.kt is a Stage-1 Skeleton Interface with no implementation yet.
+        // So we keep the Service limited to logging event reception evidence.
+        android.util.Log.d("VMAX_SERVICE", "Accessibility Event Received: $eventType")
     }
 
     override fun onInterrupt() {
