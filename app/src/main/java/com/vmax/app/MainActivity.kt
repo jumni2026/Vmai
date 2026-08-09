@@ -22,8 +22,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             VMAXTheme {
-                // Stage 2 — Minimal UI Placeholder to verify Compose rendering
-                Text(text = "VMAX Enterprise v2.6 - Ready")
+                Text(
+                    text = "VMAX Enterprise v2.6 - Ready"
+                )
             }
         }
     }
