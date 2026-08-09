@@ -3,6 +3,7 @@ package com.vmax.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.Text
 
 /**
  * VMAX Enterprise v2.6
@@ -21,7 +22,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             VMAXTheme {
-                // Stage 2 — Compose entry point only.
+                // Stage 2 — Minimal UI Placeholder to verify Compose rendering
+                Text(text = "VMAX Enterprise v2.6 - Ready")
             }
         }
     }
