@@ -1,48 +1,3 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    // ✅ Compose Compiler Plugin added with exact version matching Root Kotlin version (2.0.21)
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
-}
-
-android {
-    namespace = "com.vmax.app"
-    compileSdk = 35
-
-    defaultConfig {
-        applicationId = "com.vmax.app"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "2.6"
-    }
-
-    buildFeatures {
-        buildConfig = true
-        // ✅ Enables Jetpack Compose for this module
-        compose = true 
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
-
 dependencies {
     // Internal Modules
     implementation(project(":common"))
@@ -58,10 +13,12 @@ dependencies {
     // AndroidX Basics
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity:1.10.1")
+    // ✅ केवल यह एक लाइन जोड़नी है (बाकी Compose BOM पुराना ही रहेगा)
+    implementation("androidx.activity:activity-compose:1.10.1") 
     testImplementation("junit:junit:4.13.2")
 
-    // ✅ Jetpack Compose Libraries managed via BOM (Removing guesswork versions)
-    val composeBom = platform("androidx.compose:compose-bom:2024.11.00")
+    // Jetpack Compose Libraries (BOM version 2024.02.00 को ही रखना है, बदलना नहीं)
+    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
