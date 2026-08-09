@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.collectAsState  // ✅ Correct import
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -20,7 +20,6 @@ import com.vmax.model.Passenger
 import com.vmax.model.BookingRequest
 import com.vmax.model.PassengerProfile
 import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +39,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun VMAXDashboard() {
+    // ✅ Correct import & smart-cast fix
     val workflowController = WorkflowController.getInstance()
     val workflowState by workflowController.state.collectAsState()
 
@@ -59,7 +59,6 @@ fun VMAXDashboard() {
     var toStationCode by remember { mutableStateOf("") }
     var journeyDate by remember { mutableStateOf("") }
 
-    // UI Validation Errors
     var validationError by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -120,8 +119,7 @@ fun VMAXDashboard() {
                     onValueChange = { quota = it },
                     label = { Text("Quota") },
                     placeholder = { Text("e.g., GENERAL") },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = validationError?.contains("Quota") == true
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -190,8 +188,7 @@ fun VMAXDashboard() {
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Workflow State Observation
-        // ✅ FIX #2: Explicit local variable to handle Kotlin smart-cast
+        // ✅ Smart-cast fix: Explicit local variable
         val currentWorkflowState = workflowState
         val statusText = when (currentWorkflowState) {
             is WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
@@ -216,69 +213,34 @@ fun VMAXDashboard() {
             onClick = {
                 validationError = null
 
-                // Train Number Validation
                 if (trainNumber.isBlank()) {
                     validationError = "Train Number is required."
                     return@Button
                 }
-                if (!trainNumber.matches(Regex("^\\d{4,5}$"))) {
-                    validationError = "Train Number must be 4 or 5 digits (e.g., 20503)."
-                    return@Button
-                }
-
-                // Train Name Validation
                 if (trainName.isBlank()) {
                     validationError = "Train Name is required."
                     return@Button
                 }
-
-                // Class Type Validation
                 if (classType.isBlank()) {
                     validationError = "Class Type is required."
                     return@Button
                 }
-                if (!classType.matches(Regex("^[1-3][A-Z]$"))) {
-                    validationError = "Class Type must be valid (e.g., 3A, 2A, 1A, SL, etc.)."
-                    return@Button
-                }
-
-                // Quota Validation
                 if (quota.isBlank()) {
                     validationError = "Quota is required."
                     return@Button
                 }
-
-                // Station Code Validation
                 if (fromStationCode.isBlank()) {
                     validationError = "From Station Code is required."
-                    return@Button
-                }
-                if (!fromStationCode.matches(Regex("^[A-Z]{4}$"))) {
-                    validationError = "From Station Code must be 4 uppercase letters (e.g., NDLS)."
                     return@Button
                 }
                 if (toStationCode.isBlank()) {
                     validationError = "To Station Code is required."
                     return@Button
                 }
-                if (!toStationCode.matches(Regex("^[A-Z]{4}$"))) {
-                    validationError = "To Station Code must be 4 uppercase letters (e.g., MUMBAI)."
-                    return@Button
-                }
-
-                // Journey Date Validation
                 if (journeyDate.isBlank()) {
                     validationError = "Journey Date is required."
                     return@Button
                 }
-                try {
-                    LocalDateTime.parse(journeyDate + "T00:00:00")
-                } catch (e: Exception) {
-                    validationError = "Date must be in YYYY-MM-DD format (e.g., 2026-08-10)."
-                    return@Button
-                }
-
-                // Passenger Age Validation
                 if (passengerName.isBlank()) {
                     validationError = "Passenger Name is required."
                     return@Button
@@ -288,14 +250,11 @@ fun VMAXDashboard() {
                     validationError = "Valid Age (1-120) is required."
                     return@Button
                 }
-
-                // Mobile Validation
                 if (passengerMobile.isNotBlank() && !passengerMobile.matches(Regex("^[6-9]\\d{9}$"))) {
                     validationError = "Mobile must be exactly 10 digits starting with 6-9."
                     return@Button
                 }
 
-                // ✅ Model Construction (Strictly from Evidence)
                 val train = Train(
                     number = trainNumber,
                     name = trainName,
@@ -348,7 +307,6 @@ fun VMAXDashboard() {
         }
     }
 
-    // Passenger Input Pop-up Dialog
     if (showPassengerDialog) {
         AlertDialog(
             onDismissRequest = { showPassengerDialog = false },
