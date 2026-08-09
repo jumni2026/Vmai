@@ -1,0 +1,277 @@
+package com.vmax.core_intelligence
+
+import android.util.Log
+
+/**
+ * VMAX v2.6.1 - UI Evidence Collector (OCR Integration)
+ * 
+ * Responsibility: Allowed OCR evidence को existing UI evidence system में जोड़ना
+ * 
+ * Architecture Rule:
+ * - सिर्फ SAFE_UI evidence accept करेगा
+ * - SENSITIVE evidence explicitly reject करेगा
+ * - Existing evidence structure में seamless integrate होगा
+ */
+class UIEvidenceCollector {
+    
+    companion object {
+        private const val TAG = "UIEvidenceCollector"
+    }
+    
+    /**
+     * Current screen evidence holder
+     */
+    data class ScreenEvidence(
+        val screenId: String,
+        val timestamp: Long,
+        val uiElements: List<UIElement> = emptyList(),
+        val ocrEvidence: OcrEvidence? = null,
+        val metadata: EvidenceMetadata = EvidenceMetadata()
+    ) {
+        /**
+         * OCR-specific evidence container
+         */
+        data class OcrEvidence(
+            val fullText: String,
+            val keyValuePairs: Map<String, String>,
+            val rawBlocks: List<OcrResult.TextBlock>,
+            val confidence: Float
+        )
+        
+        /**
+         * Standard UI element from accessibility service
+         */
+        data class UIElement(
+            val id: String,
+            val type: String,
+            val text: String,
+            val contentDescription: String?,
+            val bounds: android.graphics.Rect?,
+            val isClickable: Boolean,
+            val isEditable: Boolean
+        )
+        
+        /**
+         * Evidence quality metadata
+         */
+        data class EvidenceMetadata(
+            val hasOcrData: Boolean = false,
+            val ocrConfidence: Float = 0f,
+            val elementCount: Int = 0,
+            val classification: TextClassifier.Classification = TextClassifier.Classification.UNKNOWN
+        )
+    }
+    
+    /**
+     * Active screen evidence
+     */
+    private var currentEvidence: ScreenEvidence? = null
+    
+    /**
+     * Main entry: Classified OCR result को evidence system में add करें
+     * 
+     * @param classifiedResult TextClassifier से आया result
+     * @return Success/Failure with reason
+     */
+    fun collectOcrEvidence(classifiedResult: TextClassifier.ClassifiedResult): CollectionResult {
+        
+        // Security check: SENSITIVE evidence को बिल्कुल reject करें
+        if (classifiedResult.classification == TextClassifier.Classification.SENSITIVE) {
+            Log.w(TAG, "SENSITIVE evidence rejected - screenId: ${classifiedResult.ocrResult.screenId}")
+            return CollectionResult.Rejected(
+                reason = RejectionReason.SENSITIVE_CONTENT_BLOCKED,
+                matchedPatterns = classifiedResult.matchedPatterns
+            )
+        }
+        
+        // UNKNOWN evidence को retain करें लेकिन limited capacity में
+        if (classifiedResult.classification == TextClassifier.Classification.UNKNOWN) {
+            Log.d(TAG, "UNKNOWN evidence retained for analysis - screenId: ${classifiedResult.ocrResult.screenId}")
+            // Store minimal data for debugging, no action
+            return CollectionResult.RetainedAsUnknown(
+                screenId = classifiedResult.ocrResult.screenId
+            )
+        }
+        
+        // SAFE_UI evidence को process करें
+        return processSafeEvidence(classifiedResult)
+    }
+    
+    /**
+     * SAFE_UI evidence को structured format में convert करें
+     */
+    private fun processSafeEvidence(
+        classifiedResult: TextClassifier.ClassifiedResult
+    ): CollectionResult {
+        
+        val ocrResult = classifiedResult.ocrResult
+        
+        // Key-value extraction from OCR text
+        val keyValuePairs = extractKeyValuePairs(ocrResult)
+        
+        // Create OCR evidence container
+        val ocrEvidence = ScreenEvidence.OcrEvidence(
+            fullText = ocrResult.getCleanedText(),
+            keyValuePairs = keyValuePairs,
+            rawBlocks = ocrResult.textBlocks,
+            confidence = ocrResult.getAverageConfidence()
+        )
+        
+        // Build complete screen evidence
+        val evidence = ScreenEvidence(
+            screenId = ocrResult.screenId,
+            timestamp = ocrResult.timestamp,
+            uiElements = currentEvidence?.uiElements ?: emptyList(),
+            ocrEvidence = ocrEvidence,
+            metadata = ScreenEvidence.EvidenceMetadata(
+                hasOcrData = true,
+                ocrConfidence = ocrEvidence.confidence,
+                elementCount = ocrResult.textBlocks.size,
+                classification = TextClassifier.Classification.SAFE_UI
+            )
+        )
+        
+        // Store current evidence
+        currentEvidence = evidence
+        
+        Log.i(TAG, "SAFE_UI evidence collected - screenId: ${evidence.screenId}, " +
+                "keys: ${keyValuePairs.keys}, confidence: ${ocrEvidence.confidence}")
+        
+        return CollectionResult.Success(
+            evidence = evidence,
+            extractedKeys = keyValuePairs.keys.toList()
+        )
+    }
+    
+    /**
+     * OCR text से key-value pairs extract करें
+     * Train info, passenger details, etc.
+     */
+    private fun extractKeyValuePairs(ocrResult: OcrResult): Map<String, String> {
+        val pairs = mutableMapOf<String, String>()
+        val text = ocrResult.fullText
+        
+        // Pattern-based extraction
+        
+        // Train Number (5 digits typically)
+        Regex("TRAIN\\s*:?\\s*(\\d{1,5})", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.let {
+                pairs["train_number"] = it
+            }
+        
+        // Train Name (after train number or standalone)
+        Regex("TRAIN\\s*:?\\s*\\d*\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.trim()?.let {
+                if (it.length > 3) pairs["train_name"] = it
+            }
+        
+        // From Station
+        Regex("FROM\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.trim()?.let {
+                pairs["from_station"] = it
+            }
+        
+        // To Station
+        Regex("TO\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.trim()?.let {
+                pairs["to_station"] = it
+            }
+        
+        // Date (DD-MM-YYYY or DD/MM/YYYY)
+        Regex("(\\d{2}[-/]\\d{2}[-/]\\d{4})")
+            .find(text)?.value?.let {
+                pairs["journey_date"] = it
+            }
+        
+        // Class (SL, 3A, 2A, 1A, CC, EC, 2S)
+        Regex("\\b(SL|3A|2A|1A|CC|EC|2S)\\b", RegexOption.IGNORE_CASE)
+            .find(text)?.value?.uppercase()?.let {
+                pairs["travel_class"] = it
+            }
+        
+        // Availability (AVAILABLE, RAC, WL followed by number)
+        Regex("(AVAILABLE|RAC|WL)\\s*(\\d+)", RegexOption.IGNORE_CASE)
+            .find(text)?.let { match ->
+                val type = match.groupValues[1].uppercase()
+                val count = match.groupValues[2]
+                pairs["availability_type"] = type
+                pairs["availability_count"] = count
+            }
+        
+        // Fare/Price
+        Regex("(?:FARE|PRICE|TOTAL)[:\\s]*[₹$]?\\s*(\\d+[.,]?\\d*)", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.let {
+                pairs["fare"] = it
+            }
+        
+        // Passenger field indicators
+        if (text.contains("PASSENGER", ignoreCase = true)) {
+            pairs["has_passenger_fields"] = "true"
+        }
+        
+        // Review journey indicator
+        if (text.contains("REVIEW JOURNEY", ignoreCase = true) ||
+            text.contains("REVIEW", ignoreCase = true)) {
+            pairs["screen_type"] = "review"
+        }
+        
+        // Book now indicator
+        if (text.contains("BOOK NOW", ignoreCase = true)) {
+            pairs["screen_type"] = "booking"
+            pairs["action_available"] = "book_now"
+        }
+        
+        return pairs
+    }
+    
+    /**
+     * Existing UI elements से evidence update करें (Accessibility Service से)
+     */
+    fun updateUiElements(elements: List<ScreenEvidence.UIElement>) {
+        currentEvidence = currentEvidence?.copy(
+            uiElements = elements
+        ) ?: ScreenEvidence(
+            screenId = System.currentTimeMillis().toString(),
+            timestamp = System.currentTimeMillis(),
+            uiElements = elements
+        )
+    }
+    
+    /**
+     * Current evidence retrieve करें (ScreenAnalyzer के लिए)
+     */
+    fun getCurrentEvidence(): ScreenEvidence? = currentEvidence
+    
+    /**
+     * Evidence clear करें (screen change पर)
+     */
+    fun clearEvidence() {
+        currentEvidence = null
+        Log.d(TAG, "Evidence cleared")
+    }
+    
+    /**
+     * Collection result types
+     */
+    sealed class CollectionResult {
+        data class Success(
+            val evidence: ScreenEvidence,
+            val extractedKeys: List<String>
+        ) : CollectionResult()
+        
+        data class Rejected(
+            val reason: RejectionReason,
+            val matchedPatterns: List<String>
+        ) : CollectionResult()
+        
+        data class RetainedAsUnknown(
+            val screenId: String
+        ) : CollectionResult()
+    }
+    
+    enum class RejectionReason {
+        SENSITIVE_CONTENT_BLOCKED,
+        LOW_CONFIDENCE,
+        EMPTY_RESULT
+    }
+}
