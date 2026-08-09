@@ -1,67 +1,153 @@
 package com.vmax.workflow
 
-import com.vmax.common.Result
+import com.vmax.model.BookingRequest
+import com.vmax.model.PassengerProfile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * VMAX Enterprise v2.6
  *
- * Stage 1 — Skeleton
- * File 11 — WorkflowController
+ * File — WorkflowController.kt
  *
- * Controls the overall workflow execution for VMAX Enterprise.
- * Platform-independent — no Android dependencies.
- * No external dependencies.
- * No business logic.
+ * Corrected Working Implementation (Base on existing StateFlow architecture).
+ *
+ * - Simulation loop removed completely.
+ * - Real Execution contract placeholder prepared.
+ * - No fake persistence.
+ * - Clean cancellation.
  */
-interface WorkflowController {
+class WorkflowController private constructor() {
 
-    enum class WorkflowState {
-        IDLE,
-        CONFIGURED,
-        TRAIN_SELECTED,
-        PASSENGER_FILLED,
-        REVIEW_READY,
-        PAYMENT_WAITING,
-        PAYMENT_PROCESSING,
-        COMPLETED,
-        FAILED
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    // Active Coroutine Job tracking for real cancellation handling
+    private var executionJob: Job? = null
+
+    // Central State Machine
+    private val _state = MutableStateFlow<WorkflowState>(WorkflowState.IDLE)
+    val state: StateFlow<WorkflowState> = _state.asStateFlow()
+
+    // Active Request and Profile Memory Holders
+    private var activeBookingRequest: BookingRequest? = null
+    private var activePassengerProfile: PassengerProfile? = null
+
+    companion object {
+        @Volatile
+        private var INSTANCE: WorkflowController? = null
+
+        fun getInstance(): WorkflowController {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: WorkflowController().also { INSTANCE = it }
+            }
+        }
     }
 
-    data class WorkflowContext(
-        val state: WorkflowState,
-        val currentStep: String,
-        val progress: Float,
-        val message: String? = null,
-        val error: Throwable? = null
-    )
+    /**
+     * Validates input parameters, manages coroutine job execution, and drives state machine transitions.
+     */
+    fun start(bookingRequest: BookingRequest, passengerProfile: PassengerProfile) {
+        if (_state.value != WorkflowState.IDLE) {
+            return
+        }
 
-    fun startWorkflow(config: Map<String, Any>): Result<Unit, WorkflowError>
+        // Gate 1: Profile Emptiness Check
+        if (passengerProfile.passengers.isEmpty()) {
+            _state.value = WorkflowState.ERROR("Passenger profile list is empty.")
+            return
+        }
 
-    fun pauseWorkflow(): Result<Unit, WorkflowError>
+        // Gate 2: Passenger Data Mandatory Fields & Bounds Check
+        val hasInvalidPassenger = passengerProfile.passengers.any { passenger ->
+            passenger.name.isBlank() || passenger.age <= 0 || passenger.age > 120
+        }
+        if (hasInvalidPassenger) {
+            _state.value = WorkflowState.ERROR("Invalid passenger data detected.")
+            return
+        }
 
-    fun resumeWorkflow(): Result<Unit, WorkflowError>
+        // Gate 3: Target Settings Completeness Check
+        if (bookingRequest.trainNumber.isBlank() || bookingRequest.classType.isBlank()) {
+            _state.value = WorkflowState.ERROR("Target settings incomplete.")
+            return
+        }
 
-    fun stopWorkflow(): Result<Unit, WorkflowError>
+        activeBookingRequest = bookingRequest
+        activePassengerProfile = passengerProfile
 
-    fun getCurrentState(): WorkflowState
+        // Cancel any existing background execution job
+        executionJob?.cancel()
 
-    fun getContext(): WorkflowContext
+        _state.value = WorkflowState.CONFIGURED
 
-    fun isRunning(): Boolean
+        // ⚠️ REAL EXECUTION BOUNDARY:
+        // The infinite simulation loop has been removed.
+        // This is now a contract placeholder for the actual Runtime/Action Engine.
+        // To make this real, the following components must be invoked:
+        // 1. RuntimeCoordinator.startAutomation()
+        // 2. ActionExecutor.executeActions()
+        //
+        // Since their exact contract is not yet evidenced, this file remains HOLD.
+        executionJob = scope.launch {
+            // Real execution will be added here when exact contracts are provided.
+            // For now, the WorkflowController remains a State Manager.
+        }
+    }
 
-    fun isPaused(): Boolean
+    /**
+     * Immediately cancels active execution job coroutines and resets state machine to IDLE.
+     */
+    fun stop() {
+        // Real Execution Cancellation
+        executionJob?.cancel()
+        executionJob = null
 
-    fun isCompleted(): Boolean
+        activeBookingRequest = null
+        activePassengerProfile = null
+        _state.value = WorkflowState.IDLE
+    }
 
-    fun isFailed(): Boolean
+    /**
+     * Returns the current booking request if available.
+     */
+    fun getActiveBookingRequest(): BookingRequest? = activeBookingRequest
 
-    fun getError(): Throwable?
+    /**
+     * Returns the current passenger profile if available.
+     */
+    fun getActivePassengerProfile(): PassengerProfile? = activePassengerProfile
 
-    fun clearError()
+    /**
+     * Returns true if the workflow is currently running or configured.
+     */
+    fun isRunning(): Boolean = _state.value == WorkflowState.RUNNING
+
+    /**
+     * Returns true if the workflow is in an ERROR state.
+     */
+    fun isError(): Boolean = _state.value is WorkflowState.ERROR
+
+    /**
+     * Cancels active job execution and forces state machine into ERROR state.
+     */
+    fun notifyConfigurationError(reason: String) {
+        executionJob?.cancel()
+        executionJob = null
+        _state.value = WorkflowState.ERROR(reason)
+    }
 }
 
-data class WorkflowError(
-    val code: String,
-    val message: String,
-    val cause: Throwable? = null
-)
+/**
+ * Blueprint v2.6 Workflow Execution States.
+ */
+sealed class WorkflowState(val name: String) {
+    object IDLE : WorkflowState("IDLE")
+    object CONFIGURED : WorkflowState("CONFIGURED")
+    object RUNNING : WorkflowState("RUNNING")
+    data class ERROR(val reason: String) : WorkflowState("ERROR")
+}
