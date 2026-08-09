@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch  // ✅ Added: Essential import for scope.launch
 
 /**
  * VMAX Enterprise v2.6
@@ -72,7 +73,6 @@ class WorkflowController private constructor() {
         }
 
         // Gate 3: Target Settings Completeness Check
-        // ✅ EXACT FIX: bookingRequest.train.number and bookingRequest.train.classType
         if (bookingRequest.train.number.isBlank() || bookingRequest.train.classType.isBlank()) {
             _state.value = WorkflowState.ERROR("Target settings incomplete.")
             return
