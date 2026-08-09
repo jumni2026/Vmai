@@ -12,13 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vmax.workflow.WorkflowController
 import com.vmax.workflow.WorkflowState
-import com.vmax.model.Train
-import com.vmax.model.Station
-import com.vmax.model.Passenger
-import com.vmax.model.BookingRequest
-import com.vmax.model.PassengerProfile
+import com.vmax.model.*
 import java.time.LocalDateTime
 
 class MainActivity : ComponentActivity() {
@@ -39,7 +36,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun VMAXDashboard() {
-    // ✅ Correct import & smart-cast fix
+    val mainViewModel: MainViewModel = viewModel()
     val workflowController = WorkflowController.getInstance()
     val workflowState by workflowController.state.collectAsState()
 
@@ -51,6 +48,16 @@ fun VMAXDashboard() {
     var passengerMobile by remember { mutableStateOf("") }
     var genderMenuExpanded by remember { mutableStateOf(false) }
 
+    // New Preference States
+    var selectedBerth by remember { mutableStateOf<BerthPreference>(BerthPreference.NO_PREFERENCE) }
+    var selectedMeal by remember { mutableStateOf<MealPreference>(MealPreference.NO_MEAL) }
+    var selectedConcession by remember { mutableStateOf<Concession>(Concession.NONE) }
+    var selectedBookingOption by remember { mutableStateOf(BookingOption()) }
+    var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod()) }
+    var selectedUPIApp by remember { mutableStateOf<UPIApp?>(null) }
+
+    var childDataList by remember { mutableStateOf<List<ChildData>>(emptyList()) }
+
     var trainNumber by remember { mutableStateOf("") }
     var trainName by remember { mutableStateOf("") }
     var classType by remember { mutableStateOf("") }
@@ -60,6 +67,15 @@ fun VMAXDashboard() {
     var journeyDate by remember { mutableStateOf("") }
 
     var validationError by remember { mutableStateOf<String?>(null) }
+
+    // Auto-Fetch Train Name using TrainDataProvider
+    LaunchedEffect(trainNumber) {
+        if (trainNumber.length >= 4) {
+            // TODO: Call TrainDataProvider.getTrainData(trainNumber) when implemented
+            // For now, keep it as a placeholder
+            trainName = "Simanchal Express (Auto-Fetched)"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -74,7 +90,7 @@ fun VMAXDashboard() {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
-        Text(text = "VERSION: 2.6 FINAL 🔒", fontSize = 12.sp)
+        Text(text = "VERSION: 2.6.1 FINAL 🔒", fontSize = 12.sp)
         
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -98,10 +114,11 @@ fun VMAXDashboard() {
                 Spacer(modifier = Modifier.height(4.dp))
                 OutlinedTextField(
                     value = trainName,
-                    onValueChange = { trainName = it },
+                    onValueChange = { },
                     label = { Text("Train Name") },
-                    placeholder = { Text("e.g., RAJDHANI EXP") },
+                    placeholder = { Text("Auto-populated") },
                     modifier = Modifier.fillMaxWidth(),
+                    readOnly = true,
                     isError = validationError?.contains("Train Name") == true
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -186,9 +203,161 @@ fun VMAXDashboard() {
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // New: Booking Options Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "📋 Booking Options", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row {
+                    Checkbox(
+                        checked = selectedBookingOption.autoUpgradation,
+                        onCheckedChange = { selectedBookingOption = selectedBookingOption.copy(autoUpgradation = it) }
+                    )
+                    Text("Auto Upgradation")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedBookingOption.confirmBerths,
+                        onCheckedChange = { selectedBookingOption = selectedBookingOption.copy(confirmBerths = it) }
+                    )
+                    Text("Confirm Berths")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedBookingOption.travelInsurance,
+                        onCheckedChange = { selectedBookingOption = selectedBookingOption.copy(travelInsurance = it) }
+                    )
+                    Text("Travel Insurance")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedBookingOption.coachPreferred,
+                        onCheckedChange = { selectedBookingOption = selectedBookingOption.copy(coachPreferred = it) }
+                    )
+                    Text("Coach Preferred")
+                }
+                if (selectedBookingOption.coachPreferred) {
+                    OutlinedTextField(
+                        value = selectedBookingOption.coachId ?: "",
+                        onValueChange = { selectedBookingOption = selectedBookingOption.copy(coachId = it) },
+                        label = { Text("Coach ID") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                OutlinedTextField(
+                    value = selectedBookingOption.mobileNumber ?: "",
+                    onValueChange = { selectedBookingOption = selectedBookingOption.copy(mobileNumber = it) },
+                    label = { Text("Mobile Number") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // New: Payment Method Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "💳 Payment Method", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row {
+                    Checkbox(
+                        checked = selectedPaymentMethod.useEWallet,
+                        onCheckedChange = { selectedPaymentMethod = selectedPaymentMethod.copy(useEWallet = it) }
+                    )
+                    Text("e-Wallets")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedPaymentMethod.useNetbanking,
+                        onCheckedChange = { selectedPaymentMethod = selectedPaymentMethod.copy(useNetbanking = it) }
+                    )
+                    Text("Netbanking")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedPaymentMethod.useUPIId,
+                        onCheckedChange = { selectedPaymentMethod = selectedPaymentMethod.copy(useUPIId = it) }
+                    )
+                    Text("UPI ID")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedPaymentMethod.useUPIApp,
+                        onCheckedChange = { selectedPaymentMethod = selectedPaymentMethod.copy(useUPIApp = it) }
+                    )
+                    Text("UPI Apps")
+                }
+                if (selectedPaymentMethod.useUPIApp) {
+                    // Simple dropdown for UPI App selection
+                    Text("Select UPI App")
+                    // For simplicity, using a dropdown menu with hardcoded list
+                    UPIApp.values().forEach { app ->
+                        Row {
+                            RadioButton(
+                                selected = selectedUPIApp == app,
+                                onClick = { selectedUPIApp = app }
+                            )
+                            Text(app.name)
+                        }
+                    }
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedPaymentMethod.manualPayment,
+                        onCheckedChange = { selectedPaymentMethod = selectedPaymentMethod.copy(manualPayment = it) }
+                    )
+                    Text("Manual Payment")
+                }
+                Row {
+                    Checkbox(
+                        checked = selectedPaymentMethod.autofillOTP,
+                        onCheckedChange = { selectedPaymentMethod = selectedPaymentMethod.copy(autofillOTP = it) }
+                    )
+                    Text("Autofill OTP")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // New: Child Details Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "👶 Child Details", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                childDataList.forEachIndexed { index, child ->
+                    Text("Child ${index + 1}: ${child.name} (${child.ageCategory})")
+                }
+                
+                Button(
+                    onClick = {
+                        // Add a new child (for demo, adding a placeholder)
+                        childDataList = childDataList + ChildData("New Child", ChildAgeCategory.BELOW_ONE_YEAR, "MALE")
+                    },
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Text("Add Child")
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.weight(1f))
 
-        // ✅ Smart-cast fix: Explicit local variable
         val currentWorkflowState = workflowState
         val statusText = when (currentWorkflowState) {
             is WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
@@ -213,20 +382,13 @@ fun VMAXDashboard() {
             onClick = {
                 validationError = null
 
+                // Validation Logic
                 if (trainNumber.isBlank()) {
                     validationError = "Train Number is required."
                     return@Button
                 }
-                if (trainName.isBlank()) {
-                    validationError = "Train Name is required."
-                    return@Button
-                }
                 if (classType.isBlank()) {
                     validationError = "Class Type is required."
-                    return@Button
-                }
-                if (quota.isBlank()) {
-                    validationError = "Quota is required."
                     return@Button
                 }
                 if (fromStationCode.isBlank()) {
@@ -250,11 +412,28 @@ fun VMAXDashboard() {
                     validationError = "Valid Age (1-120) is required."
                     return@Button
                 }
-                if (passengerMobile.isNotBlank() && !passengerMobile.matches(Regex("^[6-9]\\d{9}$"))) {
-                    validationError = "Mobile must be exactly 10 digits starting with 6-9."
-                    return@Button
-                }
 
+                // Build Passenger Profile with new preferences
+                val passenger = Passenger(
+                    name = passengerName,
+                    age = ageInt,
+                    gender = passengerGender,
+                    mobile = passengerMobile.takeIf { it.isNotBlank() }
+                )
+
+                val passengerProfile = PassengerProfile(
+                    profileId = "PROFILE_001",
+                    passengers = listOf(passenger),
+                    createdTime = LocalDateTime.now(),
+                    updatedTime = LocalDateTime.now(),
+                    // New optional fields
+                    berthPreference = selectedBerth,
+                    mealPreference = selectedMeal,
+                    concession = selectedConcession,
+                    bedRoll = false // Placeholder
+                )
+
+                // Build BookingRequest
                 val train = Train(
                     number = trainNumber,
                     name = trainName,
@@ -264,31 +443,21 @@ fun VMAXDashboard() {
                 val fromStation = Station(fromStationCode, fromStationCode)
                 val toStation = Station(toStationCode, toStationCode)
 
-                val passenger = Passenger(
-                    name = passengerName,
-                    age = ageInt,
-                    gender = passengerGender,
-                    mobile = passengerMobile.takeIf { it.isNotBlank() }
+                val bookingRequest = BookingRequest(
+                    train = train,
+                    fromStation = fromStation,
+                    toStation = toStation,
+                    date = journeyDate,
+                    passengers = listOf(passenger),
+                    quota = quota
                 )
 
                 if (isWorkflowActive) {
                     workflowController.stop()
                 } else {
                     workflowController.start(
-                        bookingRequest = BookingRequest(
-                            train = train,
-                            fromStation = fromStation,
-                            toStation = toStation,
-                            date = journeyDate,
-                            passengers = listOf(passenger),
-                            quota = quota
-                        ),
-                        passengerProfile = PassengerProfile(
-                            profileId = "PROFILE_001",
-                            passengers = listOf(passenger),
-                            createdTime = LocalDateTime.now(),
-                            updatedTime = LocalDateTime.now()
-                        )
+                        bookingRequest = bookingRequest,
+                        passengerProfile = passengerProfile
                     )
                 }
             },
@@ -307,6 +476,7 @@ fun VMAXDashboard() {
         }
     }
 
+    // Passenger Input Pop-up Dialog
     if (showPassengerDialog) {
         AlertDialog(
             onDismissRequest = { showPassengerDialog = false },
