@@ -28,8 +28,6 @@ class VMAXAccessibilityService : AccessibilityService() {
             else -> "OTHER"
         }
 
-        // ScreenAnalyzer.kt is a Stage-1 Skeleton Interface with no implementation yet.
-        // So we keep the Service limited to logging event reception evidence.
         android.util.Log.d("VMAX_SERVICE", "Accessibility Event Received: $eventType")
     }
 
