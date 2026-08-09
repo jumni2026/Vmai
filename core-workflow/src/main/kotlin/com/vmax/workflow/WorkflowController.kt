@@ -72,7 +72,8 @@ class WorkflowController private constructor() {
         }
 
         // Gate 3: Target Settings Completeness Check
-        if (bookingRequest.trainNumber.isBlank() || bookingRequest.classType.isBlank()) {
+        // ✅ EXACT FIX: bookingRequest.train.number and bookingRequest.train.classType
+        if (bookingRequest.train.number.isBlank() || bookingRequest.train.classType.isBlank()) {
             _state.value = WorkflowState.ERROR("Target settings incomplete.")
             return
         }
