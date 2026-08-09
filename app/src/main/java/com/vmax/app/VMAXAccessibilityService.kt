@@ -7,13 +7,16 @@ import android.view.accessibility.AccessibilityEvent
 /**
  * VMAX Enterprise v2.6
  *
- * Stage 2 — Runtime Evidence
+ * Stage 2 — Runtime Diagnostic
  *
  * Purpose:
- * - Prove that Android starts and binds the AccessibilityService.
- * - Prove that AccessibilityEvents reach the service.
+ * - Verify that the AccessibilityService instance is created.
+ * - Verify that onServiceConnected() executes.
+ * - Generate one controlled synthetic event for diagnostic purposes.
  *
- * No business automation is performed here.
+ * NOTE:
+ * The synthetic event does NOT prove Android is delivering
+ * real AccessibilityEvents. It only verifies our callback path.
  */
 class VMAXAccessibilityService : AccessibilityService() {
 
@@ -28,6 +31,24 @@ class VMAXAccessibilityService : AccessibilityService() {
             TAG,
             "Accessibility Service Started"
         )
+
+        // Diagnostic-only synthetic event.
+        // This must NOT be treated as proof of real Android event delivery.
+        val testEvent = AccessibilityEvent.obtain(
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        )
+
+        testEvent.packageName = packageName
+        testEvent.className = VMAXAccessibilityService::class.java.name
+
+        Log.d(
+            TAG,
+            "Synthetic Diagnostic Event Generated"
+        )
+
+        onAccessibilityEvent(testEvent)
+
+        testEvent.recycle()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
