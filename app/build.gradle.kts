@@ -41,7 +41,6 @@ android {
     }
 }
 
-// ✅ Corrected: Added the missing 'dependencies' block
 dependencies {
     // Internal Modules
     implementation(project(":common"))
@@ -57,8 +56,11 @@ dependencies {
     // AndroidX Basics
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity:1.10.1")
-    // ✅ Exact Correction for 'setContent' (from previous evidence) preserved
-    implementation("androidx.activity:activity-compose:1.10.1") 
+    implementation("androidx.activity:activity-compose:1.10.1")
+
+    // ✅ Exact Fix: Added missing Compose ViewModel dependency
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
     testImplementation("junit:junit:4.13.2")
 
     // Jetpack Compose Libraries
