@@ -1,23 +1,18 @@
 package com.vmax.core_intelligence
 
-import android.graphics.Rect
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-
 /**
- * VMAX v2.6.1 - OCR Result
+ * VMAX Enterprise v2.6.1 - OCR Result
  * 
- * Responsibility: OCR का structured result रखना
+ * Responsibility: Structured OCR execution payload holder.
  * 
- * Architecture Rule:
+ * Architecture Rules:
  * - Immutable data class
- * - Parcelable for inter-component communication
- * - Raw evidence - no classification here (TextClassifier करेगा)
+ * - Pure Kotlin / Platform-Independent (Zero Android SDK dependencies)
+ * - Raw evidence contract for downstream processing (TextClassifier / Workflow)
  */
-@Parcelize
 data class OcrResult(
     /**
-     * Unique identifier for this screen capture session
+     * Unique identifier for the screen capture session
      */
     val screenId: String,
     
@@ -27,57 +22,58 @@ data class OcrResult(
     val timestamp: Long,
     
     /**
-     * Complete raw text from entire screen
-     * (All text blocks concatenated)
+     * Complete raw text extracted from the entire screen
      */
     val fullText: String,
     
     /**
-     * Individual text blocks with metadata
-     * (Position, confidence, lines)
+     * Individual text blocks with structural metadata
      */
     val textBlocks: List<TextBlock>,
     
     /**
-     * Detected language code
-     * en = English, hi = Hindi, etc.
+     * Detected language code (e.g., "en", "hi")
      */
     val language: String = "unknown"
-    
-) : Parcelable {
-    
+) {
+
     /**
-     * Individual text block from screen
+     * Represents a single recognized text block
      */
-    @Parcelize
     data class TextBlock(
-        /**
-         * Recognized text content
-         */
         val text: String,
-        
-        /**
-         * Confidence score (0.0 to 1.0)
-         * ML Kit direct confidence नहीं देता, heuristic estimate
-         */
         val confidence: Float,
-        
-        /**
-         * Bounding box position on screen
-         * Null if not available
-         */
-        val boundingBox: Rect?,
-        
-        /**
-         * Individual lines within this block
-         */
+        val boundingBox: BoundingBox?,
         val lines: List<String>
-        
-    ) : Parcelable
-    
+    )
+
     /**
-     * Helper: Get all text as single cleaned string
-     * (Newlines preserved for structure)
+     * Pure Kotlin platform-independent bounding box representation
+     */
+    data class BoundingBox(
+        val left: Int,
+        val top: Int,
+        val right: Int,
+        val bottom: Int
+    ) {
+        /**
+         * Checks if this bounding box intersects with another bounding box
+         */
+        fun intersects(other: BoundingBox): Boolean {
+            return !(other.left > right || other.right < left ||
+                     other.top > bottom || other.bottom < top)
+        }
+
+        /**
+         * Checks if a specific point (x, y) resides inside this bounding box
+         */
+        fun contains(x: Int, y: Int): Boolean {
+            return x in left..right && y in top..bottom
+        }
+    }
+
+    /**
+     * Returns cleaned, non-blank text lines joined by newlines
      */
     fun getCleanedText(): String {
         return textBlocks
@@ -85,57 +81,55 @@ data class OcrResult(
             .filter { it.isNotBlank() }
             .joinToString("\n")
     }
-    
+
     /**
-     * Helper: Get text blocks sorted by vertical position (top to bottom)
-     * Useful for reading order preservation
+     * Sorts text blocks vertically from top to bottom based on top coordinate
      */
     fun getBlocksByReadingOrder(): List<TextBlock> {
         return textBlocks.sortedBy { it.boundingBox?.top ?: 0 }
     }
-    
+
     /**
-     * Helper: Check if specific keyword exists in OCR result
-     * Case-insensitive search
+     * Case-insensitive keyword lookup against full extracted text
      */
     fun containsKeyword(keyword: String): Boolean {
         return fullText.contains(keyword, ignoreCase = true)
     }
-    
+
     /**
-     * Helper: Find text blocks containing specific pattern
+     * Finds text blocks matching a given string pattern
      */
     fun findBlocksContaining(pattern: String): List<TextBlock> {
         return textBlocks.filter { 
             it.text.contains(pattern, ignoreCase = true) 
         }
     }
-    
+
     /**
-     * Helper: Get confidence statistics
+     * Calculates average confidence across all detected text blocks
      */
     fun getAverageConfidence(): Float {
         if (textBlocks.isEmpty()) return 0f
         return textBlocks.map { it.confidence }.average().toFloat()
     }
-    
+
     /**
-     * Helper: Check if OCR result is empty/invalid
+     * Returns true if no text blocks exist or full text is blank
      */
     fun isEmpty(): Boolean = textBlocks.isEmpty() || fullText.isBlank()
-    
+
     /**
-     * Helper: Get text in specific screen region
+     * Filters text blocks residing within or intersecting a specified rectangular region
      */
-    fun getTextInRegion(region: Rect): List<TextBlock> {
+    fun getTextInRegion(region: BoundingBox): List<TextBlock> {
         return textBlocks.filter { block ->
-            block.boundingBox?.let { Rect.intersects(it, region) } ?: false
+            block.boundingBox?.let { region.intersects(it) } ?: false
         }
     }
-    
+
     companion object {
         /**
-         * Empty result for error cases
+         * Fallback empty instance for error or uninitialized states
          */
         fun empty(screenId: String = ""): OcrResult {
             return OcrResult(
