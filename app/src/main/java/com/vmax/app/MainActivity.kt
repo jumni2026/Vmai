@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState  // ✅ Correct import
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -18,7 +19,6 @@ import com.vmax.model.Station
 import com.vmax.model.Passenger
 import com.vmax.model.BookingRequest
 import com.vmax.model.PassengerProfile
-import kotlinx.coroutines.flow.collectAsState
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -40,7 +40,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun VMAXDashboard() {
-    // ✅ Single Source of Truth: WorkflowController StateFlow
     val workflowController = WorkflowController.getInstance()
     val workflowState by workflowController.state.collectAsState()
 
@@ -192,17 +191,19 @@ fun VMAXDashboard() {
         Spacer(modifier = Modifier.weight(1f))
 
         // Workflow State Observation
-        val statusText = when (workflowState) {
+        // ✅ FIX #2: Explicit local variable to handle Kotlin smart-cast
+        val currentWorkflowState = workflowState
+        val statusText = when (currentWorkflowState) {
             is WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
             is WorkflowState.RUNNING -> "RUNNING (Target: ${trainNumber.takeIf { it.isNotBlank() } ?: "N/A"})"
-            is WorkflowState.ERROR -> "ERROR: ${workflowState.reason}"
+            is WorkflowState.ERROR -> "ERROR: ${currentWorkflowState.reason}"
             else -> "IDLE"
         }
         
         Text(
             text = "Automation Status: $statusText", 
             fontWeight = FontWeight.Bold,
-            color = when (workflowState) {
+            color = when (currentWorkflowState) {
                 is WorkflowState.RUNNING -> MaterialTheme.colorScheme.primary
                 is WorkflowState.ERROR -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onBackground
@@ -210,12 +211,12 @@ fun VMAXDashboard() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         
-        val isWorkflowActive = workflowState is WorkflowState.RUNNING || workflowState is WorkflowState.CONFIGURED
+        val isWorkflowActive = currentWorkflowState is WorkflowState.RUNNING || currentWorkflowState is WorkflowState.CONFIGURED
         Button(
             onClick = {
                 validationError = null
 
-                // ✅ 1. Train Number Validation (Format + Mandatory)
+                // Train Number Validation
                 if (trainNumber.isBlank()) {
                     validationError = "Train Number is required."
                     return@Button
@@ -225,13 +226,13 @@ fun VMAXDashboard() {
                     return@Button
                 }
 
-                // ✅ 2. Train Name Validation (Mandatory)
+                // Train Name Validation
                 if (trainName.isBlank()) {
                     validationError = "Train Name is required."
                     return@Button
                 }
 
-                // ✅ 3. Class Type Validation (Mandatory + Format)
+                // Class Type Validation
                 if (classType.isBlank()) {
                     validationError = "Class Type is required."
                     return@Button
@@ -241,13 +242,13 @@ fun VMAXDashboard() {
                     return@Button
                 }
 
-                // ✅ 4. Quota Validation (Mandatory)
+                // Quota Validation
                 if (quota.isBlank()) {
                     validationError = "Quota is required."
                     return@Button
                 }
 
-                // ✅ 5. Station Code Validation (Mandatory + Format)
+                // Station Code Validation
                 if (fromStationCode.isBlank()) {
                     validationError = "From Station Code is required."
                     return@Button
@@ -265,7 +266,7 @@ fun VMAXDashboard() {
                     return@Button
                 }
 
-                // ✅ 6. Journey Date Validation (Mandatory + Format YYYY-MM-DD)
+                // Journey Date Validation
                 if (journeyDate.isBlank()) {
                     validationError = "Journey Date is required."
                     return@Button
@@ -277,7 +278,7 @@ fun VMAXDashboard() {
                     return@Button
                 }
 
-                // ✅ 7. Passenger Age Validation (1-120)
+                // Passenger Age Validation
                 if (passengerName.isBlank()) {
                     validationError = "Passenger Name is required."
                     return@Button
@@ -288,7 +289,7 @@ fun VMAXDashboard() {
                     return@Button
                 }
 
-                // ✅ 8. Mobile Validation (Optional but must be 10 digits if provided)
+                // Mobile Validation
                 if (passengerMobile.isNotBlank() && !passengerMobile.matches(Regex("^[6-9]\\d{9}$"))) {
                     validationError = "Mobile must be exactly 10 digits starting with 6-9."
                     return@Button
@@ -301,8 +302,6 @@ fun VMAXDashboard() {
                     classType = classType,
                     quota = quota
                 )
-
-                // ✅ Station Mapping: Code = Code, Name = Code (as per contract)
                 val fromStation = Station(fromStationCode, fromStationCode)
                 val toStation = Station(toStationCode, toStationCode)
 
@@ -316,7 +315,6 @@ fun VMAXDashboard() {
                 if (isWorkflowActive) {
                     workflowController.stop()
                 } else {
-                    // ✅ BookingRequest & PassengerProfile Construction
                     workflowController.start(
                         bookingRequest = BookingRequest(
                             train = train,
@@ -327,7 +325,7 @@ fun VMAXDashboard() {
                             quota = quota
                         ),
                         passengerProfile = PassengerProfile(
-                            profileId = "PROFILE_001", // Hard-coded ID as per current evidence
+                            profileId = "PROFILE_001",
                             passengers = listOf(passenger),
                             createdTime = LocalDateTime.now(),
                             updatedTime = LocalDateTime.now()
@@ -350,7 +348,7 @@ fun VMAXDashboard() {
         }
     }
 
-    // Passenger Input Pop-up Dialog (Fully Functional, Contract-Aligned)
+    // Passenger Input Pop-up Dialog
     if (showPassengerDialog) {
         AlertDialog(
             onDismissRequest = { showPassengerDialog = false },
