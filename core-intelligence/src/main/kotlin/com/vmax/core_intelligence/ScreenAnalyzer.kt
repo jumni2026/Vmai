@@ -41,7 +41,7 @@ class ScreenAnalyzer(
     fun analyzeCurrentScreen(): AnalysisResult {
         val evidence = evidenceCollector.getCurrentEvidence()
         if (evidence == null) {
-            Logger.warn("$TAG: No evidence available for analysis")
+            Logger.warn(TAG, "No evidence available for analysis")
             return createUnknownResult(null)
         }
         val ocrEvidence = evidence.ocrEvidence
@@ -58,7 +58,7 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val keyValuePairs = ocrEvidence.keyValuePairs
         val fullText = ocrEvidence.fullText.uppercase()
-        Logger.debug("$TAG: Analyzing with OCR - keys: ${keyValuePairs.keys}")
+        Logger.debug(TAG, "Analyzing with OCR - keys: ${keyValuePairs.keys}")
         return when {
             isReviewJourneyScreen(keyValuePairs, fullText) -> AnalysisResult(
                 screenState = ScreenState.REVIEW_JOURNEY,
@@ -98,7 +98,10 @@ class ScreenAnalyzer(
         }
     }
     
-    private fun isReviewJourneyScreen(keyValuePairs: Map<String, String>, fullText: String): Boolean {
+    private fun isReviewJourneyScreen(
+        keyValuePairs: Map<String, String>,
+        fullText: String
+    ): Boolean {
         return keyValuePairs["screen_type"] == "review" ||
                 (keyValuePairs.containsKey("train_number") &&
                  keyValuePairs.containsKey("from_station") &&
@@ -125,20 +128,26 @@ class ScreenAnalyzer(
         return ocrIndicator || uiIndicator
     }
     
-    private fun isAvailabilityScreen(keyValuePairs: Map<String, String>, fullText: String): Boolean {
+    private fun isAvailabilityScreen(
+        keyValuePairs: Map<String, String>,
+        fullText: String
+    ): Boolean {
         return keyValuePairs.containsKey("availability_type") ||
                 (keyValuePairs.containsKey("travel_class") &&
                  (fullText.contains("AVAILABLE") || fullText.contains("RAC") || fullText.contains("WL")))
     }
     
-    private fun isTrainListScreen(keyValuePairs: Map<String, String>, fullText: String): Boolean {
+    private fun isTrainListScreen(
+        keyValuePairs: Map<String, String>,
+        fullText: String
+    ): Boolean {
         return keyValuePairs.containsKey("train_number") &&
                 keyValuePairs.containsKey("train_name") &&
                 !keyValuePairs.containsKey("availability_type")
     }
     
     private fun analyzeWithoutOcr(evidence: UIEvidenceCollector.ScreenEvidence): AnalysisResult {
-        Logger.debug("$TAG: Analyzing without OCR - UI elements only")
+        Logger.debug(TAG, "Analyzing without OCR - UI elements only")
         val uiElements = evidence.uiElements
         val hasInputFields = uiElements.any { it.isEditable }
         val hasButtons = uiElements.any { it.isClickable && it.text.contains("Book", ignoreCase = true) }
