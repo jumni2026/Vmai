@@ -21,45 +21,59 @@ import kotlin.coroutines.resumeWithException
  */
 class OcrEvidenceReader {
     
-    /**
-     * ML Kit Latin Text Recognizer
-     * on-device model - no network required, fast processing
-     */
     private val textRecognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
     
+    private var isClosed = false
+    
     /**
      * Screenshot से text extract करें
-     * 
-     * @param screenshot Bitmap from AccessibilityService
-     * @param screenId Unique identifier for this screen capture
-     * @return OcrResult containing all recognized text blocks
      */
     suspend fun readFromScreenshot(
         screenshot: Bitmap,
         screenId: String = System.currentTimeMillis().toString()
     ): OcrResult = suspendCancellableCoroutine { continuation ->
         
+        if (isClosed) {
+            continuation.resumeWithException(IllegalStateException("OcrEvidenceReader is closed"))
+            return@suspendCancellableCoroutine
+        }
+        
+        if (screenshot.isRecycled) {
+            continuation.resumeWithException(IllegalArgumentException("Bitmap is recycled"))
+            return@suspendCancellableCoroutine
+        }
+        
         val inputImage = InputImage.fromBitmap(screenshot, 0)
+        
+        var cancelled = false
+        continuation.invokeOnCancellation {
+            cancelled = true
+            // ML Kit tasks cannot be cancelled directly, but we ignore the result.
+        }
         
         textRecognizer.process(inputImage)
             .addOnSuccessListener { visionText ->
-                // VisionText को OcrResult में convert करें
+                if (cancelled) {
+                    // If cancelled, do not resume
+                    return@addOnSuccessListener
+                }
                 val result = convertToOcrResult(visionText, screenId)
-                continuation.resume(result)
+                if (continuation.isActive) {
+                    continuation.resume(result)
+                }
             }
             .addOnFailureListener { exception ->
-                continuation.resumeWithException(
-                    OcrReadException("ML Kit text recognition failed: ${exception.message}", exception)
-                )
+                if (cancelled) {
+                    return@addOnFailureListener
+                }
+                if (continuation.isActive) {
+                    continuation.resumeWithException(
+                        OcrReadException("ML Kit text recognition failed: ${exception.message}", exception)
+                    )
+                }
             }
-        
-        // Cancellation handling
-        continuation.invokeOnCancellation {
-            // ML Kit task को cancel करने का कोई direct way नहीं
-            // लेकिन result ignore हो जाएगा
-        }
     }
     
     /**
@@ -72,16 +86,24 @@ class OcrEvidenceReader {
         
         val textBlocks = mutableListOf<OcrResult.TextBlock>()
         
-        // Har text block ko process karein
         visionText.textBlocks.forEach { block ->
             val blockText = block.text ?: return@forEach
             
-            // Block ki position/rect
-            val boundingBox = block.boundingBox
+            // Convert android.graphics.Rect? to OcrResult.BoundingBox?
+            val boundingBox = block.boundingBox?.let { rect ->
+                OcrResult.BoundingBox(
+                    left = rect.left,
+                    top = rect.top,
+                    right = rect.right,
+                    bottom = rect.bottom
+                )
+            }
             
             val textBlock = OcrResult.TextBlock(
                 text = blockText,
-                confidence = estimateConfidence(blockText),
+                // ML Kit does not provide confidence scores, so we set a neutral value.
+                // This is a raw evidence layer, not a confidence analysis layer.
+                confidence = 1.0f,
                 boundingBox = boundingBox,
                 lines = block.lines.map { it.text ?: "" }
             )
@@ -89,7 +111,6 @@ class OcrEvidenceReader {
             textBlocks.add(textBlock)
         }
         
-        // Complete raw text
         val fullText = visionText.text ?: ""
         
         return OcrResult(
@@ -97,51 +118,17 @@ class OcrEvidenceReader {
             timestamp = System.currentTimeMillis(),
             fullText = fullText,
             textBlocks = textBlocks,
-            language = detectLanguage(fullText)
+            language = "en" // Latin recognizer always returns English/Latin script
         )
-    }
-    
-    /**
-     * Simple confidence estimation based on text characteristics
-     * ML Kit confidence scores directly provide नहीं करता
-     */
-    private fun estimateConfidence(text: String): Float {
-        if (text.isBlank()) return 0f
-        
-        // Heuristic: Special characters ratio, length, etc.
-        val alphanumericCount = text.count { it.isLetterOrDigit() || it.isWhitespace() }
-        val totalLength = text.length
-        
-        return if (totalLength > 0) {
-            (alphanumericCount.toFloat() / totalLength) * 0.9f + 0.1f
-        } else {
-            0.5f
-        }
-    }
-    
-    /**
-     * Basic language detection
-     * ML Kit Latin recognizer = English + European languages
-     */
-    private fun detectLanguage(text: String): String {
-        // Simple check - Latin script detector
-        return when {
-            text.isBlank() -> "unknown"
-            text.any { it in '\u0900'..'\u097F' } -> "hi" // Hindi
-            text.any { it in '\u0600'..'\u06FF' } -> "ar" // Arabic
-            else -> "en" // Default English/Latin
-        }
     }
     
     /**
      * Resource cleanup when service destroyed
      */
     fun close() {
+        isClosed = true
         textRecognizer.close()
     }
     
-    /**
-     * Custom exception for OCR failures
-     */
     class OcrReadException(message: String, cause: Throwable? = null) : Exception(message, cause)
 }
