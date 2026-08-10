@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions   // ✅ Corrected import
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowController
-import com.vmax.workflow.WorkflowController.WorkflowState   // ✅ Added import
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,7 +111,7 @@ fun VMAXDashboard() {
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 
-                // Quota Dropdown (Quota.kt now resolved)
+                // Quota Dropdown
                 Text("Quota", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 var quotaExpanded by remember { mutableStateOf(false) }
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -205,9 +204,9 @@ fun VMAXDashboard() {
         Spacer(modifier = Modifier.weight(1f))
 
         val statusText = when (workflowState) {
-            is WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
-            is WorkflowState.RUNNING -> "RUNNING (Target: ${trainNumber.takeIf { it.isNotBlank() } ?: "N/A"})"
-            is WorkflowState.ERROR -> "ERROR: ${workflowState.reason}"
+            is WorkflowController.WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
+            is WorkflowController.WorkflowState.RUNNING -> "RUNNING (Target: ${trainNumber.takeIf { it.isNotBlank() } ?: "N/A"})"
+            is WorkflowController.WorkflowState.ERROR -> "ERROR: ${workflowState.reason}"
             else -> "IDLE"
         }
         
@@ -215,8 +214,8 @@ fun VMAXDashboard() {
             text = "Automation Status: $statusText", 
             fontWeight = FontWeight.Bold,
             color = when (workflowState) {
-                is WorkflowState.RUNNING -> MaterialTheme.colorScheme.primary
-                is WorkflowState.ERROR -> MaterialTheme.colorScheme.error
+                is WorkflowController.WorkflowState.RUNNING -> MaterialTheme.colorScheme.primary
+                is WorkflowController.WorkflowState.ERROR -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onBackground
             }
         )
