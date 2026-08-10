@@ -12,17 +12,6 @@ import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.util.UUID
 
-/**
- * VMAX Enterprise v2.6.1
- *
- * File — MainViewModel
- *
- * Responsibility:
- * - UI state management
- * - Validation of user inputs
- * - Domain Model Construction
- * - WorkflowController interaction
- */
 class MainViewModel : ViewModel() {
 
     private val workflowController = WorkflowController.getInstance()
@@ -64,11 +53,9 @@ class MainViewModel : ViewModel() {
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError: StateFlow<String?> = _validationError.asStateFlow()
 
-    // ---- Workflow state ----
     // ✅ Corrected: Use top-level WorkflowState, not nested
     val workflowState: StateFlow<WorkflowState> = workflowController.state
 
-    // ---- Public update methods ----
     fun updateTrainNumber(value: String) {
         if (value.all { it.isDigit() }) {
             _trainNumber.value = value
@@ -86,7 +73,6 @@ class MainViewModel : ViewModel() {
     fun updatePassengerGender(value: String) { _passengerGender.value = value }
     fun updatePassengerMobile(value: String) { _passengerMobile.value = value }
 
-    // ---- Validation and Workflow Control ----
     fun startWorkflow() {
         _validationError.value = null
 
@@ -174,6 +160,6 @@ class MainViewModel : ViewModel() {
     }
 
     fun isWorkflowActive(): Boolean =
-        workflowState.value is WorkflowState.RUNNING ||   // ✅ Corrected
-        workflowState.value is WorkflowState.CONFIGURED   // ✅ Corrected
+        workflowState.value is WorkflowState.RUNNING ||
+        workflowState.value is WorkflowState.CONFIGURED
 }
