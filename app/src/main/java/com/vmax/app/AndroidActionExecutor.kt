@@ -8,8 +8,6 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.action.ActionError
 import com.vmax.action.ActionExecutor
-import com.vmax.action.ActionRequest
-import com.vmax.action.ActionResult
 import com.vmax.common.Result
 
 /**
@@ -17,24 +15,46 @@ import com.vmax.common.Result
  *
  * File — AndroidActionExecutor.kt
  *
- * Merged Implementation (Contract-Aligned).
- * - Implements ALL ActionTypes, including DOUBLE_TAP.
- * - Uses request.coordinates correctly.
- * - Uses request.durationMs correctly for WAIT.
+ * Android implementation of the platform-independent
+ * com.vmax.action.ActionExecutor contract.
+ *
+ * Responsibilities:
+ * - Execute Android Accessibility actions.
+ * - Use native AccessibilityNodeInfo actions first where appropriate.
+ * - Use coordinate gestures as fallback where appropriate.
+ * - Support TAP, CLICK, DOUBLE_TAP, LONG_CLICK,
+ *   SWIPE, SCROLL, SET_TEXT, CLEAR_TEXT and WAIT.
+ * - Respect ActionRequest.coordinates.
+ * - Respect ActionRequest.durationMs.
+ * - Maintain safe AccessibilityNodeInfo lifecycle.
+ *
+ * Architecture:
+ * ActionExecutor (contract)
+ *          ↓
+ * AndroidActionExecutor (Android implementation)
+ *
+ * No business logic.
  */
 class AndroidActionExecutor(
     private val accessibilityService: AccessibilityService
 ) : ActionExecutor {
 
     companion object {
-        private const val GESTURE_DURATION = 200L
-        private const val LONG_CLICK_DURATION = 500L
-        private const val DOUBLE_TAP_DELAY = 100L
+        private const val TAG = "AndroidActionExecutor"
+
+        private const val TAP_DURATION_MS = 200L
+        private const val LONG_CLICK_DURATION_MS = 500L
+        private const val DOUBLE_TAP_DELAY_MS = 100L
+
+        private const val DEFAULT_WAIT_MS = 1000L
+        private const val DEFAULT_SWIPE_DISTANCE = 100f
     }
 
-    private var lastResult: ActionResult? = null
+    private var lastResult: ActionExecutor.ActionResult? = null
 
-    // Helper data class to destructure 4 coordinates safely
+    /**
+     * Internal representation of a swipe.
+     */
     private data class SwipeCoords(
         val startX: Float,
         val startY: Float,
@@ -42,274 +62,994 @@ class AndroidActionExecutor(
         val endY: Float
     )
 
-    // --- Node Discovery ---
-    private fun findNode(targetId: String?, targetText: String?, targetClass: String?): AccessibilityNodeInfo? {
-        val root = accessibilityService.rootInActiveWindow ?: return null
-        val foundNode = findNodeRecursive(root, targetId, targetText, targetClass)
-        if (foundNode != null && foundNode != root) {
-            root.recycle()
+    // ------------------------------------------------------------------------
+    // Node Discovery
+    // ------------------------------------------------------------------------
+
+    /**
+     * Finds a visible node using the supplied selectors.
+     *
+     * Selector matching is strict:
+     * - Every supplied selector must match.
+     * - At least one selector must be supplied.
+     *
+     * Lifecycle rule:
+     * The returned node is owned by the caller.
+     * All non-returned nodes are recycled inside the traversal.
+     */
+    private fun findNode(
+        targetId: String?,
+        targetText: String?,
+        targetClass: String?
+    ): AccessibilityNodeInfo? {
+
+        if (
+            targetId == null &&
+            targetText == null &&
+            targetClass == null
+        ) {
+            return null
         }
-        return foundNode
+
+        val root = accessibilityService.rootInActiveWindow
+            ?: return null
+
+        return findNodeRecursive(
+            root,
+            targetId,
+            targetText,
+            targetClass
+        )
     }
 
+    /**
+     * Recursive node traversal with explicit ownership.
+     *
+     * Important:
+     * - If this node is the match, it is returned and NOT recycled.
+     * - If a descendant is returned, this node is recycled before returning.
+     * - If nothing matches, this node is recycled before returning null.
+     */
     private fun findNodeRecursive(
         node: AccessibilityNodeInfo,
         targetId: String?,
         targetText: String?,
         targetClass: String?
     ): AccessibilityNodeInfo? {
-        if (targetId != null && node.viewIdResourceName == targetId) {
-            return if (node.isVisibleToUser) node else null
+
+        if (matchesTarget(node, targetId, targetText, targetClass)) {
+            return node
         }
-        if (targetText != null && node.text?.toString() == targetText) {
-            return if (node.isVisibleToUser) node else null
+
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+
+            val found = findNodeRecursive(
+                child,
+                targetId,
+                targetText,
+                targetClass
+            )
+
+            if (found != null) {
+                node.recycle()
+                return found
+            }
         }
-        if (targetClass != null && node.className?.toString() == targetClass) {
-            return if (node.isVisibleToUser) node else null
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = findNodeRecursive(child, targetId, targetText, targetClass)
-            if (found != null) return found
-            child.recycle()
-        }
+
+        node.recycle()
         return null
     }
 
-    // --- Gesture Helpers ---
-    private fun getBoundsCenter(node: AccessibilityNodeInfo): Pair<Float, Float> {
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-        return Pair(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+    /**
+     * All supplied selectors must match.
+     */
+    private fun matchesTarget(
+        node: AccessibilityNodeInfo,
+        targetId: String?,
+        targetText: String?,
+        targetClass: String?
+    ): Boolean {
+
+        if (!node.isVisibleToUser) {
+            return false
+        }
+
+        if (targetId != null &&
+            node.viewIdResourceName != targetId
+        ) {
+            return false
+        }
+
+        if (targetText != null &&
+            node.text?.toString() != targetText
+        ) {
+            return false
+        }
+
+        if (targetClass != null &&
+            node.className?.toString() != targetClass
+        ) {
+            return false
+        }
+
+        return true
     }
 
-    private fun getTargetCoordinates(node: AccessibilityNodeInfo, request: ActionRequest): Pair<Float, Float> {
-        return if (request.coordinates != null) {
+    // ------------------------------------------------------------------------
+    // Coordinate Helpers
+    // ------------------------------------------------------------------------
+
+    private fun getBoundsCenter(
+        node: AccessibilityNodeInfo
+    ): Pair<Float, Float> {
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        return Pair(
+            bounds.centerX().toFloat(),
+            bounds.centerY().toFloat()
+        )
+    }
+
+    /**
+     * Explicit request coordinates have priority.
+     * Otherwise the center of the target node is used.
+     */
+    private fun getTargetCoordinates(
+        node: AccessibilityNodeInfo,
+        request: ActionExecutor.ActionRequest
+    ): Pair<Float, Float> {
+
+        val coordinates = request.coordinates
+
+        return if (coordinates != null) {
             Pair(
-                request.coordinates.first.toFloat(),
-                request.coordinates.second.toFloat()
+                coordinates.first.toFloat(),
+                coordinates.second.toFloat()
             )
         } else {
             getBoundsCenter(node)
         }
     }
 
-    private fun getSwipePath(request: ActionRequest, direction: String): List<Pair<Float, Float>> {
-        if (request.coordinates != null) {
-            val startX = request.coordinates.first.toFloat()
-            val startY = request.coordinates.second.toFloat()
-            val metrics = accessibilityService.resources.displayMetrics
-            val gap = 100f
-            val (endX, endY) = when (direction.uppercase()) {
-                "UP" -> Pair(startX, startY - gap)
-                "DOWN" -> Pair(startX, startY + gap)
-                "LEFT" -> Pair(startX - gap, startY)
-                "RIGHT" -> Pair(startX + gap, startY)
-                else -> Pair(startX, startY + gap)
-            }
-            return listOf(Pair(startX, startY), Pair(endX, endY))
-        } else {
-            return getSwipeCoordinatesFromScreen(direction).toPath()
+    // ------------------------------------------------------------------------
+    // Gesture Helpers
+    // ------------------------------------------------------------------------
+
+    private fun performTap(
+        x: Float,
+        y: Float
+    ): Boolean {
+
+        val path = Path().apply {
+            moveTo(x, y)
         }
+
+        val gesture = GestureDescription.Builder()
+            .addStroke(
+                GestureDescription.StrokeDescription(
+                    path,
+                    0L,
+                    TAP_DURATION_MS
+                )
+            )
+            .build()
+
+        return accessibilityService.dispatchGesture(
+            gesture,
+            null,
+            null
+        )
     }
-    
-    private fun getSwipeCoordinatesFromScreen(direction: String): SwipeCoords {
+
+    private fun performLongTap(
+        x: Float,
+        y: Float
+    ): Boolean {
+
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+
+        val gesture = GestureDescription.Builder()
+            .addStroke(
+                GestureDescription.StrokeDescription(
+                    path,
+                    0L,
+                    LONG_CLICK_DURATION_MS
+                )
+            )
+            .build()
+
+        return accessibilityService.dispatchGesture(
+            gesture,
+            null,
+            null
+        )
+    }
+
+    private fun performSwipe(
+        pathPoints: List<Pair<Float, Float>>,
+        durationMs: Long = TAP_DURATION_MS
+    ): Boolean {
+
+        if (pathPoints.size < 2) {
+            return false
+        }
+
+        val gesturePath = Path().apply {
+            moveTo(
+                pathPoints[0].first,
+                pathPoints[0].second
+            )
+
+            for (index in 1 until pathPoints.size) {
+                lineTo(
+                    pathPoints[index].first,
+                    pathPoints[index].second
+                )
+            }
+        }
+
+        val safeDuration = durationMs.coerceAtLeast(1L)
+
+        val gesture = GestureDescription.Builder()
+            .addStroke(
+                GestureDescription.StrokeDescription(
+                    gesturePath,
+                    0L,
+                    safeDuration
+                )
+            )
+            .build()
+
+        return accessibilityService.dispatchGesture(
+            gesture,
+            null,
+            null
+        )
+    }
+
+    // ------------------------------------------------------------------------
+    // Swipe Coordinates
+    // ------------------------------------------------------------------------
+
+    private fun getSwipeCoordinatesFromScreen(
+        direction: String
+    ): SwipeCoords {
+
         val metrics = accessibilityService.resources.displayMetrics
+
         val width = metrics.widthPixels.toFloat()
         val height = metrics.heightPixels.toFloat()
+
         val centerX = width / 2f
         val centerY = height / 2f
-        val gap = 100f
+
+        val gap = DEFAULT_SWIPE_DISTANCE
 
         return when (direction.uppercase()) {
-            "UP" -> SwipeCoords(centerX, centerY + gap, centerX, centerY - gap)
-            "DOWN" -> SwipeCoords(centerX, centerY - gap, centerX, centerY + gap)
-            "LEFT" -> SwipeCoords(centerX + gap, centerY, centerX - gap, centerY)
-            "RIGHT" -> SwipeCoords(centerX - gap, centerY, centerX + gap, centerY)
-            else -> SwipeCoords(centerX, centerY - gap, centerX, centerY + gap)
-        }
-    }
-    
-    private fun SwipeCoords.toPath(): List<Pair<Float, Float>> {
-        return listOf(Pair(this.startX, this.startY), Pair(this.endX, this.endY))
-    }
 
-    private fun performTap(x: Float, y: Float): Boolean {
-        val path = Path().apply { moveTo(x, y) }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, GESTURE_DURATION))
-            .build()
-        return accessibilityService.dispatchGesture(gesture, null, null)
-    }
-
-    private fun performLongTap(x: Float, y: Float): Boolean {
-        val path = Path().apply { moveTo(x, y) }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, LONG_CLICK_DURATION))
-            .build()
-        return accessibilityService.dispatchGesture(gesture, null, null)
-    }
-
-    private fun performSwipe(path: List<Pair<Float, Float>>): Boolean {
-        if (path.size < 2) return false
-        val gesturePath = Path().apply {
-            moveTo(path[0].first, path[0].second)
-            for (i in 1 until path.size) {
-                lineTo(path[i].first, path[i].second)
-            }
-        }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(gesturePath, 0, GESTURE_DURATION))
-            .build()
-        return accessibilityService.dispatchGesture(gesture, null, null)
-    }
-
-    // --- Action Execution ---
-    override fun executeAction(request: ActionRequest): Result<ActionResult, ActionError> {
-        val actionType = request.type
-        var node: AccessibilityNodeInfo? = null
-        
-        try {
-            node = findNode(request.targetId, request.targetText, request.targetClass)
-
-            // ✅ FIX #1: SWIPE, WAIT, and other screen-based actions don't need a node.
-            val requiresNode = actionType !in listOf(
-                ActionExecutor.ActionType.SWIPE,
-                ActionExecutor.ActionType.WAIT
+            "UP" -> SwipeCoords(
+                centerX,
+                centerY + gap,
+                centerX,
+                centerY - gap
             )
-            if (node == null && requiresNode) {
-                return Result.Error(
-                    ActionError("NODE_NOT_FOUND", "Target UI node not found on screen", actionType, request.targetId)
+
+            "DOWN" -> SwipeCoords(
+                centerX,
+                centerY - gap,
+                centerX,
+                centerY + gap
+            )
+
+            "LEFT" -> SwipeCoords(
+                centerX + gap,
+                centerY,
+                centerX - gap,
+                centerY
+            )
+
+            "RIGHT" -> SwipeCoords(
+                centerX - gap,
+                centerY,
+                centerX + gap,
+                centerY
+            )
+
+            else -> SwipeCoords(
+                centerX,
+                centerY - gap,
+                centerX,
+                centerY + gap
+            )
+        }
+    }
+
+    /**
+     * ActionRequest.coordinates represents the swipe start point.
+     * The endpoint is derived from direction.
+     */
+    private fun getSwipePath(
+        request: ActionExecutor.ActionRequest,
+        direction: String
+    ): List<Pair<Float, Float>> {
+
+        val coordinates = request.coordinates
+
+        if (coordinates != null) {
+
+            val startX = coordinates.first.toFloat()
+            val startY = coordinates.second.toFloat()
+
+            val gap = DEFAULT_SWIPE_DISTANCE
+
+            val endPoint = when (direction.uppercase()) {
+
+                "UP" -> Pair(
+                    startX,
+                    startY - gap
+                )
+
+                "DOWN" -> Pair(
+                    startX,
+                    startY + gap
+                )
+
+                "LEFT" -> Pair(
+                    startX - gap,
+                    startY
+                )
+
+                "RIGHT" -> Pair(
+                    startX + gap,
+                    startY
+                )
+
+                else -> Pair(
+                    startX,
+                    startY + gap
+                )
+            }
+
+            return listOf(
+                Pair(startX, startY),
+                endPoint
+            )
+        }
+
+        val screenCoordinates =
+            getSwipeCoordinatesFromScreen(direction)
+
+        return listOf(
+            Pair(
+                screenCoordinates.startX,
+                screenCoordinates.startY
+            ),
+            Pair(
+                screenCoordinates.endX,
+                screenCoordinates.endY
+            )
+        )
+    }
+
+    // ------------------------------------------------------------------------
+    // Result Handling
+    // ------------------------------------------------------------------------
+
+    private fun success(
+        actionType: ActionExecutor.ActionType,
+        message: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val result = ActionExecutor.ActionResult(
+            success = true,
+            actionType = actionType,
+            message = message
+        )
+
+        lastResult = result
+
+        return Result.Success(result)
+    }
+
+    private fun error(
+        code: String,
+        message: String,
+        actionType: ActionExecutor.ActionType,
+        targetId: String?
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val result = ActionError(
+            code = code,
+            message = message,
+            actionType = actionType,
+            targetId = targetId
+        )
+
+        return Result.Error(result)
+    }
+
+    // ------------------------------------------------------------------------
+    // Main Action Execution
+    // ------------------------------------------------------------------------
+
+    override fun executeAction(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val actionType = request.type
+
+        var node: AccessibilityNodeInfo? = null
+
+        try {
+
+            node = findNode(
+                targetId = request.targetId,
+                targetText = request.targetText,
+                targetClass = request.targetClass
+            )
+
+            val requiresNode = when (actionType) {
+
+                ActionExecutor.ActionType.SWIPE,
+                ActionExecutor.ActionType.WAIT -> false
+
+                else -> true
+            }
+
+            if (requiresNode && node == null) {
+
+                return error(
+                    code = "NODE_NOT_FOUND",
+                    message = "Target UI node not found on screen",
+                    actionType = actionType,
+                    targetId = request.targetId
                 )
             }
 
             return when (actionType) {
+
+                // ------------------------------------------------------------
+                // TAP / CLICK
+                // ------------------------------------------------------------
+
                 ActionExecutor.ActionType.TAP,
                 ActionExecutor.ActionType.CLICK -> {
-                    val (x, y) = getTargetCoordinates(node!!, request)
-                    if (node.isClickable) {
-                        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                            return Result.Success(ActionResult(true, actionType, "Click performed on node"))
+
+                    val targetNode = node!!
+
+                    val coordinates =
+                        getTargetCoordinates(
+                            targetNode,
+                            request
+                        )
+
+                    /*
+                     * Explicit coordinates have priority.
+                     * This guarantees that a coordinate request is not
+                     * silently replaced by ACTION_CLICK.
+                     */
+                    if (request.coordinates != null) {
+
+                        if (
+                            performTap(
+                                coordinates.first,
+                                coordinates.second
+                            )
+                        ) {
+                            success(
+                                actionType,
+                                "Coordinate tap performed"
+                            )
+                        } else {
+                            error(
+                                "ACTION_FAILED",
+                                "Coordinate tap could not be dispatched",
+                                actionType,
+                                request.targetId
+                            )
                         }
+
+                    } else if (
+                        targetNode.isClickable &&
+                        targetNode.performAction(
+                            AccessibilityNodeInfo.ACTION_CLICK
+                        )
+                    ) {
+
+                        success(
+                            actionType,
+                            "Native accessibility click performed"
+                        )
+
+                    } else if (
+                        performTap(
+                            coordinates.first,
+                            coordinates.second
+                        )
+                    ) {
+
+                        success(
+                            actionType,
+                            "Coordinate tap performed as fallback"
+                        )
+
+                    } else {
+
+                        error(
+                            "ACTION_FAILED",
+                            "Could not perform TAP/CLICK",
+                            actionType,
+                            request.targetId
+                        )
                     }
-                    // Fallback: Coordinate Tap
-                    if (performTap(x, y)) {
-                        return Result.Success(ActionResult(true, actionType, "Coordinate tap performed (fallback)"))
-                    }
-                    Result.Error(ActionError("ACTION_FAILED", "Could not perform TAP/CLICK", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // DOUBLE TAP
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.DOUBLE_TAP -> {
-                    val (x, y) = getTargetCoordinates(node!!, request)
-                    if (performTap(x, y)) {
-                        Thread.sleep(DOUBLE_TAP_DELAY)
-                        if (performTap(x, y)) {
-                            return Result.Success(ActionResult(true, actionType, "Double tap performed"))
+
+                    val targetNode = node!!
+
+                    val coordinates =
+                        getTargetCoordinates(
+                            targetNode,
+                            request
+                        )
+
+                    val firstTap = performTap(
+                        coordinates.first,
+                        coordinates.second
+                    )
+
+                    if (!firstTap) {
+
+                        error(
+                            "ACTION_FAILED",
+                            "First tap of DOUBLE_TAP could not be dispatched",
+                            actionType,
+                            request.targetId
+                        )
+
+                    } else {
+
+                        Thread.sleep(DOUBLE_TAP_DELAY_MS)
+
+                        val secondTap = performTap(
+                            coordinates.first,
+                            coordinates.second
+                        )
+
+                        if (secondTap) {
+
+                            success(
+                                actionType,
+                                "Double tap dispatched"
+                            )
+
+                        } else {
+
+                            error(
+                                "ACTION_FAILED",
+                                "Second tap of DOUBLE_TAP could not be dispatched",
+                                actionType,
+                                request.targetId
+                            )
                         }
                     }
-                    Result.Error(ActionError("ACTION_FAILED", "Could not perform DOUBLE_TAP", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // LONG CLICK
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.LONG_CLICK -> {
-                    val (x, y) = getTargetCoordinates(node!!, request)
-                    if (node.isLongClickable) {
-                        if (node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)) {
-                            return Result.Success(ActionResult(true, actionType, "Long click performed on node"))
-                        }
+
+                    val targetNode = node!!
+
+                    val coordinates =
+                        getTargetCoordinates(
+                            targetNode,
+                            request
+                        )
+
+                    if (
+                        request.coordinates == null &&
+                        targetNode.isLongClickable &&
+                        targetNode.performAction(
+                            AccessibilityNodeInfo.ACTION_LONG_CLICK
+                        )
+                    ) {
+
+                        success(
+                            actionType,
+                            "Native accessibility long-click performed"
+                        )
+
+                    } else if (
+                        performLongTap(
+                            coordinates.first,
+                            coordinates.second
+                        )
+                    ) {
+
+                        success(
+                            actionType,
+                            "Coordinate long tap performed"
+                        )
+
+                    } else {
+
+                        error(
+                            "ACTION_FAILED",
+                            "Could not perform LONG_CLICK",
+                            actionType,
+                            request.targetId
+                        )
                     }
-                    if (performLongTap(x, y)) {
-                        return Result.Success(ActionResult(true, actionType, "Coordinate long tap performed (fallback)"))
-                    }
-                    Result.Error(ActionError("ACTION_FAILED", "Could not perform LONG_CLICK", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // SET TEXT
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.SET_TEXT -> {
-                    val text = request.text ?: return Result.Error(
-                        ActionError("INVALID_REQUEST", "Text is null for SET_TEXT", actionType, request.targetId)
-                    )
-                    if (node?.isEditable == true) {
-                        val args = Bundle().apply {
-                            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+
+                    val text = request.text
+
+                    if (text == null) {
+
+                        error(
+                            "INVALID_REQUEST",
+                            "Text is null for SET_TEXT",
+                            actionType,
+                            request.targetId
+                        )
+
+                    } else if (node?.isEditable != true) {
+
+                        error(
+                            "TARGET_NOT_EDITABLE",
+                            "Target node is not editable",
+                            actionType,
+                            request.targetId
+                        )
+
+                    } else {
+
+                        val arguments = Bundle().apply {
+                            putCharSequence(
+                                AccessibilityNodeInfo
+                                    .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                                text
+                            )
                         }
-                        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                            return Result.Success(ActionResult(true, actionType, "Text set successfully"))
+
+                        if (
+                            node.performAction(
+                                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                                arguments
+                            )
+                        ) {
+
+                            success(
+                                actionType,
+                                "Text set successfully"
+                            )
+
+                        } else {
+
+                            error(
+                                "ACTION_FAILED",
+                                "Failed to set text",
+                                actionType,
+                                request.targetId
+                            )
                         }
                     }
-                    Result.Error(ActionError("ACTION_FAILED", "Failed to set text", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // CLEAR TEXT
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.CLEAR_TEXT -> {
-                    if (node?.isEditable == true) {
-                        val args = Bundle().apply {
-                            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+
+                    if (node?.isEditable != true) {
+
+                        error(
+                            "TARGET_NOT_EDITABLE",
+                            "Target node is not editable",
+                            actionType,
+                            request.targetId
+                        )
+
+                    } else {
+
+                        val arguments = Bundle().apply {
+                            putCharSequence(
+                                AccessibilityNodeInfo
+                                    .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                                ""
+                            )
                         }
-                        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                            return Result.Success(ActionResult(true, actionType, "Text cleared"))
+
+                        if (
+                            node.performAction(
+                                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                                arguments
+                            )
+                        ) {
+
+                            success(
+                                actionType,
+                                "Text cleared successfully"
+                            )
+
+                        } else {
+
+                            error(
+                                "ACTION_FAILED",
+                                "Failed to clear text",
+                                actionType,
+                                request.targetId
+                            )
                         }
                     }
-                    Result.Error(ActionError("ACTION_FAILED", "Failed to clear text", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // SCROLL
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.SCROLL -> {
-                    val direction = request.targetText?.uppercase()
-                    val actionId = when (direction) {
-                        "UP" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-                        "DOWN" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-                        "LEFT" -> AccessibilityNodeInfo.ACTION_SCROLL_LEFT
-                        "RIGHT" -> AccessibilityNodeInfo.ACTION_SCROLL_RIGHT
-                        else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+
+                    val direction =
+                        request.targetText
+                            ?.trim()
+                            ?.uppercase()
+                            ?: "DOWN"
+
+                    val scrollAction =
+                        when (direction) {
+
+                            "UP" ->
+                                AccessibilityNodeInfo
+                                    .ACTION_SCROLL_BACKWARD
+
+                            "DOWN" ->
+                                AccessibilityNodeInfo
+                                    .ACTION_SCROLL_FORWARD
+
+                            "LEFT" ->
+                                AccessibilityNodeInfo
+                                    .ACTION_SCROLL_LEFT
+
+                            "RIGHT" ->
+                                AccessibilityNodeInfo
+                                    .ACTION_SCROLL_RIGHT
+
+                            else ->
+                                AccessibilityNodeInfo
+                                    .ACTION_SCROLL_FORWARD
+                        }
+
+                    if (
+                        node?.performAction(scrollAction) == true
+                    ) {
+
+                        success(
+                            actionType,
+                            "Scroll performed ($direction)"
+                        )
+
+                    } else {
+
+                        error(
+                            "ACTION_FAILED",
+                            "Could not perform scroll",
+                            actionType,
+                            request.targetId
+                        )
                     }
-                    if (node?.performAction(actionId) == true) {
-                        return Result.Success(ActionResult(true, actionType, "Scroll performed ($direction)"))
-                    }
-                    Result.Error(ActionError("ACTION_FAILED", "Could not perform scroll", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // SWIPE
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.SWIPE -> {
-                    val direction = request.targetText?.uppercase() ?: "DOWN"
-                    val path = getSwipePath(request, direction)
-                    if (performSwipe(path)) {
-                        return Result.Success(ActionResult(true, actionType, "Swipe performed ($direction)"))
+
+                    val direction =
+                        request.targetText
+                            ?.trim()
+                            ?.uppercase()
+                            ?: "DOWN"
+
+                    val path =
+                        getSwipePath(
+                            request,
+                            direction
+                        )
+
+                    val duration =
+                        if (request.durationMs > 0L) {
+                            request.durationMs
+                        } else {
+                            TAP_DURATION_MS
+                        }
+
+                    if (
+                        performSwipe(
+                            path,
+                            duration
+                        )
+                    ) {
+
+                        success(
+                            actionType,
+                            "Swipe dispatched ($direction)"
+                        )
+
+                    } else {
+
+                        error(
+                            "ACTION_FAILED",
+                            "Swipe could not be dispatched",
+                            actionType,
+                            request.targetId
+                        )
                     }
-                    Result.Error(ActionError("ACTION_FAILED", "Swipe failed", actionType, request.targetId))
                 }
+
+                // ------------------------------------------------------------
+                // WAIT
+                // ------------------------------------------------------------
 
                 ActionExecutor.ActionType.WAIT -> {
-                    // ✅ FIX #2: WAIT only uses durationMs, no waitAfterMs.
-                    val waitTime = if (request.durationMs > 0) request.durationMs else 1000L
-                    Thread.sleep(waitTime)
-                    Result.Success(ActionResult(true, actionType, "Waited $waitTime ms"))
-                }
 
-                else -> {
-                    Result.Error(ActionError("UNSUPPORTED_ACTION", "Action type not supported yet", actionType, request.targetId))
+                    val duration =
+                        if (request.durationMs > 0L) {
+                            request.durationMs
+                        } else {
+                            DEFAULT_WAIT_MS
+                        }
+
+                    Thread.sleep(duration)
+
+                    success(
+                        actionType,
+                        "Waited ${duration} ms"
+                    )
                 }
             }
+
+        } catch (interrupted: InterruptedException) {
+
+            Thread.currentThread().interrupt()
+
+            return error(
+                "INTERRUPTED",
+                "Action execution was interrupted",
+                actionType,
+                request.targetId
+            )
+
+        } catch (exception: Exception) {
+
+            return error(
+                "EXECUTION_EXCEPTION",
+                exception.message
+                    ?: "Unexpected action execution failure",
+                actionType,
+                request.targetId
+            )
+
         } finally {
+
+            /*
+             * The node returned by findNode() is owned by this method.
+             * Always recycle it after action execution.
+             */
             node?.recycle()
         }
     }
 
-    override fun executeTap(targetId: String): Result<ActionResult, ActionError> =
-        executeAction(ActionRequest(ActionExecutor.ActionType.TAP, targetId = targetId))
+    // ------------------------------------------------------------------------
+    // Contract Convenience Methods
+    // ------------------------------------------------------------------------
 
-    override fun executeClick(targetId: String): Result<ActionResult, ActionError> =
-        executeAction(ActionRequest(ActionExecutor.ActionType.CLICK, targetId = targetId))
+    override fun executeTap(
+        targetId: String
+    ): Result<ActionExecutor.ActionResult, ActionError> =
+        executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.TAP,
+                targetId = targetId
+            )
+        )
 
-    override fun executeSetText(targetId: String, text: String): Result<ActionResult, ActionError> =
-        executeAction(ActionRequest(ActionExecutor.ActionType.SET_TEXT, targetId = targetId, text = text))
+    override fun executeClick(
+        targetId: String
+    ): Result<ActionExecutor.ActionResult, ActionError> =
+        executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.CLICK,
+                targetId = targetId
+            )
+        )
 
-    override fun executeClearText(targetId: String): Result<ActionResult, ActionError> =
-        executeAction(ActionRequest(ActionExecutor.ActionType.CLEAR_TEXT, targetId = targetId))
+    override fun executeSetText(
+        targetId: String,
+        text: String
+    ): Result<ActionExecutor.ActionResult, ActionError> =
+        executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SET_TEXT,
+                targetId = targetId,
+                text = text
+            )
+        )
 
-    override fun executeScroll(direction: String, amount: Int): Result<ActionResult, ActionError> =
-        executeAction(ActionRequest(ActionExecutor.ActionType.SCROLL, targetText = direction))
+    override fun executeClearText(
+        targetId: String
+    ): Result<ActionExecutor.ActionResult, ActionError> =
+        executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.CLEAR_TEXT,
+                targetId = targetId
+            )
+        )
 
-    override fun executeWait(durationMs: Long): Result<ActionResult, ActionError> =
-        executeAction(ActionRequest(ActionExecutor.ActionType.WAIT, durationMs = durationMs))
+    override fun executeScroll(
+        direction: String,
+        amount: Int
+    ): Result<ActionExecutor.ActionResult, ActionError> =
+        executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SCROLL,
+                targetText = direction
+            )
+        )
 
-    override fun isActionAvailable(actionType: ActionExecutor.ActionType): Boolean =
-        accessibilityService.rootInActiveWindow != null
+    override fun executeWait(
+        durationMs: Long
+    ): Result<ActionExecutor.ActionResult, ActionError> =
+        executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.WAIT,
+                durationMs = durationMs
+            )
+        )
 
-    override fun getLastActionResult(): ActionResult? = lastResult
+    // ------------------------------------------------------------------------
+    // Availability / State
+    // ------------------------------------------------------------------------
+
+    override fun isActionAvailable(
+        actionType: ActionExecutor.ActionType
+    ): Boolean {
+
+        return when (actionType) {
+
+            ActionExecutor.ActionType.WAIT ->
+                true
+
+            ActionExecutor.ActionType.SWIPE ->
+                true
+
+            else ->
+                accessibilityService.rootInActiveWindow != null
+        }
+    }
+
+    override fun getLastActionResult():
+        ActionExecutor.ActionResult? =
+        lastResult
 }
