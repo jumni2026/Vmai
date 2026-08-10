@@ -49,14 +49,6 @@ fun VMAXDashboard() {
     val passengerGender by viewModel.passengerGender.collectAsState()
     val passengerMobile by viewModel.passengerMobile.collectAsState()
 
-    val berthPreference by viewModel.berthPreference.collectAsState()
-    val mealPreference by viewModel.mealPreference.collectAsState()
-    val concession by viewModel.concession.collectAsState()
-    val bedRoll by viewModel.bedRoll.collectAsState()
-    val children by viewModel.children.collectAsState()
-    val bookingOption by viewModel.bookingOption.collectAsState()
-    val paymentMethod by viewModel.paymentMethod.collectAsState()
-
     val validationError by viewModel.validationError.collectAsState()
     val workflowState by viewModel.workflowState.collectAsState()
 
@@ -275,7 +267,6 @@ fun VMAXDashboard() {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Gender", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    // Gender Dropdown
                     var genderExpanded by remember { mutableStateOf(false) }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Button(
