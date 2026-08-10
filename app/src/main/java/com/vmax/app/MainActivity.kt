@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)   // ✅ Added fix
 @Composable
 fun VMAXDashboard() {
 
