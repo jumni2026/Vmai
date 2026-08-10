@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowController
+import com.vmax.workflow.WorkflowController.WorkflowState   // ✅ Added import
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,15 +90,12 @@ class MainViewModel : ViewModel() {
 
     // ---- Public update methods ----
     fun updateTrainNumber(value: String) {
-        // Strict Input Level Filter: Only digits allowed
         if (value.all { it.isDigit() }) {
             _trainNumber.value = value
-            // 🟡 HOLD: Auto-fetch Train Name logic will be added here once TrainDataProvider contract is available.
-            // No fake "Auto-Fetched Train" data will be injected.
         }
     }
 
-    fun updateTrainName(value: String) { /* Read-only, no-op from UI */ }
+    fun updateTrainName(value: String) { /* Read-only, no-op */ }
     fun updateClassType(value: String) { _classType.value = value }
     fun updateQuota(value: Quota?) { _quota.value = value }
     fun updateFromStation(value: String) { _fromStation.value = value }
@@ -131,7 +129,6 @@ class MainViewModel : ViewModel() {
     fun startWorkflow() {
         _validationError.value = null
 
-        // Strict UI Validation
         if (trainNumber.value.isBlank()) {
             _validationError.value = "Train Number is required."
             return
@@ -174,10 +171,9 @@ class MainViewModel : ViewModel() {
             return
         }
 
-        // ✅ Domain Model Construction (Strictly from UI State)
         val train = Train(
             number = trainNumber.value,
-            name = trainName.value, // HOLD: Will be populated by TrainDataProvider later
+            name = trainName.value,
             classType = classType.value,
             quota = quota.value?.name ?: "GENERAL"
         )
@@ -191,7 +187,6 @@ class MainViewModel : ViewModel() {
             mobile = passengerMobile.value.takeIf { it.isNotBlank() }
         )
 
-        // ✅ UUID generation instead of hard-coded "PROFILE_001"
         val profileId = UUID.randomUUID().toString()
 
         val bookingRequest = BookingRequest(
@@ -214,7 +209,6 @@ class MainViewModel : ViewModel() {
             bedRoll = bedRoll.value
         )
 
-        // ✅ WorkflowController Invocation as per exact contract
         workflowController.start(bookingRequest, passengerProfile)
     }
 
