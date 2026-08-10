@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowController
-import com.vmax.workflow.WorkflowController.WorkflowState   // ✅ Added import
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,32 +60,11 @@ class MainViewModel : ViewModel() {
     private val _passengerMobile = MutableStateFlow("")
     val passengerMobile: StateFlow<String> = _passengerMobile.asStateFlow()
 
-    private val _berthPreference = MutableStateFlow(BerthPreference.NO_PREFERENCE)
-    val berthPreference: StateFlow<BerthPreference> = _berthPreference.asStateFlow()
-
-    private val _mealPreference = MutableStateFlow(MealPreference.NO_MEAL)
-    val mealPreference: StateFlow<MealPreference> = _mealPreference.asStateFlow()
-
-    private val _concession = MutableStateFlow(Concession.NONE)
-    val concession: StateFlow<Concession> = _concession.asStateFlow()
-
-    private val _bedRoll = MutableStateFlow(false)
-    val bedRoll: StateFlow<Boolean> = _bedRoll.asStateFlow()
-
-    private val _children = MutableStateFlow<List<ChildData>>(emptyList())
-    val children: StateFlow<List<ChildData>> = _children.asStateFlow()
-
-    private val _bookingOption = MutableStateFlow(BookingOption())
-    val bookingOption: StateFlow<BookingOption> = _bookingOption.asStateFlow()
-
-    private val _paymentMethod = MutableStateFlow(PaymentMethod())
-    val paymentMethod: StateFlow<PaymentMethod> = _paymentMethod.asStateFlow()
-
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError: StateFlow<String?> = _validationError.asStateFlow()
 
     // ---- Workflow state ----
-    val workflowState: StateFlow<WorkflowState> = workflowController.state
+    val workflowState: StateFlow<WorkflowController.WorkflowState> = workflowController.state
 
     // ---- Public update methods ----
     fun updateTrainNumber(value: String) {
@@ -105,25 +83,6 @@ class MainViewModel : ViewModel() {
     fun updatePassengerAge(value: String) { _passengerAge.value = value }
     fun updatePassengerGender(value: String) { _passengerGender.value = value }
     fun updatePassengerMobile(value: String) { _passengerMobile.value = value }
-    fun updateBerthPreference(value: BerthPreference) { _berthPreference.value = value }
-    fun updateMealPreference(value: MealPreference) { _mealPreference.value = value }
-    fun updateConcession(value: Concession) { _concession.value = value }
-    fun updateBedRoll(value: Boolean) { _bedRoll.value = value }
-
-    fun addChild(child: ChildData) {
-        _children.value = _children.value + child
-    }
-
-    fun removeChild(index: Int) {
-        val newList = _children.value.toMutableList()
-        if (index in newList.indices) {
-            newList.removeAt(index)
-            _children.value = newList
-        }
-    }
-
-    fun updateBookingOption(option: BookingOption) { _bookingOption.value = option }
-    fun updatePaymentMethod(method: PaymentMethod) { _paymentMethod.value = method }
 
     // ---- Validation and Workflow Control ----
     fun startWorkflow() {
@@ -202,11 +161,7 @@ class MainViewModel : ViewModel() {
             profileId = profileId,
             passengers = listOf(passenger),
             createdTime = LocalDateTime.now(),
-            updatedTime = LocalDateTime.now(),
-            berthPreference = berthPreference.value,
-            mealPreference = mealPreference.value,
-            concession = concession.value,
-            bedRoll = bedRoll.value
+            updatedTime = LocalDateTime.now()
         )
 
         workflowController.start(bookingRequest, passengerProfile)
@@ -217,5 +172,6 @@ class MainViewModel : ViewModel() {
     }
 
     fun isWorkflowActive(): Boolean =
-        workflowState.value is WorkflowState.RUNNING || workflowState.value is WorkflowState.CONFIGURED
+        workflowState.value is WorkflowController.WorkflowState.RUNNING || 
+        workflowState.value is WorkflowController.WorkflowState.CONFIGURED
 }
