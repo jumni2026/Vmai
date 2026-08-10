@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)   // ✅ Added fix
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VMAXDashboard() {
 
@@ -48,8 +48,11 @@ fun VMAXDashboard() {
     val trainName by viewModel.trainName.collectAsState()
     val classType by viewModel.classType.collectAsState()
     val quota by viewModel.quota.collectAsState()
-    val fromStation by viewModel.fromStation.collectAsState()
-    val toStation by viewModel.toStation.collectAsState()
+    
+    // ✅ UI Level States for Station Input (Strings)
+    var fromStationInput by remember { mutableStateOf("") }
+    var toStationInput by remember { mutableStateOf("") }
+
     val journeyDate by viewModel.journeyDate.collectAsState()
 
     val passengerName by viewModel.passengerName.collectAsState()
@@ -97,6 +100,10 @@ fun VMAXDashboard() {
             ) {
                 Button(
                     onClick = {
+                        // ✅ Update ViewModel with String Inputs
+                        viewModel.updateFromStation(fromStationInput)
+                        viewModel.updateToStation(toStationInput)
+
                         if (viewModel.isWorkflowActive()) {
                             viewModel.stopWorkflow()
                         } else {
@@ -231,7 +238,7 @@ fun VMAXDashboard() {
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // ✅ REPLACED CLASS TYPE WITH DROPDOWN
+                    // ✅ CLASS TYPE DROPDOWN
                     ExposedDropdownMenuBox(
                         expanded = classExpanded,
                         onExpandedChange = { classExpanded = it }
@@ -316,7 +323,7 @@ fun VMAXDashboard() {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     // -------------------------------------------------
-                    // STATIONS
+                    // STATIONS (String-based)
                     // -------------------------------------------------
 
                     Row(
@@ -324,10 +331,8 @@ fun VMAXDashboard() {
                     ) {
 
                         OutlinedTextField(
-                            value = fromStation,
-                            onValueChange = {
-                                viewModel.updateFromStation(it)
-                            },
+                            value = fromStationInput,
+                            onValueChange = { fromStationInput = it },
                             label = {
                                 Text("From Station Code")
                             },
@@ -345,10 +350,8 @@ fun VMAXDashboard() {
                         )
 
                         OutlinedTextField(
-                            value = toStation,
-                            onValueChange = {
-                                viewModel.updateToStation(it)
-                            },
+                            value = toStationInput,
+                            onValueChange = { toStationInput = it },
                             label = {
                                 Text("To Station Code")
                             },
