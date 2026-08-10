@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowController
+import com.vmax.workflow.WorkflowState   // ✅ Added missing top-level import
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -203,10 +204,11 @@ fun VMAXDashboard() {
 
         Spacer(modifier = Modifier.weight(1f))
 
+        // ✅ Corrected: Using top-level WorkflowState
         val statusText = when (workflowState) {
-            is WorkflowController.WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
-            is WorkflowController.WorkflowState.RUNNING -> "RUNNING (Target: ${trainNumber.takeIf { it.isNotBlank() } ?: "N/A"})"
-            is WorkflowController.WorkflowState.ERROR -> "ERROR: ${workflowState.reason}"
+            is WorkflowState.CONFIGURED -> "CONFIGURED (Waiting for Engine)"
+            is WorkflowState.RUNNING -> "RUNNING (Target: ${trainNumber.takeIf { it.isNotBlank() } ?: "N/A"})"
+            is WorkflowState.ERROR -> "ERROR: ${workflowState.reason}"
             else -> "IDLE"
         }
         
@@ -214,8 +216,8 @@ fun VMAXDashboard() {
             text = "Automation Status: $statusText", 
             fontWeight = FontWeight.Bold,
             color = when (workflowState) {
-                is WorkflowController.WorkflowState.RUNNING -> MaterialTheme.colorScheme.primary
-                is WorkflowController.WorkflowState.ERROR -> MaterialTheme.colorScheme.error
+                is WorkflowState.RUNNING -> MaterialTheme.colorScheme.primary
+                is WorkflowState.ERROR -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onBackground
             }
         )
