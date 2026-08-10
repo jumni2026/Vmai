@@ -816,47 +816,120 @@ class AndroidActionExecutor(
                             ?.uppercase()
                             ?: "DOWN"
 
-                    val scrollAction =
-                        when (direction) {
+                    when (direction) {
 
-                            "UP" ->
-                                AccessibilityNodeInfo
-                                    .ACTION_SCROLL_BACKWARD
+                        "UP", "DOWN" -> {
 
-                            "DOWN" ->
-                                AccessibilityNodeInfo
-                                    .ACTION_SCROLL_FORWARD
+                            // Need a node for native scroll actions.
+                            if (node == null) {
+                                return error(
+                                    "NODE_NOT_FOUND",
+                                    "Target node required for vertical scroll",
+                                    actionType,
+                                    request.targetId
+                                )
+                            }
 
-                            "LEFT" ->
-                                AccessibilityNodeInfo
-                                    .ACTION_SCROLL_LEFT
+                            val actionId =
+                                if (direction == "UP") {
+                                    AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                                } else {
+                                    AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                                }
 
-                            "RIGHT" ->
-                                AccessibilityNodeInfo
-                                    .ACTION_SCROLL_RIGHT
+                            if (
+                                node.performAction(actionId) == true
+                            ) {
 
-                            else ->
-                                AccessibilityNodeInfo
-                                    .ACTION_SCROLL_FORWARD
+                                success(
+                                    actionType,
+                                    "Native scroll performed ($direction)"
+                                )
+
+                            } else {
+
+                                error(
+                                    "ACTION_FAILED",
+                                    "Could not perform vertical scroll",
+                                    actionType,
+                                    request.targetId
+                                )
+                            }
                         }
 
-                    if (
-                        node?.performAction(scrollAction) == true
-                    ) {
+                        "LEFT", "RIGHT" -> {
 
-                        success(
-                            actionType,
-                            "Scroll performed ($direction)"
-                        )
+                            // Use SWIPE gesture for horizontal scroll.
+                            // Node is not required; we can swipe from screen center.
+                            val path =
+                                getSwipePath(
+                                    request,
+                                    direction
+                                )
 
-                    } else {
+                            val duration =
+                                if (request.durationMs > 0L) {
+                                    request.durationMs
+                                } else {
+                                    TAP_DURATION_MS
+                                }
 
-                        error(
-                            "ACTION_FAILED",
-                            "Could not perform scroll",
-                            actionType,
-                            request.targetId
-                        )
+                            if (
+                                performSwipe(
+                                    path,
+                                    duration
+                                )
+                            ) {
+
+                                success(
+                                    actionType,
+                                    "Horizontal scroll via swipe ($direction)"
+                                )
+
+                            } else {
+
+                                error(
+                                    "ACTION_FAILED",
+                                    "Could not perform horizontal scroll",
+                                    actionType,
+                                    request.targetId
+                                )
+                            }
+                        }
+
+                        else -> {
+
+                            // Unrecognised direction – fallback to DOWN.
+                            if (node == null) {
+                                return error(
+                                    "NODE_NOT_FOUND",
+                                    "Target node required for default scroll",
+                                    actionType,
+                                    request.targetId
+                                )
+                            }
+
+                            if (
+                                node.performAction(
+                                    AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                                ) == true
+                            ) {
+
+                                success(
+                                    actionType,
+                                    "Default scroll performed"
+                                )
+
+                            } else {
+
+                                error(
+                                    "ACTION_FAILED",
+                                    "Could not perform default scroll",
+                                    actionType,
+                                    request.targetId
+                                )
+                            }
+                        }
                     }
                 }
 
