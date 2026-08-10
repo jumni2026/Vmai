@@ -62,6 +62,10 @@ fun VMAXDashboard() {
     var showPassengerDialog by remember { mutableStateOf(false) }
     var quotaExpanded by remember { mutableStateOf(false) }
 
+    // ✅ CLASS TYPE DROPDOWN STATE
+    val classOptions = listOf("1A", "2A", "3A", "SL", "CC", "EC", "3E", "2S", "FC")
+    var classExpanded by remember { mutableStateOf(false) }
+
     val currentWorkflowState = workflowState
 
     val statusText = when (currentWorkflowState) {
@@ -226,22 +230,39 @@ fun VMAXDashboard() {
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    OutlinedTextField(
-                        value = classType,
-                        onValueChange = {
-                            viewModel.updateClassType(it)
-                        },
-                        label = {
-                            Text("Class Type")
-                        },
-                        placeholder = {
-                            Text("e.g., 3A")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = validationError
-                            ?.contains("Class Type") == true,
-                        singleLine = true
-                    )
+                    // ✅ REPLACED CLASS TYPE WITH DROPDOWN
+                    ExposedDropdownMenuBox(
+                        expanded = classExpanded,
+                        onExpandedChange = { classExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = classType,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Class Type") },
+                            placeholder = { Text("e.g., 3A") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = classExpanded) },
+                            isError = validationError?.contains("Class Type") == true,
+                            singleLine = true
+                        )
+                        ExposedDropdownMenu(
+                            expanded = classExpanded,
+                            onDismissRequest = { classExpanded = false }
+                        ) {
+                            classOptions.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option) },
+                                    onClick = {
+                                        viewModel.updateClassType(option)
+                                        classExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(4.dp))
 
