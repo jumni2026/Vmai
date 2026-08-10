@@ -1,12 +1,11 @@
 package com.vmax.app
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
 import android.util.Log
 import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -19,208 +18,669 @@ import android.widget.TextView
  *
  * File — VMAXAccessibilityService.kt
  *
- * Stage 3 — On-Screen Diagnostic Overlay
+ * Stage 3 — Diagnostic Mode
  *
- * Purpose:
- * - Display real-time Accessibility Events directly on the phone screen.
- * - Show captured Accessibility Node Trees when IRCTC text changes.
- * - Verify that the Accessibility Service is actually seeing the IRCTC UI.
+ * PURPOSE:
+ * - Verify that VMAX AccessibilityService is actually connected.
+ * - Verify that VMAX can observe the IRCTC Accessibility UI.
+ * - Capture Accessibility Events.
+ * - Capture the current Accessibility Node Tree.
+ * - Display diagnostic information directly on screen.
  *
- * No business logic.
- * No station database.
- * No automation.
+ * DIAGNOSTIC ONLY:
+ * - No station database.
+ * - No autocomplete implementation.
+ * - No automation decision.
+ * - No ActionExecutor calls.
+ * - No business logic.
+ *
+ * Target IRCTC package:
+ *     cris.org.in.prs.ima
  */
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "VMAX_OVERLAY"
-        private const val MAX_LINES = 50
-        private const val OVERLAY_LAYOUT = "VMAX_OVERLAY_LAYOUT"
+
+        private const val TAG = "VMAX_DIAGNOSTIC"
+
+        private const val IRCTC_PACKAGE =
+            "cris.org.in.prs.ima"
+
+        private const val MAX_LOG_LINES = 120
+
+        private const val OVERLAY_WIDTH_MATCH_PARENT = true
     }
 
     private var windowManager: WindowManager? = null
-    private var overlayView: View? = null
+    private var overlayView: LinearLayout? = null
     private var logTextView: TextView? = null
-    private var isOverlayVisible = false
 
     // ------------------------------------------------------------------------
-    // SERVICE CONNECTION
+    // SERVICE CONNECTED
     // ------------------------------------------------------------------------
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d(TAG, "VMAX Overlay Service CONNECTED")
-        showOverlay("VMAX Overlay Active\nWaiting for IRCTC input...")
+
+        Log.d(
+            TAG,
+            "VMAX Accessibility Service CONNECTED"
+        )
+
+        showDiagnosticOverlay()
+
+        appendDiagnostic(
+            "VMAX DIAGNOSTIC\n" +
+                "SERVICE: CONNECTED\n" +
+                "IRCTC: WAITING\n" +
+                "Package: $IRCTC_PACKAGE"
+        )
     }
 
     // ------------------------------------------------------------------------
-    // ACCESSIBILITY EVENTS
+    // ACCESSIBILITY EVENT
     // ------------------------------------------------------------------------
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
+    override fun onAccessibilityEvent(
+        event: AccessibilityEvent?
+    ) {
 
-        val eventTypeName = getEventTypeName(event.eventType)
-        val packageName = event.packageName?.toString() ?: "?"
-
-        // ✅ Corrected package name for current IRCTC Rail Connect app
-        if (packageName == "cris.org.in.prs.ima") {
-            appendLog("[EVENT] $eventTypeName in $packageName")
-            val root = rootInActiveWindow
-            if (root != null) {
-                appendLog("--- CAPTURING TREE ---")
-                val treeBuilder = StringBuilder()
-                captureTreeToString(root, 0, treeBuilder)
-                appendLog(treeBuilder.toString())
-                root.recycle()
-            }
+        if (event == null) {
+            return
         }
+
+        val packageName =
+            event.packageName?.toString() ?: "UNKNOWN"
+
+        val eventName =
+            getEventTypeName(event.eventType)
+
+        /*
+         * Always log the event to Logcat.
+         * This proves whether the AccessibilityService
+         * is receiving events at all.
+         */
+        Log.d(
+            TAG,
+            "EVENT=$eventName PACKAGE=$packageName"
+        )
+
+        /*
+         * Only inspect the IRCTC UI for IRCTC events.
+         */
+        if (packageName != IRCTC_PACKAGE) {
+            return
+        }
+
+        appendDiagnostic(
+            "[IRCTC EVENT]\n" +
+                "$eventName\n" +
+                "Package: $packageName"
+        )
+
+        captureCurrentRoot()
     }
 
     // ------------------------------------------------------------------------
-    // CAPTURE TREE TO STRING (instead of Logcat)
+    // ROOT NODE CAPTURE
     // ------------------------------------------------------------------------
 
-    private fun captureTreeToString(node: AccessibilityNodeInfo, depth: Int, sb: StringBuilder) {
-        val indent = "  ".repeat(depth)
-        val text = node.text?.toString() ?: ""
-        val hint = node.hintText?.toString() ?: ""
-        val className = node.className?.toString() ?: ""
-        val clickable = node.isClickable
-        val editable = node.isEditable
-        val visible = node.isVisibleToUser
+    private fun captureCurrentRoot() {
 
-        if (text.isNotBlank() || hint.isNotBlank() || clickable || editable) {
-            sb.append("$indent• $className\n")
-            if (text.isNotBlank()) sb.append("$indent  Text: '$text'\n")
-            if (hint.isNotBlank()) sb.append("$indent  Hint: '$hint'\n")
-            if (clickable) sb.append("$indent  Clickable: YES\n")
-            if (editable) sb.append("$indent  Editable: YES\n")
-        }
+        val root =
+            rootInActiveWindow
 
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            captureTreeToString(child, depth + 1, sb)
-            child.recycle()
-        }
-    }
+        if (root == null) {
 
-    // ------------------------------------------------------------------------
-    // OVERLAY LOGGING
-    // ------------------------------------------------------------------------
-
-    private fun showOverlay(initialText: String) {
-        if (isOverlayVisible) return
-        try {
-            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                else
-                    WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
+            appendDiagnostic(
+                "IRCTC ROOT: NULL"
             )
-            params.gravity = Gravity.TOP or Gravity.START
 
-            val layout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setBackgroundColor(0xAA000000.toInt())
-                setPadding(16, 16, 16, 16)
-            }
+            Log.d(
+                TAG,
+                "IRCTC rootInActiveWindow = NULL"
+            )
 
-            val scrollView = ScrollView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.MATCH_PARENT
+            return
+        }
+
+        try {
+
+            appendDiagnostic(
+                "IRCTC ROOT: AVAILABLE\n" +
+                    "Capturing visible node tree..."
+            )
+
+            val builder =
+                StringBuilder()
+
+            captureNodeTree(
+                node = root,
+                depth = 0,
+                builder = builder
+            )
+
+            val tree =
+                builder.toString()
+
+            if (tree.isBlank()) {
+
+                appendDiagnostic(
+                    "NODE TREE: EMPTY"
+                )
+
+                Log.d(
+                    TAG,
+                    "IRCTC node tree is empty"
+                )
+
+            } else {
+
+                appendDiagnostic(
+                    tree
+                )
+
+                Log.d(
+                    TAG,
+                    "IRCTC NODE TREE:\n$tree"
                 )
             }
 
-            logTextView = TextView(this).apply {
-                text = initialText
-                setTextColor(0xFF00FF00.toInt())
-                textSize = 12f
-                setTextIsSelectable(true)
-            }
+        } catch (exception: Exception) {
 
-            scrollView.addView(logTextView)
-            layout.addView(scrollView)
+            Log.e(
+                TAG,
+                "Node tree capture failed",
+                exception
+            )
 
-            val closeBtn = TextView(this).apply {
-                text = "X (Close)"
-                setTextColor(0xFFFF0000.toInt())
-                textSize = 14f
-                setOnClickListener {
-                    hideOverlay()
-                }
-            }
-            layout.addView(closeBtn)
+            appendDiagnostic(
+                "TREE ERROR: " +
+                    (exception.message ?: "Unknown error")
+            )
 
-            overlayView = layout
-            windowManager?.addView(layout, params)
-            isOverlayVisible = true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create overlay: ${e.message}")
-        }
-    }
+        } finally {
 
-    private fun appendLog(line: String) {
-        logTextView?.post {
-            val currentText = logTextView?.text?.toString() ?: ""
-            val newText = if (currentText.lines().size >= MAX_LINES) {
-                currentText.lines().drop(1).joinToString("\n") + "\n$line"
-            } else {
-                "$currentText\n$line"
-            }
-            logTextView?.text = newText
-        }
-    }
-
-    private fun hideOverlay() {
-        try {
-            if (overlayView != null) {
-                windowManager?.removeView(overlayView)
-                overlayView = null
-                isOverlayVisible = false
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to hide overlay: ${e.message}")
+            root.recycle()
         }
     }
 
     // ------------------------------------------------------------------------
-    // INTERRUPT / DESTROY
+    // NODE TREE
+    // ------------------------------------------------------------------------
+
+    private fun captureNodeTree(
+        node: AccessibilityNodeInfo,
+        depth: Int,
+        builder: StringBuilder
+    ) {
+
+        /*
+         * Prevent an unexpectedly deep tree from
+         * consuming excessive diagnostic space.
+         */
+        if (depth > 30) {
+            return
+        }
+
+        val className =
+            node.className?.toString() ?: ""
+
+        val text =
+            node.text?.toString() ?: ""
+
+        val hint =
+            node.hintText?.toString() ?: ""
+
+        val contentDescription =
+            node.contentDescription?.toString() ?: ""
+
+        val viewId =
+            node.viewIdResourceName ?: ""
+
+        val visible =
+            node.isVisibleToUser
+
+        val clickable =
+            node.isClickable
+
+        val editable =
+            node.isEditable
+
+        val focusable =
+            node.isFocusable
+
+        val enabled =
+            node.isEnabled
+
+        /*
+         * Diagnostic target:
+         * keep nodes that contain useful evidence.
+         */
+        val hasUsefulData =
+            text.isNotBlank() ||
+                hint.isNotBlank() ||
+                contentDescription.isNotBlank() ||
+                viewId.isNotBlank() ||
+                clickable ||
+                editable ||
+                focusable
+
+        if (hasUsefulData) {
+
+            val indent =
+                "  ".repeat(depth)
+
+            builder.append(
+                indent
+            )
+
+            builder.append(
+                "NODE: $className"
+            )
+
+            builder.append(
+                " | Visible=$visible"
+            )
+
+            builder.append(
+                " | Clickable=$clickable"
+            )
+
+            builder.append(
+                " | Editable=$editable"
+            )
+
+            builder.append(
+                " | Focusable=$focusable"
+            )
+
+            builder.append(
+                " | Enabled=$enabled"
+            )
+
+            builder.append("\n")
+
+            if (text.isNotBlank()) {
+
+                builder.append(
+                    indent
+                )
+
+                builder.append(
+                    "  Text='$text'\n"
+                )
+            }
+
+            if (hint.isNotBlank()) {
+
+                builder.append(
+                    indent
+                )
+
+                builder.append(
+                    "  Hint='$hint'\n"
+                )
+            }
+
+            if (contentDescription.isNotBlank()) {
+
+                builder.append(
+                    indent
+                )
+
+                builder.append(
+                    "  Description='$contentDescription'\n"
+                )
+            }
+
+            if (viewId.isNotBlank()) {
+
+                builder.append(
+                    indent
+                )
+
+                builder.append(
+                    "  ViewId='$viewId'\n"
+                )
+            }
+        }
+
+        /*
+         * Traverse children.
+         */
+        for (index in 0 until node.childCount) {
+
+            val child =
+                node.getChild(index)
+                    ?: continue
+
+            try {
+
+                captureNodeTree(
+                    node = child,
+                    depth = depth + 1,
+                    builder = builder
+                )
+
+            } finally {
+
+                child.recycle()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // DIAGNOSTIC OVERLAY
+    // ------------------------------------------------------------------------
+
+    private fun showDiagnosticOverlay() {
+
+        if (overlayView != null) {
+            return
+        }
+
+        try {
+
+            windowManager =
+                getSystemService(
+                    WINDOW_SERVICE
+                ) as WindowManager
+
+            /*
+             * IMPORTANT:
+             *
+             * AccessibilityService must use
+             * TYPE_ACCESSIBILITY_OVERLAY.
+             *
+             * We do NOT use TYPE_APPLICATION_OVERLAY.
+             */
+            val overlayType =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+
+            val params =
+                WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    overlayType,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT
+                )
+
+            params.gravity =
+                Gravity.TOP or Gravity.START
+
+            params.x = 0
+            params.y = 0
+
+            val container =
+                LinearLayout(this).apply {
+
+                    orientation =
+                        LinearLayout.VERTICAL
+
+                    setBackgroundColor(
+                        Color.argb(
+                            220,
+                            0,
+                            0,
+                            0
+                        )
+
+                    setPadding(
+                        16,
+                        16,
+                        16,
+                        16
+                    )
+                }
+
+            val title =
+                TextView(this).apply {
+
+                    text =
+                        "VMAX DIAGNOSTIC"
+
+                    setTextColor(
+                        Color.GREEN
+                    )
+
+                    textSize =
+                        16f
+
+                    setPadding(
+                        0,
+                        0,
+                        0,
+                        8
+                    )
+                }
+
+            val scrollView =
+                ScrollView(this).apply {
+
+                    layoutParams =
+                        LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            600
+                        )
+                }
+
+            logTextView =
+                TextView(this).apply {
+
+                    text =
+                        "Starting diagnostic..."
+
+                    setTextColor(
+                        Color.WHITE
+                    )
+
+                    textSize =
+                        12f
+
+                    setTextIsSelectable(
+                        true
+                    )
+                }
+
+            scrollView.addView(
+                logTextView
+            )
+
+            container.addView(
+                title
+            )
+
+            container.addView(
+                scrollView
+            )
+
+            overlayView =
+                container
+
+            windowManager?.addView(
+                container,
+                params
+            )
+
+            Log.d(
+                TAG,
+                "Diagnostic overlay created successfully"
+            )
+
+        } catch (exception: Exception) {
+
+            Log.e(
+                TAG,
+                "Diagnostic overlay creation failed",
+                exception
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // APPEND DIAGNOSTIC LOG
+    // ------------------------------------------------------------------------
+
+    private fun appendDiagnostic(
+        message: String
+    ) {
+
+        val textView =
+            logTextView
+                ?: return
+
+        textView.post {
+
+            val oldText =
+                textView.text?.toString()
+                    ?: ""
+
+            val combined =
+                if (oldText.isBlank()) {
+                    message
+                } else {
+                    "$oldText\n\n$message"
+                }
+
+            val lines =
+                combined.lines()
+
+            val finalText =
+                if (lines.size > MAX_LOG_LINES) {
+                    lines
+                        .takeLast(MAX_LOG_LINES)
+                        .joinToString("\n")
+                } else {
+                    combined
+                }
+
+            textView.text =
+                finalText
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // EVENT TYPE
+    // ------------------------------------------------------------------------
+
+    private fun getEventTypeName(
+        eventType: Int
+    ): String {
+
+        return when (eventType) {
+
+            AccessibilityEvent.TYPE_VIEW_CLICKED ->
+                "VIEW_CLICKED"
+
+            AccessibilityEvent.TYPE_VIEW_FOCUSED ->
+                "VIEW_FOCUSED"
+
+            AccessibilityEvent.TYPE_VIEW_SELECTED ->
+                "VIEW_SELECTED"
+
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
+                "VIEW_TEXT_CHANGED"
+
+            AccessibilityEvent.TYPE_VIEW_SCROLLED ->
+                "VIEW_SCROLLED"
+
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
+                "WINDOW_STATE_CHANGED"
+
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
+                "WINDOW_CONTENT_CHANGED"
+
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ->
+                "VIEW_TEXT_SELECTION_CHANGED"
+
+            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED ->
+                "VIEW_ACCESSIBILITY_FOCUSED"
+
+            AccessibilityEvent.TYPE_VIEW_HOVER_ENTER ->
+                "VIEW_HOVER_ENTER"
+
+            AccessibilityEvent.TYPE_VIEW_HOVER_EXIT ->
+                "VIEW_HOVER_EXIT"
+
+            else ->
+                "OTHER($eventType)"
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // INTERRUPT
     // ------------------------------------------------------------------------
 
     override fun onInterrupt() {
-        Log.d(TAG, "Service INTERRUPTED")
-        hideOverlay()
+
+        Log.d(
+            TAG,
+            "Accessibility Service INTERRUPTED"
+        )
+
+        appendDiagnostic(
+            "SERVICE INTERRUPTED"
+        )
     }
 
+    // ------------------------------------------------------------------------
+    // DESTROY
+    // ------------------------------------------------------------------------
+
     override fun onDestroy() {
-        Log.d(TAG, "Service DESTROYED")
-        hideOverlay()
+
+        Log.d(
+            TAG,
+            "Accessibility Service DESTROYED"
+        )
+
+        removeDiagnosticOverlay()
+
         super.onDestroy()
     }
 
     // ------------------------------------------------------------------------
-    // HELPER: EVENT TYPE
+    // REMOVE OVERLAY
     // ------------------------------------------------------------------------
 
-    private fun getEventTypeName(eventType: Int): String {
-        return when (eventType) {
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> "VIEW_CLICKED"
-            AccessibilityEvent.TYPE_VIEW_FOCUSED -> "VIEW_FOCUSED"
-            AccessibilityEvent.TYPE_VIEW_SELECTED -> "VIEW_SELECTED"
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> "VIEW_TEXT_CHANGED"
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> "VIEW_SCROLLED"
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "WINDOW_STATE_CHANGED"
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "WINDOW_CONTENT_CHANGED"
-            else -> "OTHER($eventType)"
+    private fun removeDiagnosticOverlay() {
+
+        try {
+
+            val view =
+                overlayView
+
+            if (view != null) {
+
+                windowManager?.removeView(
+                    view
+                )
+            }
+
+        } catch (exception: Exception) {
+
+            Log.e(
+                TAG,
+                "Failed to remove diagnostic overlay",
+                exception
+            )
+
+        } finally {
+
+            overlayView =
+                null
+
+            logTextView =
+                null
         }
     }
-}
+                        }
