@@ -1,6 +1,7 @@
 package com.vmax.core_intelligence
 
 import com.vmax.common.Logger
+import com.vmax.common.LogLevel
 
 /**
  * VMAX v2.6.1 - UI Evidence Collector (OCR Integration)
@@ -12,7 +13,9 @@ import com.vmax.common.Logger
  * - SENSITIVE evidence explicitly reject करेगा
  * - Existing evidence structure में seamless integrate होगा
  */
-class UIEvidenceCollector {
+class UIEvidenceCollector(
+    private val logger: Logger
+) {
     
     companion object {
         private const val TAG = "UIEvidenceCollector"
@@ -55,7 +58,7 @@ class UIEvidenceCollector {
     
     fun collectOcrEvidence(classifiedResult: TextClassifier.ClassifiedResult): CollectionResult {
         if (classifiedResult.classification == TextClassifier.Classification.SENSITIVE) {
-            Logger.warn(TAG, "SENSITIVE evidence rejected - screenId: ${classifiedResult.ocrResult.screenId}")
+            logger.warn(TAG, "SENSITIVE evidence rejected - screenId: ${classifiedResult.ocrResult.screenId}")
             return CollectionResult.Rejected(
                 reason = RejectionReason.SENSITIVE_CONTENT_BLOCKED,
                 matchedPatterns = classifiedResult.matchedPatterns
@@ -63,7 +66,7 @@ class UIEvidenceCollector {
         }
         
         if (classifiedResult.classification == TextClassifier.Classification.UNKNOWN) {
-            Logger.debug(TAG, "UNKNOWN evidence retained for analysis - screenId: ${classifiedResult.ocrResult.screenId}")
+            logger.debug(TAG, "UNKNOWN evidence retained for analysis - screenId: ${classifiedResult.ocrResult.screenId}")
             return CollectionResult.RetainedAsUnknown(
                 screenId = classifiedResult.ocrResult.screenId
             )
@@ -94,7 +97,7 @@ class UIEvidenceCollector {
             )
         )
         currentEvidence = evidence
-        Logger.info(TAG, "SAFE_UI evidence collected - screenId: ${evidence.screenId}, keys: ${keyValuePairs.keys}, confidence: ${ocrEvidence.confidence}")
+        logger.info(TAG, "SAFE_UI evidence collected - screenId: ${evidence.screenId}, keys: ${keyValuePairs.keys}, confidence: ${ocrEvidence.confidence}")
         return CollectionResult.Success(
             evidence = evidence,
             extractedKeys = keyValuePairs.keys.toList()
@@ -105,7 +108,7 @@ class UIEvidenceCollector {
         val pairs = mutableMapOf<String, String>()
         val text = ocrResult.fullText
         
-        // Train Number (5 digits typically)
+        // Train Number
         Regex("TRAIN\\s*:?\\s*(\\d{1,5})", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.let { pairs["train_number"] = it }
         
@@ -121,15 +124,15 @@ class UIEvidenceCollector {
         Regex("TO\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.trim()?.let { pairs["to_station"] = it }
         
-        // Date (DD-MM-YYYY or DD/MM/YYYY)
+        // Date
         Regex("(\\d{2}[-/]\\d{2}[-/]\\d{4})")
             .find(text)?.value?.let { pairs["journey_date"] = it }
         
-        // Class (SL, 3A, 2A, 1A, CC, EC, 2S)
+        // Class
         Regex("\\b(SL|3A|2A|1A|CC|EC|2S)\\b", RegexOption.IGNORE_CASE)
             .find(text)?.value?.uppercase()?.let { pairs["travel_class"] = it }
         
-        // Availability (AVAILABLE, RAC, WL followed by number)
+        // Availability
         Regex("(AVAILABLE|RAC|WL)\\s*(\\d+)", RegexOption.IGNORE_CASE)
             .find(text)?.let { match ->
                 val type = match.groupValues[1].uppercase()
@@ -138,7 +141,7 @@ class UIEvidenceCollector {
                 pairs["availability_count"] = count
             }
         
-        // Fare/Price
+        // Fare
         Regex("(?:FARE|PRICE|TOTAL)[:\\s]*[₹$]?\\s*(\\d+[.,]?\\d*)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.let { pairs["fare"] = it }
         
@@ -167,7 +170,7 @@ class UIEvidenceCollector {
     
     fun clearEvidence() {
         currentEvidence = null
-        Logger.debug(TAG, "Evidence cleared")
+        logger.debug(TAG, "Evidence cleared")
     }
     
     sealed class CollectionResult {
