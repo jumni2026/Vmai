@@ -8,8 +8,8 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.action.ActionError
 import com.vmax.action.ActionExecutor
-import com.vmax.action.ActionRequest
-import com.vmax.action.ActionResult
+import com.vmax.action.ActionExecutor.ActionRequest
+import com.vmax.action.ActionExecutor.ActionResult
 import com.vmax.common.Result
 
 /**
@@ -50,7 +50,7 @@ class AndroidActionExecutor(
         private const val DEFAULT_SWIPE_DISTANCE = 100f
     }
 
-    private var lastResult: ActionExecutor.ActionResult? = null
+    private var lastResult: ActionResult? = null
 
     /**
      * Internal representation of a swipe.
@@ -199,7 +199,7 @@ class AndroidActionExecutor(
      */
     private fun getTargetCoordinates(
         node: AccessibilityNodeInfo,
-        request: ActionExecutor.ActionRequest
+        request: ActionRequest
     ): Pair<Float, Float> {
 
         val coordinates = request.coordinates
@@ -374,7 +374,7 @@ class AndroidActionExecutor(
      * The endpoint is derived from direction.
      */
     private fun getSwipePath(
-        request: ActionExecutor.ActionRequest,
+        request: ActionRequest,
         direction: String
     ): List<Pair<Float, Float>> {
 
@@ -443,9 +443,9 @@ class AndroidActionExecutor(
     private fun success(
         actionType: ActionExecutor.ActionType,
         message: String
-    ): Result<ActionExecutor.ActionResult, ActionError> {
+    ): Result<ActionResult, ActionError> {
 
-        val result = ActionExecutor.ActionResult(
+        val result = ActionResult(
             success = true,
             actionType = actionType,
             message = message
@@ -461,7 +461,7 @@ class AndroidActionExecutor(
         message: String,
         actionType: ActionExecutor.ActionType,
         targetId: String?
-    ): Result<ActionExecutor.ActionResult, ActionError> {
+    ): Result<ActionResult, ActionError> {
 
         val result = ActionError(
             code = code,
@@ -478,8 +478,8 @@ class AndroidActionExecutor(
     // ------------------------------------------------------------------------
 
     override fun executeAction(
-        request: ActionExecutor.ActionRequest
-    ): Result<ActionExecutor.ActionResult, ActionError> {
+        request: ActionRequest
+    ): Result<ActionResult, ActionError> {
 
         val actionType = request.type
 
@@ -1048,9 +1048,9 @@ class AndroidActionExecutor(
 
     override fun executeTap(
         targetId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> =
+    ): Result<ActionResult, ActionError> =
         executeAction(
-            ActionExecutor.ActionRequest(
+            ActionRequest(
                 type = ActionExecutor.ActionType.TAP,
                 targetId = targetId
             )
@@ -1058,9 +1058,9 @@ class AndroidActionExecutor(
 
     override fun executeClick(
         targetId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> =
+    ): Result<ActionResult, ActionError> =
         executeAction(
-            ActionExecutor.ActionRequest(
+            ActionRequest(
                 type = ActionExecutor.ActionType.CLICK,
                 targetId = targetId
             )
@@ -1069,9 +1069,9 @@ class AndroidActionExecutor(
     override fun executeSetText(
         targetId: String,
         text: String
-    ): Result<ActionExecutor.ActionResult, ActionError> =
+    ): Result<ActionResult, ActionError> =
         executeAction(
-            ActionExecutor.ActionRequest(
+            ActionRequest(
                 type = ActionExecutor.ActionType.SET_TEXT,
                 targetId = targetId,
                 text = text
@@ -1080,9 +1080,9 @@ class AndroidActionExecutor(
 
     override fun executeClearText(
         targetId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> =
+    ): Result<ActionResult, ActionError> =
         executeAction(
-            ActionExecutor.ActionRequest(
+            ActionRequest(
                 type = ActionExecutor.ActionType.CLEAR_TEXT,
                 targetId = targetId
             )
@@ -1091,9 +1091,9 @@ class AndroidActionExecutor(
     override fun executeScroll(
         direction: String,
         amount: Int
-    ): Result<ActionExecutor.ActionResult, ActionError> =
+    ): Result<ActionResult, ActionError> =
         executeAction(
-            ActionExecutor.ActionRequest(
+            ActionRequest(
                 type = ActionExecutor.ActionType.SCROLL,
                 targetText = direction
             )
@@ -1101,9 +1101,9 @@ class AndroidActionExecutor(
 
     override fun executeWait(
         durationMs: Long
-    ): Result<ActionExecutor.ActionResult, ActionError> =
+    ): Result<ActionResult, ActionError> =
         executeAction(
-            ActionExecutor.ActionRequest(
+            ActionRequest(
                 type = ActionExecutor.ActionType.WAIT,
                 durationMs = durationMs
             )
@@ -1131,6 +1131,6 @@ class AndroidActionExecutor(
     }
 
     override fun getLastActionResult():
-        ActionExecutor.ActionResult? =
+        ActionResult? =
         lastResult
 }
