@@ -13,7 +13,8 @@ import com.vmax.common.Logger
  * - PrecisionMatchEngine को enriched evidence भेजेगा
  */
 class ScreenAnalyzer(
-    private val evidenceCollector: UIEvidenceCollector
+    private val evidenceCollector: UIEvidenceCollector,
+    private val logger: Logger
 ) {
     companion object {
         private const val TAG = "ScreenAnalyzer"
@@ -41,7 +42,7 @@ class ScreenAnalyzer(
     fun analyzeCurrentScreen(): AnalysisResult {
         val evidence = evidenceCollector.getCurrentEvidence()
         if (evidence == null) {
-            Logger.warn(TAG, "No evidence available for analysis")
+            logger.warn(TAG, "No evidence available for analysis")
             return createUnknownResult(null)
         }
         val ocrEvidence = evidence.ocrEvidence
@@ -58,7 +59,7 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val keyValuePairs = ocrEvidence.keyValuePairs
         val fullText = ocrEvidence.fullText.uppercase()
-        Logger.debug(TAG, "Analyzing with OCR - keys: ${keyValuePairs.keys}")
+        logger.debug(TAG, "Analyzing with OCR - keys: ${keyValuePairs.keys}")
         return when {
             isReviewJourneyScreen(keyValuePairs, fullText) -> AnalysisResult(
                 screenState = ScreenState.REVIEW_JOURNEY,
@@ -147,7 +148,7 @@ class ScreenAnalyzer(
     }
     
     private fun analyzeWithoutOcr(evidence: UIEvidenceCollector.ScreenEvidence): AnalysisResult {
-        Logger.debug(TAG, "Analyzing without OCR - UI elements only")
+        logger.debug(TAG, "Analyzing without OCR - UI elements only")
         val uiElements = evidence.uiElements
         val hasInputFields = uiElements.any { it.isEditable }
         val hasButtons = uiElements.any { it.isClickable && it.text.contains("Book", ignoreCase = true) }
