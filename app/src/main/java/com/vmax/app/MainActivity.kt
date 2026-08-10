@@ -4,18 +4,20 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions   // ✅ Corrected import
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vmax.model.*
+import com.vmax.workflow.WorkflowController
+import com.vmax.workflow.WorkflowController.WorkflowState   // ✅ Added import
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -110,7 +112,7 @@ fun VMAXDashboard() {
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 
-                // Quota Dropdown
+                // Quota Dropdown (Quota.kt now resolved)
                 Text("Quota", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 var quotaExpanded by remember { mutableStateOf(false) }
                 Box(modifier = Modifier.fillMaxWidth()) {
