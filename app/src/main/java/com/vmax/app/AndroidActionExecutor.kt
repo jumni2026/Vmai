@@ -40,8 +40,6 @@ class AndroidActionExecutor(
 ) : ActionExecutor {
 
     companion object {
-        private const val TAG = "AndroidActionExecutor"
-
         private const val TAP_DURATION_MS = 200L
         private const val LONG_CLICK_DURATION_MS = 500L
         private const val DOUBLE_TAP_DELAY_MS = 100L
@@ -487,10 +485,25 @@ class AndroidActionExecutor(
 
         try {
 
+            // ⚠️ ACTION-AWARE NODE DISCOVERY:
+            // For SCROLL, targetText is used as direction, not as a text selector.
+            // For SWIPE and WAIT, no node is needed.
+            val (searchId, searchText, searchClass) = when (actionType) {
+                ActionExecutor.ActionType.SCROLL ->
+                    Triple(request.targetId, null, request.targetClass)
+
+                ActionExecutor.ActionType.SWIPE,
+                ActionExecutor.ActionType.WAIT ->
+                    Triple(null, null, null)
+
+                else ->
+                    Triple(request.targetId, request.targetText, request.targetClass)
+            }
+
             node = findNode(
-                targetId = request.targetId,
-                targetText = request.targetText,
-                targetClass = request.targetClass
+                targetId = searchId,
+                targetText = searchText,
+                targetClass = searchClass
             )
 
             val requiresNode = when (actionType) {
