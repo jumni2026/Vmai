@@ -83,7 +83,6 @@ class AndroidActionExecutor(
         return Pair(bounds.centerX().toFloat(), bounds.centerY().toFloat())
     }
 
-    // ✅ FIX #2: Respect request.coordinates
     private fun getTargetCoordinates(node: AccessibilityNodeInfo, request: ActionRequest): Pair<Float, Float> {
         return if (request.coordinates != null) {
             Pair(
@@ -95,17 +94,10 @@ class AndroidActionExecutor(
         }
     }
 
-    // ✅ FIX #2: Respect request.coordinates for Swipe
     private fun getSwipePath(request: ActionRequest, direction: String): List<Pair<Float, Float>> {
         if (request.coordinates != null) {
-            // If coordinates are provided, we ignore direction and use the coordinates as path endpoints.
-            // Assuming a simple linear path from 0 to 1 for demo purposes, or just using the provided coords directly.
-            // Let's assume the request provides the 2 points for swipe explicitly. 
-            // Since ActionRequest.coordinates is a Pair<Int, Int> (single point), 
-            // we treat it as the start point and calculate the end point based on direction.
             val startX = request.coordinates.first.toFloat()
             val startY = request.coordinates.second.toFloat()
-            
             val metrics = accessibilityService.resources.displayMetrics
             val gap = 100f
             val (endX, endY) = when (direction.uppercase()) {
@@ -117,7 +109,6 @@ class AndroidActionExecutor(
             }
             return listOf(Pair(startX, startY), Pair(endX, endY))
         } else {
-            // Fallback to screen center coordinates
             return getSwipeCoordinatesFromScreen(direction).toPath()
         }
     }
@@ -181,9 +172,12 @@ class AndroidActionExecutor(
         try {
             node = findNode(request.targetId, request.targetText, request.targetClass)
 
-            // For actions that don't require a specific node, we allow null node.
-            // But TAP/CLICK/SET_TEXT etc. require a node.
-            if (node == null && actionType !in listOf(ActionExecutor.ActionType.WAIT)) {
+            // ✅ FIX #1: SWIPE, WAIT, and other screen-based actions don't need a node.
+            val requiresNode = actionType !in listOf(
+                ActionExecutor.ActionType.SWIPE,
+                ActionExecutor.ActionType.WAIT
+            )
+            if (node == null && requiresNode) {
                 return Result.Error(
                     ActionError("NODE_NOT_FOUND", "Target UI node not found on screen", actionType, request.targetId)
                 )
@@ -192,7 +186,6 @@ class AndroidActionExecutor(
             return when (actionType) {
                 ActionExecutor.ActionType.TAP,
                 ActionExecutor.ActionType.CLICK -> {
-                    // ✅ FIX #2: Using request.coordinates first
                     val (x, y) = getTargetCoordinates(node!!, request)
                     if (node.isClickable) {
                         if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
@@ -207,10 +200,9 @@ class AndroidActionExecutor(
                 }
 
                 ActionExecutor.ActionType.DOUBLE_TAP -> {
-                    // ✅ FIX #1: Added DOUBLE_TAP implementation
                     val (x, y) = getTargetCoordinates(node!!, request)
                     if (performTap(x, y)) {
-                        Thread.sleep(DOUBLE_TAP_DELAY) // Standard delay between taps
+                        Thread.sleep(DOUBLE_TAP_DELAY)
                         if (performTap(x, y)) {
                             return Result.Success(ActionResult(true, actionType, "Double tap performed"))
                         }
@@ -225,7 +217,6 @@ class AndroidActionExecutor(
                             return Result.Success(ActionResult(true, actionType, "Long click performed on node"))
                         }
                     }
-                    // Fallback: Coordinate Long Tap
                     if (performLongTap(x, y)) {
                         return Result.Success(ActionResult(true, actionType, "Coordinate long tap performed (fallback)"))
                     }
@@ -276,7 +267,6 @@ class AndroidActionExecutor(
 
                 ActionExecutor.ActionType.SWIPE -> {
                     val direction = request.targetText?.uppercase() ?: "DOWN"
-                    // ✅ FIX #2: Pass request to getSwipePath to use coordinates if available
                     val path = getSwipePath(request, direction)
                     if (performSwipe(path)) {
                         return Result.Success(ActionResult(true, actionType, "Swipe performed ($direction)"))
@@ -285,15 +275,9 @@ class AndroidActionExecutor(
                 }
 
                 ActionExecutor.ActionType.WAIT -> {
-                    // ✅ FIX #3: Use request.durationMs instead of parsing text
+                    // ✅ FIX #2: WAIT only uses durationMs, no waitAfterMs.
                     val waitTime = if (request.durationMs > 0) request.durationMs else 1000L
                     Thread.sleep(waitTime)
-                    
-                    // waitAfterMs is a post-action delay. We apply it immediately after the wait.
-                    if (request.waitAfterMs > 0) {
-                        Thread.sleep(request.waitAfterMs)
-                    }
-                    
                     Result.Success(ActionResult(true, actionType, "Waited $waitTime ms"))
                 }
 
