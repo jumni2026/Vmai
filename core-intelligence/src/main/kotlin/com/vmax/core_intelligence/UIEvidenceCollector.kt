@@ -1,7 +1,6 @@
 package com.vmax.core_intelligence
 
 import com.vmax.common.Logger
-import com.vmax.common.LogLevel
 
 /**
  * VMAX v2.6.1 - UI Evidence Collector (OCR Integration)
@@ -56,7 +55,7 @@ class UIEvidenceCollector {
     
     fun collectOcrEvidence(classifiedResult: TextClassifier.ClassifiedResult): CollectionResult {
         if (classifiedResult.classification == TextClassifier.Classification.SENSITIVE) {
-            Logger.warn("$TAG: SENSITIVE evidence rejected - screenId: ${classifiedResult.ocrResult.screenId}")
+            Logger.warn(TAG, "SENSITIVE evidence rejected - screenId: ${classifiedResult.ocrResult.screenId}")
             return CollectionResult.Rejected(
                 reason = RejectionReason.SENSITIVE_CONTENT_BLOCKED,
                 matchedPatterns = classifiedResult.matchedPatterns
@@ -64,7 +63,7 @@ class UIEvidenceCollector {
         }
         
         if (classifiedResult.classification == TextClassifier.Classification.UNKNOWN) {
-            Logger.debug("$TAG: UNKNOWN evidence retained for analysis - screenId: ${classifiedResult.ocrResult.screenId}")
+            Logger.debug(TAG, "UNKNOWN evidence retained for analysis - screenId: ${classifiedResult.ocrResult.screenId}")
             return CollectionResult.RetainedAsUnknown(
                 screenId = classifiedResult.ocrResult.screenId
             )
@@ -95,7 +94,7 @@ class UIEvidenceCollector {
             )
         )
         currentEvidence = evidence
-        Logger.info("$TAG: SAFE_UI evidence collected - screenId: ${evidence.screenId}, keys: ${keyValuePairs.keys}, confidence: ${ocrEvidence.confidence}")
+        Logger.info(TAG, "SAFE_UI evidence collected - screenId: ${evidence.screenId}, keys: ${keyValuePairs.keys}, confidence: ${ocrEvidence.confidence}")
         return CollectionResult.Success(
             evidence = evidence,
             extractedKeys = keyValuePairs.keys.toList()
@@ -105,32 +104,50 @@ class UIEvidenceCollector {
     private fun extractKeyValuePairs(ocrResult: OcrResult): Map<String, String> {
         val pairs = mutableMapOf<String, String>()
         val text = ocrResult.fullText
-        // ... (same extraction logic as before) ...
-        // For brevity, keep the same extraction code; we can copy from earlier.
-        // But we'll include the same regex patterns.
-        // For completeness, include the extraction code from previous version.
-        // We'll replicate the extraction logic exactly.
+        
+        // Train Number (5 digits typically)
         Regex("TRAIN\\s*:?\\s*(\\d{1,5})", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.let { pairs["train_number"] = it }
+        
+        // Train Name
         Regex("TRAIN\\s*:?\\s*\\d*\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.trim()?.let { if (it.length > 3) pairs["train_name"] = it }
+        
+        // From Station
         Regex("FROM\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.trim()?.let { pairs["from_station"] = it }
+        
+        // To Station
         Regex("TO\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.trim()?.let { pairs["to_station"] = it }
+        
+        // Date (DD-MM-YYYY or DD/MM/YYYY)
         Regex("(\\d{2}[-/]\\d{2}[-/]\\d{4})")
             .find(text)?.value?.let { pairs["journey_date"] = it }
+        
+        // Class (SL, 3A, 2A, 1A, CC, EC, 2S)
         Regex("\\b(SL|3A|2A|1A|CC|EC|2S)\\b", RegexOption.IGNORE_CASE)
             .find(text)?.value?.uppercase()?.let { pairs["travel_class"] = it }
+        
+        // Availability (AVAILABLE, RAC, WL followed by number)
         Regex("(AVAILABLE|RAC|WL)\\s*(\\d+)", RegexOption.IGNORE_CASE)
             .find(text)?.let { match ->
-                pairs["availability_type"] = match.groupValues[1].uppercase()
-                pairs["availability_count"] = match.groupValues[2]
+                val type = match.groupValues[1].uppercase()
+                val count = match.groupValues[2]
+                pairs["availability_type"] = type
+                pairs["availability_count"] = count
             }
+        
+        // Fare/Price
         Regex("(?:FARE|PRICE|TOTAL)[:\\s]*[₹$]?\\s*(\\d+[.,]?\\d*)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.let { pairs["fare"] = it }
-        if (text.contains("PASSENGER", ignoreCase = true)) pairs["has_passenger_fields"] = "true"
-        if (text.contains("REVIEW JOURNEY", ignoreCase = true) || text.contains("REVIEW", ignoreCase = true)) pairs["screen_type"] = "review"
+        
+        if (text.contains("PASSENGER", ignoreCase = true)) {
+            pairs["has_passenger_fields"] = "true"
+        }
+        if (text.contains("REVIEW JOURNEY", ignoreCase = true) || text.contains("REVIEW", ignoreCase = true)) {
+            pairs["screen_type"] = "review"
+        }
         if (text.contains("BOOK NOW", ignoreCase = true)) {
             pairs["screen_type"] = "booking"
             pairs["action_available"] = "book_now"
@@ -150,7 +167,7 @@ class UIEvidenceCollector {
     
     fun clearEvidence() {
         currentEvidence = null
-        Logger.debug("$TAG: Evidence cleared")
+        Logger.debug(TAG, "Evidence cleared")
     }
     
     sealed class CollectionResult {
