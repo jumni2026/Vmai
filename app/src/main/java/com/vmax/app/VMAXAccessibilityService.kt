@@ -426,6 +426,7 @@ class VMAXAccessibilityService : AccessibilityService() {
                     orientation =
                         LinearLayout.VERTICAL
 
+                    // ✅ FIX: Added missing closing parenthesis for argb()
                     setBackgroundColor(
                         Color.argb(
                             220,
@@ -433,6 +434,7 @@ class VMAXAccessibilityService : AccessibilityService() {
                             0,
                             0
                         )
+                    )
 
                     setPadding(
                         16,
@@ -683,4 +685,4 @@ class VMAXAccessibilityService : AccessibilityService() {
                 null
         }
     }
-                        }
+}
