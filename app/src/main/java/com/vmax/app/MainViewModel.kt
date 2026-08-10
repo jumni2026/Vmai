@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowController
+import com.vmax.workflow.WorkflowState   // ✅ Added import for top-level sealed class
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,7 +65,8 @@ class MainViewModel : ViewModel() {
     val validationError: StateFlow<String?> = _validationError.asStateFlow()
 
     // ---- Workflow state ----
-    val workflowState: StateFlow<WorkflowController.WorkflowState> = workflowController.state
+    // ✅ Corrected: Use top-level WorkflowState, not nested
+    val workflowState: StateFlow<WorkflowState> = workflowController.state
 
     // ---- Public update methods ----
     fun updateTrainNumber(value: String) {
@@ -172,6 +174,6 @@ class MainViewModel : ViewModel() {
     }
 
     fun isWorkflowActive(): Boolean =
-        workflowState.value is WorkflowController.WorkflowState.RUNNING || 
-        workflowState.value is WorkflowController.WorkflowState.CONFIGURED
+        workflowState.value is WorkflowState.RUNNING ||   // ✅ Corrected
+        workflowState.value is WorkflowState.CONFIGURED   // ✅ Corrected
 }
