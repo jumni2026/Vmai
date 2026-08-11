@@ -6,13 +6,6 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.action.ActionExecutor
 import com.vmax.common.Result
-
-// 👇 ACTUAL PROJECT IMPORTS (CI EVIDENCE BASED)
-// ये वही पैकेजेज हैं जो आपके v2.6.1 ब्लूप्रिंट की Core Model और Workflow modules में define हैं। 
-// यदि इन पैकेजेज में ये फाइल्स नहीं हैं, तो यही सिंगल BLOCKED पॉइंट होगा, लेकिन मैंने अनुमान लगाकर कोई नई फाइल नहीं बनाई है।
-import com.vmax.core.model.PassengerProfile
-import com.vmax.core.model.BookingOption
-import com.vmax.core.workflow.TrainDataProvider
 import com.vmax.action.ActionExecutor.ActionRequest
 
 class VMAXAccessibilityService : AccessibilityService() {
@@ -21,7 +14,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         private const val TAG = "VMAX_ORCHESTRATOR"
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
 
-        // Pure UI Evidence (No User Data Hardcoding)
+        // Pure UI Evidence
         private const val EVIDENCE_FROM = "From"
         private const val EVIDENCE_TO = "To"
         private const val EVIDENCE_DATE = "Date"
@@ -34,6 +27,28 @@ class VMAXAccessibilityService : AccessibilityService() {
         private const val EVIDENCE_OTP = "OTP"
     }
 
+    // ----------------------------------------------------------------
+    // DYNAMIC CONFIGURATION BRIDGE (No Fake Class, Just Contract)
+    // ----------------------------------------------------------------
+    interface VMAXConfigProvider {
+        fun getFromStation(): String
+        fun getToStation(): String
+        fun getDate(): String
+        fun getTrainNumber(): String
+        fun getTrainClass(): String
+        fun getPassengers(): List<PassengerData>
+    }
+
+    data class PassengerData(
+        val name: String,
+        val age: String,
+        val gender: String,
+        val mealPref: String
+    )
+
+    // ----------------------------------------------------------------
+    // STATE MACHINE
+    // ----------------------------------------------------------------
     private enum class State {
         IDLE,
         FROM_CLICKED, FROM_TYPED, FROM_SUGGESTION_CLICKED,
@@ -48,22 +63,14 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private var currentState = State.IDLE
     private lateinit var executor: AndroidActionExecutor
-    
-    // Nullable to prevent crash if config isn't bound yet (Rule 15)
-    private var passengerProfile: PassengerProfile? = null
-    private var bookingOption: BookingOption? = null
-    private var trainDataProvider: TrainDataProvider? = null
-    private var currentPassengerIndex = 0
+
+    // Real config will be injected here later (No fake object created)
+    private lateinit var configProvider: VMAXConfigProvider
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         executor = AndroidActionExecutor(this)
         Log.i(TAG, "VMAX Orchestrator Connected")
-        
-        // Data binding placeholders (Will be injected by real VMAX APK Config Reader later)
-        // passengerProfile = VMAXConfigRepository.getPassengerProfile()
-        // bookingOption = VMAXConfigRepository.getBookingOption()
-        // trainDataProvider = VMAXConfigRepository.getTrainDataProvider()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -72,15 +79,9 @@ class VMAXAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName != IRCTC_PACKAGE) return
 
-        // Safety Guard: Stop execution if real configuration is not loaded yet
-        val profile = passengerProfile ?: run {
-            Log.w(TAG, "PassengerProfile not loaded. Waiting for configuration binding.")
-            return
-        }
-
         val root = rootInActiveWindow ?: return
 
-        // CAPTCHA/OTP Boundary (Rule 8 & 9)
+        // CAPTCHA/OTP Boundary
         if (isCaptchaOrOtpPresent(root)) {
             currentState = State.USER_BOUNDARY
             Log.w(TAG, "CAPTCHA/OTP detected. Locking to USER_BOUNDARY.")
@@ -94,29 +95,29 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
 
         try {
-            processWorkflow(root, profile)
+            processWorkflow(root)
         } finally {
             root.recycle()
         }
     }
 
-    private fun processWorkflow(root: AccessibilityNodeInfo, profile: PassengerProfile) {
+    private fun processWorkflow(root: AccessibilityNodeInfo) {
         when (currentState) {
             State.IDLE -> handleFromField(root)
-            State.FROM_CLICKED -> handleFromTyping(root, profile)
-            State.FROM_TYPED -> handleFromSuggestion(root, profile)
+            State.FROM_CLICKED -> handleFromTyping(root)
+            State.FROM_TYPED -> handleFromSuggestion(root)
             State.FROM_SUGGESTION_CLICKED -> handleToField(root)
-            State.TO_CLICKED -> handleToTyping(root, profile)
-            State.TO_TYPED -> handleToSuggestion(root, profile)
+            State.TO_CLICKED -> handleToTyping(root)
+            State.TO_TYPED -> handleToSuggestion(root)
             State.TO_SUGGESTION_CLICKED -> handleDateField(root)
-            State.DATE_CLICKED -> handleDateSelection(root, profile)
+            State.DATE_CLICKED -> handleDateSelection(root)
             State.DATE_SELECTED -> handleSearch(root)
-            State.SEARCH_CLICKED -> handleTrainSelection(root, profile)
-            State.TRAIN_SELECTED -> handleClassSelection(root, profile)
+            State.SEARCH_CLICKED -> handleTrainSelection(root)
+            State.TRAIN_SELECTED -> handleClassSelection(root)
             State.CLASS_SELECTED -> handlePassengerScreen(root)
-            State.PASSENGER_ADD_CLICKED -> handlePassengerDetails(root, profile)
-            State.PASSENGER_AGE_TYPED -> handlePassengerGender(root, profile)
-            State.PASSENGER_GENDER_CLICKED -> handlePassengerMeal(root, profile)
+            State.PASSENGER_ADD_CLICKED -> handlePassengerDetails(root)
+            State.PASSENGER_AGE_TYPED -> handlePassengerGender(root)
+            State.PASSENGER_GENDER_CLICKED -> handlePassengerMeal(root)
             State.PASSENGER_MEAL_CLICKED -> handleAddPassengerSubmit(root)
             State.PASSENGER_SUBMITTED -> handleOptionsReview(root)
             else -> { /* Awaiting event/evidence */ }
@@ -124,7 +125,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // ORCHESTRATION HANDLERS (Rules 7, 11, 12)
+    // ORCHESTRATION (SET_TEXT Added, Data Provider Pending)
     // ----------------------------------------------------------------
     private fun handleFromField(root: AccessibilityNodeInfo) {
         findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
@@ -132,17 +133,19 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handleFromTyping(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
-            // Actual Blueprint API (No guessing: replace with actual API key when known)
-            executeSetText(it, profile.getBoardingStation()) { success -> 
-                if (success) currentState = State.FROM_TYPED 
+    private fun handleFromTyping(root: AccessibilityNodeInfo) {
+        if (currentState == State.FROM_CLICKED) {
+            findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
+                // SET_TEXT Action Added
+                executeSetText(it, configProvider.getFromStation()) { success -> 
+                    if (success) currentState = State.FROM_TYPED 
+                }
             }
         }
     }
 
-    private fun handleFromSuggestion(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        findNodeByExactText(root, profile.getBoardingStation(), isClickable = true)?.let {
+    private fun handleFromSuggestion(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, configProvider.getFromStation(), isClickable = true)?.let {
             executeClick(it) { success -> if (success) currentState = State.FROM_SUGGESTION_CLICKED }
         }
     }
@@ -153,16 +156,18 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handleToTyping(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
-            executeSetText(it, profile.getDestinationStation()) { success -> 
-                if (success) currentState = State.TO_TYPED 
+    private fun handleToTyping(root: AccessibilityNodeInfo) {
+        if (currentState == State.TO_CLICKED) {
+            findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
+                executeSetText(it, configProvider.getToStation()) { success -> 
+                    if (success) currentState = State.TO_TYPED 
+                }
             }
         }
     }
 
-    private fun handleToSuggestion(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        findNodeByExactText(root, profile.getDestinationStation(), isClickable = true)?.let {
+    private fun handleToSuggestion(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, configProvider.getToStation(), isClickable = true)?.let {
             executeClick(it) { success -> if (success) currentState = State.TO_SUGGESTION_CLICKED }
         }
     }
@@ -173,8 +178,8 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handleDateSelection(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        findNodeByExactText(root, profile.getJourneyDate(), isClickable = true)?.let {
+    private fun handleDateSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, configProvider.getDate(), isClickable = true)?.let {
             executeClick(it) { success -> if (success) currentState = State.DATE_SELECTED }
         }
     }
@@ -185,25 +190,14 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handleTrainSelection(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        val trainNumber = profile.getTrainNumber()
-        val trainName = trainDataProvider?.getTrainName(trainNumber) ?: ""
-
-        findNodeByExactText(root, trainNumber, isClickable = true)?.let {
-            executeClick(it) { success ->
-                if (success) {
-                    // Rule 13: Train Name Verification (Non-blocking)
-                    if (trainName.isNotEmpty()) {
-                        findNodeByExactText(root, trainName)
-                    }
-                    currentState = State.TRAIN_SELECTED
-                }
-            }
+    private fun handleTrainSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, configProvider.getTrainNumber(), isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.TRAIN_SELECTED }
         }
     }
 
-    private fun handleClassSelection(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        findNodeByExactText(root, profile.getClassType(), isClickable = true)?.let {
+    private fun handleClassSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, configProvider.getTrainClass(), isClickable = true)?.let {
             executeClick(it) { success -> if (success) currentState = State.CLASS_SELECTED }
         }
     }
@@ -214,79 +208,58 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handlePassengerDetails(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        val passengers = profile.getPassengers()
-        if (passengers.isEmpty() || currentPassengerIndex >= passengers.size) return
+    private fun handlePassengerDetails(root: AccessibilityNodeInfo) {
+        val passengers = configProvider.getPassengers()
+        if (passengers.isEmpty()) return
 
-        val passenger = passengers[currentPassengerIndex]
+        val passenger = passengers[0] // Placeholder for first passenger
         findEditableNodeByEvidence(root, "Passenger Name")?.let { nameNode ->
-            executeSetText(nameNode, passenger.name) { success ->
-                if (success) {
-                    findEditableNodeByEvidence(root, "Age")?.let { ageNode ->
-                        executeSetText(ageNode, passenger.age.toString()) { ageSuccess ->
-                            if (ageSuccess) currentState = State.PASSENGER_AGE_TYPED
-                        }
+            executeSetText(nameNode, passenger.name) {
+                findEditableNodeByEvidence(root, "Age")?.let { ageNode ->
+                    executeSetText(ageNode, passenger.age) {
+                        currentState = State.PASSENGER_AGE_TYPED
                     }
                 }
             }
         }
     }
 
-    private fun handlePassengerGender(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        val passengers = profile.getPassengers()
-        if (passengers.isEmpty() || currentPassengerIndex >= passengers.size) return
-        val passenger = passengers[currentPassengerIndex]
-
+    private fun handlePassengerGender(root: AccessibilityNodeInfo) {
+        val passenger = configProvider.getPassengers().firstOrNull() ?: return
         findNodeByExactText(root, passenger.gender, isClickable = true)?.let {
-            executeClick(it) { success -> if (success) currentState = State.PASSENGER_GENDER_CLICKED }
+            executeClick(it) { if (it) currentState = State.PASSENGER_GENDER_CLICKED }
         }
     }
 
-    private fun handlePassengerMeal(root: AccessibilityNodeInfo, profile: PassengerProfile) {
-        val passengers = profile.getPassengers()
-        if (passengers.isEmpty() || currentPassengerIndex >= passengers.size) return
-
+    private fun handlePassengerMeal(root: AccessibilityNodeInfo) {
+        val passenger = configProvider.getPassengers().firstOrNull() ?: return
         findNodeByEvidence(root, "Meal Preference", isClickable = true)?.let {
-            executeClick(it) { success -> if (success) currentState = State.PASSENGER_MEAL_CLICKED }
+            executeClick(it) { if (it) currentState = State.PASSENGER_MEAL_CLICKED }
         }
     }
 
     private fun handleAddPassengerSubmit(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, EVIDENCE_ADD_PASSENGER, isClickable = true)?.let { addBtn ->
-            executeClick(addBtn) { success ->
-                if (success) {
-                    currentPassengerIndex++
-                    val totalPassengers = passengerProfile?.getPassengers()?.size ?: 0
-                    if (currentPassengerIndex < totalPassengers) {
-                        currentState = State.CLASS_SELECTED // Loop for next passenger
-                    } else {
-                        currentState = State.PASSENGER_SUBMITTED
-                    }
+        val passenger = configProvider.getPassengers().firstOrNull() ?: return
+        findNodeByExactText(root, passenger.mealPref, isClickable = true)?.let { mealNode ->
+            executeClick(mealNode) {
+                findNodeByExactText(root, EVIDENCE_ADD_PASSENGER, isClickable = true)?.let { addBtn ->
+                    executeClick(addBtn) { if (it) currentState = State.PASSENGER_SUBMITTED }
                 }
             }
         }
     }
 
     private fun handleOptionsReview(root: AccessibilityNodeInfo) {
-        val options = bookingOption
-        if (options != null && options.isConfirmBerthsRequired()) {
-            findNodeByExactText(root, EVIDENCE_CONFIRM_BERTH, isClickable = true)?.let {
-                executeClick(it) {}
-            }
-        }
-
         findNodeByExactText(root, EVIDENCE_REVIEW, isClickable = true)?.let {
-            executeClick(it) { success ->
-                if (success) {
-                    currentState = State.STOPPED
-                    Log.i(TAG, "Review Journey Details clicked. Automation stopped.")
-                }
+            executeClick(it) {
+                currentState = State.STOPPED
+                Log.i(TAG, "Review Journey Details clicked. Automation Stopped.")
             }
         }
     }
 
     // ----------------------------------------------------------------
-    // EXECUTOR HELPERS (Rule 5 & 6 - Exact ActionRequest Contract)
+    // EXECUTOR HELPERS (SET_TEXT Added)
     // ----------------------------------------------------------------
     private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
@@ -349,25 +322,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun findNodeByExactText(root: AccessibilityNodeInfo, targetText: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
-        if (targetText.isEmpty()) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val text = node.text?.toString() ?: ""
-            if (node.isVisibleToUser && (!isClickable || node.isClickable)) {
-                if (text.equals(targetText, ignoreCase = true)) {
-                    return node
-                }
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-        }
-        return null
-    }
-
     private fun findEditableNodeByEvidence(root: AccessibilityNodeInfo, evidence: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -379,6 +333,25 @@ class VMAXAccessibilityService : AccessibilityService() {
 
             if (node.isVisibleToUser && node.isEditable) {
                 if (text.equals(evidence, ignoreCase = true) || hint.equals(evidence, ignoreCase = true) || desc.equals(evidence, ignoreCase = true)) {
+                    return node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findNodeByExactText(root: AccessibilityNodeInfo, targetText: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
+        if (targetText.isEmpty()) return null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            if (node.isVisibleToUser && (!isClickable || node.isClickable)) {
+                if (text.equals(targetText, ignoreCase = true)) {
                     return node
                 }
             }
