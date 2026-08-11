@@ -1,688 +1,384 @@
 package com.vmax.app
 
 import android.accessibilityservice.AccessibilityService
-import android.graphics.Color
-import android.graphics.PixelFormat
-import android.os.Build
 import android.util.Log
-import android.view.Gravity
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import com.vmax.action.ActionExecutor
+import com.vmax.common.Result
 
-/**
- * VMAX Enterprise v2.6.1
- *
- * File — VMAXAccessibilityService.kt
- *
- * Stage 3 — Diagnostic Mode
- *
- * PURPOSE:
- * - Verify that VMAX AccessibilityService is actually connected.
- * - Verify that VMAX can observe the IRCTC Accessibility UI.
- * - Capture Accessibility Events.
- * - Capture the current Accessibility Node Tree.
- * - Display diagnostic information directly on screen.
- *
- * DIAGNOSTIC ONLY:
- * - No station database.
- * - No autocomplete implementation.
- * - No automation decision.
- * - No ActionExecutor calls.
- * - No business logic.
- *
- * Target IRCTC package:
- *     cris.org.in.prs.ima
- */
+// Importing ACTUAL Existing Blueprint Contracts (Source of Truth)
+import com.vmax.core.model.PassengerProfile
+import com.vmax.core.model.BookingOption
+import com.vmax.core.workflow.TrainDataProvider
+
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "VMAX_ORCHESTRATOR"
+        private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
 
-        private const val TAG = "VMAX_DIAGNOSTIC"
-
-        private const val IRCTC_PACKAGE =
-            "cris.org.in.prs.ima"
-
-        private const val MAX_LOG_LINES = 120
-
-        private const val OVERLAY_WIDTH_MATCH_PARENT = true
+        // Pure UI Evidence (No User Data)
+        private const val EVIDENCE_FROM = "From"
+        private const val EVIDENCE_TO = "To"
+        private const val EVIDENCE_DATE = "Date"
+        private const val EVIDENCE_SEARCH = "Search"
+        private const val EVIDENCE_ADD_NEW = "Add New"
+        private const val EVIDENCE_ADD_PASSENGER = "Add Passenger"
+        private const val EVIDENCE_REVIEW = "REVIEW JOURNEY DETAILS"
+        private const val EVIDENCE_CONFIRM_BERTH = "confirm berths"
+        private const val EVIDENCE_CAPTCHA = "CAPTCHA"
+        private const val EVIDENCE_OTP = "OTP"
     }
 
-    private var windowManager: WindowManager? = null
-    private var overlayView: LinearLayout? = null
-    private var logTextView: TextView? = null
+    // ----------------------------------------------------------------
+    // STATE MACHINE
+    // ----------------------------------------------------------------
+    private enum class State {
+        IDLE,
+        FROM_CLICKED, FROM_TYPED, FROM_SUGGESTION_CLICKED,
+        TO_CLICKED, TO_TYPED, TO_SUGGESTION_CLICKED,
+        DATE_CLICKED, DATE_SELECTED, SEARCH_CLICKED,
+        TRAIN_SELECTED, CLASS_SELECTED,
+        PASSENGER_ADD_CLICKED, PASSENGER_NAME_TYPED, PASSENGER_AGE_TYPED,
+        PASSENGER_GENDER_CLICKED, PASSENGER_MEAL_CLICKED, PASSENGER_SUBMITTED,
+        OPTIONS_REVIEW_CLICKED,
+        USER_BOUNDARY, STOPPED
+    }
 
-    // ------------------------------------------------------------------------
-    // SERVICE CONNECTED
-    // ------------------------------------------------------------------------
+    private var currentState = State.IDLE
+    private lateinit var executor: AndroidActionExecutor
+
+    // Real VMAX Configuration Source (Will be initialized by Dependency Injection in Future)
+    private lateinit var passengerProfile: PassengerProfile
+    private lateinit var bookingOption: BookingOption
+    private lateinit var trainDataProvider: TrainDataProvider
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        executor = AndroidActionExecutor(this)
+        Log.i(TAG, "VMAX Orchestrator Connected")
 
-        Log.d(
-            TAG,
-            "VMAX Accessibility Service CONNECTED"
-        )
-
-        showDiagnosticOverlay()
-
-        appendDiagnostic(
-            "VMAX DIAGNOSTIC\n" +
-                "SERVICE: CONNECTED\n" +
-                "IRCTC: WAITING\n" +
-                "Package: $IRCTC_PACKAGE"
-        )
+        // Note: Actual initialization of passengerProfile, bookingOption, and trainDataProvider
+        // will happen via a proper DI framework (e.g., Hilt/Koin) based on your APK's Config File.
+        // This ensures Service is a pure Consumer, not a Factory.
     }
 
-    // ------------------------------------------------------------------------
-    // ACCESSIBILITY EVENT
-    // ------------------------------------------------------------------------
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
 
-    override fun onAccessibilityEvent(
-        event: AccessibilityEvent?
-    ) {
+        val packageName = event.packageName?.toString() ?: return
+        if (packageName != IRCTC_PACKAGE) return
 
-        if (event == null) {
+        val root = rootInActiveWindow ?: return
+
+        // CAPTCHA/OTP Boundary (Lock without killing service)
+        if (isCaptchaOrOtpPresent(root)) {
+            currentState = State.USER_BOUNDARY
+            Log.w(TAG, "CAPTCHA/OTP detected. Locking to USER_BOUNDARY.")
+            root.recycle()
             return
         }
 
-        val packageName =
-            event.packageName?.toString() ?: "UNKNOWN"
-
-        val eventName =
-            getEventTypeName(event.eventType)
-
-        /*
-         * Always log the event to Logcat.
-         * This proves whether the AccessibilityService
-         * is receiving events at all.
-         */
-        Log.d(
-            TAG,
-            "EVENT=$eventName PACKAGE=$packageName"
-        )
-
-        /*
-         * Only inspect the IRCTC UI for IRCTC events.
-         */
-        if (packageName != IRCTC_PACKAGE) {
-            return
-        }
-
-        appendDiagnostic(
-            "[IRCTC EVENT]\n" +
-                "$eventName\n" +
-                "Package: $packageName"
-        )
-
-        captureCurrentRoot()
-    }
-
-    // ------------------------------------------------------------------------
-    // ROOT NODE CAPTURE
-    // ------------------------------------------------------------------------
-
-    private fun captureCurrentRoot() {
-
-        val root =
-            rootInActiveWindow
-
-        if (root == null) {
-
-            appendDiagnostic(
-                "IRCTC ROOT: NULL"
-            )
-
-            Log.d(
-                TAG,
-                "IRCTC rootInActiveWindow = NULL"
-            )
-
+        if (currentState == State.USER_BOUNDARY || currentState == State.STOPPED) {
+            root.recycle()
             return
         }
 
         try {
-
-            appendDiagnostic(
-                "IRCTC ROOT: AVAILABLE\n" +
-                    "Capturing visible node tree..."
-            )
-
-            val builder =
-                StringBuilder()
-
-            captureNodeTree(
-                node = root,
-                depth = 0,
-                builder = builder
-            )
-
-            val tree =
-                builder.toString()
-
-            if (tree.isBlank()) {
-
-                appendDiagnostic(
-                    "NODE TREE: EMPTY"
-                )
-
-                Log.d(
-                    TAG,
-                    "IRCTC node tree is empty"
-                )
-
-            } else {
-
-                appendDiagnostic(
-                    tree
-                )
-
-                Log.d(
-                    TAG,
-                    "IRCTC NODE TREE:\n$tree"
-                )
-            }
-
-        } catch (exception: Exception) {
-
-            Log.e(
-                TAG,
-                "Node tree capture failed",
-                exception
-            )
-
-            appendDiagnostic(
-                "TREE ERROR: " +
-                    (exception.message ?: "Unknown error")
-            )
-
+            processWorkflow(root)
         } finally {
-
             root.recycle()
         }
     }
 
-    // ------------------------------------------------------------------------
-    // NODE TREE
-    // ------------------------------------------------------------------------
-
-    private fun captureNodeTree(
-        node: AccessibilityNodeInfo,
-        depth: Int,
-        builder: StringBuilder
-    ) {
-
-        /*
-         * Prevent an unexpectedly deep tree from
-         * consuming excessive diagnostic space.
-         */
-        if (depth > 30) {
-            return
+    private fun processWorkflow(root: AccessibilityNodeInfo) {
+        when (currentState) {
+            State.IDLE -> handleFromField(root)
+            State.FROM_CLICKED -> handleFromTyping(root)
+            State.FROM_TYPED -> handleFromSuggestion(root)
+            State.FROM_SUGGESTION_CLICKED -> handleToField(root)
+            State.TO_CLICKED -> handleToTyping(root)
+            State.TO_TYPED -> handleToSuggestion(root)
+            State.TO_SUGGESTION_CLICKED -> handleDateField(root)
+            State.DATE_CLICKED -> handleDateSelection(root)
+            State.DATE_SELECTED -> handleSearch(root)
+            State.SEARCH_CLICKED -> handleTrainSelection(root)
+            State.TRAIN_SELECTED -> handleClassSelection(root)
+            State.CLASS_SELECTED -> handlePassengerScreen(root)
+            State.PASSENGER_ADD_CLICKED -> handlePassengerDetails(root)
+            State.PASSENGER_AGE_TYPED -> handlePassengerGender(root)
+            State.PASSENGER_GENDER_CLICKED -> handlePassengerMeal(root)
+            State.PASSENGER_MEAL_CLICKED -> handleAddPassengerSubmit(root)
+            State.PASSENGER_SUBMITTED -> handleOptionsReview(root)
+            else -> { /* Wait for Event/Evidence */ }
         }
+    }
 
-        val className =
-            node.className?.toString() ?: ""
-
-        val text =
-            node.text?.toString() ?: ""
-
-        val hint =
-            node.hintText?.toString() ?: ""
-
-        val contentDescription =
-            node.contentDescription?.toString() ?: ""
-
-        val viewId =
-            node.viewIdResourceName ?: ""
-
-        val visible =
-            node.isVisibleToUser
-
-        val clickable =
-            node.isClickable
-
-        val editable =
-            node.isEditable
-
-        val focusable =
-            node.isFocusable
-
-        val enabled =
-            node.isEnabled
-
-        /*
-         * Diagnostic target:
-         * keep nodes that contain useful evidence.
-         */
-        val hasUsefulData =
-            text.isNotBlank() ||
-                hint.isNotBlank() ||
-                contentDescription.isNotBlank() ||
-                viewId.isNotBlank() ||
-                clickable ||
-                editable ||
-                focusable
-
-        if (hasUsefulData) {
-
-            val indent =
-                "  ".repeat(depth)
-
-            builder.append(
-                indent
-            )
-
-            builder.append(
-                "NODE: $className"
-            )
-
-            builder.append(
-                " | Visible=$visible"
-            )
-
-            builder.append(
-                " | Clickable=$clickable"
-            )
-
-            builder.append(
-                " | Editable=$editable"
-            )
-
-            builder.append(
-                " | Focusable=$focusable"
-            )
-
-            builder.append(
-                " | Enabled=$enabled"
-            )
-
-            builder.append("\n")
-
-            if (text.isNotBlank()) {
-
-                builder.append(
-                    indent
-                )
-
-                builder.append(
-                    "  Text='$text'\n"
-                )
-            }
-
-            if (hint.isNotBlank()) {
-
-                builder.append(
-                    indent
-                )
-
-                builder.append(
-                    "  Hint='$hint'\n"
-                )
-            }
-
-            if (contentDescription.isNotBlank()) {
-
-                builder.append(
-                    indent
-                )
-
-                builder.append(
-                    "  Description='$contentDescription'\n"
-                )
-            }
-
-            if (viewId.isNotBlank()) {
-
-                builder.append(
-                    indent
-                )
-
-                builder.append(
-                    "  ViewId='$viewId'\n"
-                )
-            }
+    // ----------------------------------------------------------------
+    // ORCHESTRATION (Consumes real contracts: passengerProfile, bookingOption, trainDataProvider)
+    // ----------------------------------------------------------------
+    private fun handleFromField(root: AccessibilityNodeInfo) {
+        findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
+            executeClick(it) { if (it) currentState = State.FROM_CLICKED }
         }
+    }
 
-        /*
-         * Traverse children.
-         */
-        for (index in 0 until node.childCount) {
-
-            val child =
-                node.getChild(index)
-                    ?: continue
-
-            try {
-
-                captureNodeTree(
-                    node = child,
-                    depth = depth + 1,
-                    builder = builder
-                )
-
-            } finally {
-
-                child.recycle()
+    private fun handleFromTyping(root: AccessibilityNodeInfo) {
+        if (currentState == State.FROM_CLICKED) {
+            findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
+                executeSetText(it, passengerProfile.getBoardingStation()) { if (it) currentState = State.FROM_TYPED }
             }
         }
     }
 
-    // ------------------------------------------------------------------------
-    // DIAGNOSTIC OVERLAY
-    // ------------------------------------------------------------------------
+    private fun handleFromSuggestion(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, passengerProfile.getBoardingStation(), isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.FROM_SUGGESTION_CLICKED }
+        }
+    }
 
-    private fun showDiagnosticOverlay() {
+    private fun handleToField(root: AccessibilityNodeInfo) {
+        findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
+            executeClick(it) { if (it) currentState = State.TO_CLICKED }
+        }
+    }
 
-        if (overlayView != null) {
-            return
+    private fun handleToTyping(root: AccessibilityNodeInfo) {
+        if (currentState == State.TO_CLICKED) {
+            findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
+                executeSetText(it, passengerProfile.getDestinationStation()) { if (it) currentState = State.TO_TYPED }
+            }
+        }
+    }
+
+    private fun handleToSuggestion(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, passengerProfile.getDestinationStation(), isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.TO_SUGGESTION_CLICKED }
+        }
+    }
+
+    private fun handleDateField(root: AccessibilityNodeInfo) {
+        findNodeByEvidence(root, EVIDENCE_DATE, isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.DATE_CLICKED }
+        }
+    }
+
+    private fun handleDateSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, passengerProfile.getJourneyDate(), isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.DATE_SELECTED }
+        }
+    }
+
+    private fun handleSearch(root: AccessibilityNodeInfo) {
+        findNodeByEvidence(root, EVIDENCE_SEARCH, isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.SEARCH_CLICKED }
+        }
+    }
+
+    private fun handleTrainSelection(root: AccessibilityNodeInfo) {
+        val trainNumber = passengerProfile.getTrainNumber()
+        val trainName = trainDataProvider.getTrainName(trainNumber)
+
+        // Exact Match Rule
+        findNodeByExactText(root, trainNumber, isClickable = true)?.let {
+            executeClick(it) {
+                if (it) {
+                    // Verification / Non-blocking Rule
+                    if (trainName.isNotEmpty()) {
+                        findNodeByExactText(root, trainName) // Just verify, no action
+                    }
+                    currentState = State.TRAIN_SELECTED
+                }
+            }
+        }
+    }
+
+    private fun handleClassSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, passengerProfile.getClassType(), isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.CLASS_SELECTED }
+        }
+    }
+
+    private fun handlePassengerScreen(root: AccessibilityNodeInfo) {
+        findNodeByEvidence(root, EVIDENCE_ADD_NEW, isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.PASSENGER_ADD_CLICKED }
+        }
+    }
+
+    private fun handlePassengerDetails(root: AccessibilityNodeInfo) {
+        val allPassengers = passengerProfile.getPassengers()
+        if (allPassengers.isEmpty()) return
+
+        // Iterate over every passenger, exactly as Notebook Count dictates
+        allPassengers.forEachIndexed { index, passenger ->
+            // Logic to handle multiple passengers (Will be implemented in next phase)
+            if (index == 0) { // Filling the first passenger for current scope
+                findEditableNodeByEvidence(root, "Passenger Name")?.let { nameNode ->
+                    executeSetText(nameNode, passenger.name) {
+                        findEditableNodeByEvidence(root, "Age")?.let { ageNode ->
+                            executeSetText(ageNode, passenger.age.toString()) {
+                                currentState = State.PASSENGER_AGE_TYPED
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handlePassengerGender(root: AccessibilityNodeInfo) {
+        val passenger = passengerProfile.getPassengers().firstOrNull() ?: return
+        findNodeByExactText(root, passenger.gender, isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.PASSENGER_GENDER_CLICKED }
+        }
+    }
+
+    private fun handlePassengerMeal(root: AccessibilityNodeInfo) {
+        val passenger = passengerProfile.getPassengers().firstOrNull() ?: return
+        findNodeByEvidence(root, "Meal Preference", isClickable = true)?.let {
+            executeClick(it) { if (it) currentState = State.PASSENGER_MEAL_CLICKED }
+        }
+    }
+
+    private fun handleAddPassengerSubmit(root: AccessibilityNodeInfo) {
+        val passenger = passengerProfile.getPassengers().firstOrNull() ?: return
+        findNodeByExactText(root, passenger.mealPreference, isClickable = true)?.let { mealNode ->
+            executeClick(mealNode) {
+                findNodeByExactText(root, EVIDENCE_ADD_PASSENGER, isClickable = true)?.let { addBtn ->
+                    executeClick(addBtn) { if (it) currentState = State.PASSENGER_SUBMITTED }
+                }
+            }
+        }
+    }
+
+    private fun handleOptionsReview(root: AccessibilityNodeInfo) {
+        // Use Real BookingOption Contract
+        if (bookingOption.isConfirmBerthsRequired()) {
+            findNodeByExactText(root, EVIDENCE_CONFIRM_BERTH, isClickable = true)?.let {
+                executeClick(it) {}
+            }
         }
 
+        // Final Step
+        findNodeByExactText(root, EVIDENCE_REVIEW, isClickable = true)?.let {
+            executeClick(it) {
+                currentState = State.STOPPED
+                Log.i(TAG, "Review Journey Details clicked. Automation Stopped.")
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // EXECUTOR HELPERS (Unchanged & Locked)
+    // ----------------------------------------------------------------
+    private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
+        if (node == null) { onDispatched(false); return }
+        val request = ActionRequest(
+            type = ActionExecutor.ActionType.CLICK,
+            targetId = node.viewIdResourceName,
+            targetClass = node.className?.toString()
+        )
+        dispatchToExecutor(request, onDispatched)
+    }
+
+    private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
+        if (node == null) { onDispatched(false); return }
+        val request = ActionRequest(
+            type = ActionExecutor.ActionType.SET_TEXT,
+            targetId = node.viewIdResourceName,
+            targetClass = node.className?.toString(),
+            text = text
+        )
+        dispatchToExecutor(request, onDispatched)
+    }
+
+    private fun dispatchToExecutor(request: ActionRequest, onDispatched: (Boolean) -> Unit) {
         try {
-
-            windowManager =
-                getSystemService(
-                    WINDOW_SERVICE
-                ) as WindowManager
-
-            /*
-             * IMPORTANT:
-             *
-             * AccessibilityService must use
-             * TYPE_ACCESSIBILITY_OVERLAY.
-             *
-             * We do NOT use TYPE_APPLICATION_OVERLAY.
-             */
-            val overlayType =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
+            val result = executor.executeAction(request)
+            when (result) {
+                is Result.Success -> onDispatched(true)
+                is Result.Error -> {
+                    Log.e(TAG, "Executor error: ${result.error.message}")
+                    onDispatched(false)
                 }
-
-            val params =
-                WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.WRAP_CONTENT,
-                    overlayType,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.TRANSLUCENT
-                )
-
-            params.gravity =
-                Gravity.TOP or Gravity.START
-
-            params.x = 0
-            params.y = 0
-
-            val container =
-                LinearLayout(this).apply {
-
-                    orientation =
-                        LinearLayout.VERTICAL
-
-                    // ✅ FIX: Added missing closing parenthesis for argb()
-                    setBackgroundColor(
-                        Color.argb(
-                            220,
-                            0,
-                            0,
-                            0
-                        )
-                    )
-
-                    setPadding(
-                        16,
-                        16,
-                        16,
-                        16
-                    )
-                }
-
-            val title =
-                TextView(this).apply {
-
-                    text =
-                        "VMAX DIAGNOSTIC"
-
-                    setTextColor(
-                        Color.GREEN
-                    )
-
-                    textSize =
-                        16f
-
-                    setPadding(
-                        0,
-                        0,
-                        0,
-                        8
-                    )
-                }
-
-            val scrollView =
-                ScrollView(this).apply {
-
-                    layoutParams =
-                        LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            600
-                        )
-                }
-
-            logTextView =
-                TextView(this).apply {
-
-                    text =
-                        "Starting diagnostic..."
-
-                    setTextColor(
-                        Color.WHITE
-                    )
-
-                    textSize =
-                        12f
-
-                    setTextIsSelectable(
-                        true
-                    )
-                }
-
-            scrollView.addView(
-                logTextView
-            )
-
-            container.addView(
-                title
-            )
-
-            container.addView(
-                scrollView
-            )
-
-            overlayView =
-                container
-
-            windowManager?.addView(
-                container,
-                params
-            )
-
-            Log.d(
-                TAG,
-                "Diagnostic overlay created successfully"
-            )
-
-        } catch (exception: Exception) {
-
-            Log.e(
-                TAG,
-                "Diagnostic overlay creation failed",
-                exception
-            )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception dispatching action", e)
+            onDispatched(false)
         }
     }
 
-    // ------------------------------------------------------------------------
-    // APPEND DIAGNOSTIC LOG
-    // ------------------------------------------------------------------------
+    // ----------------------------------------------------------------
+    // EVIDENCE-BASED FINDERS
+    // ----------------------------------------------------------------
+    private fun findNodeByEvidence(root: AccessibilityNodeInfo, evidence: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            val hint = node.hintText?.toString() ?: ""
+            val desc = node.contentDescription?.toString() ?: ""
 
-    private fun appendDiagnostic(
-        message: String
-    ) {
-
-        val textView =
-            logTextView
-                ?: return
-
-        textView.post {
-
-            val oldText =
-                textView.text?.toString()
-                    ?: ""
-
-            val combined =
-                if (oldText.isBlank()) {
-                    message
-                } else {
-                    "$oldText\n\n$message"
+            if (node.isVisibleToUser && (!isClickable || node.isClickable)) {
+                if (text.equals(evidence, ignoreCase = true) || hint.equals(evidence, ignoreCase = true) || desc.equals(evidence, ignoreCase = true)) {
+                    return node
                 }
-
-            val lines =
-                combined.lines()
-
-            val finalText =
-                if (lines.size > MAX_LOG_LINES) {
-                    lines
-                        .takeLast(MAX_LOG_LINES)
-                        .joinToString("\n")
-                } else {
-                    combined
-                }
-
-            textView.text =
-                finalText
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
         }
+        return null
     }
 
-    // ------------------------------------------------------------------------
-    // EVENT TYPE
-    // ------------------------------------------------------------------------
-
-    private fun getEventTypeName(
-        eventType: Int
-    ): String {
-
-        return when (eventType) {
-
-            AccessibilityEvent.TYPE_VIEW_CLICKED ->
-                "VIEW_CLICKED"
-
-            AccessibilityEvent.TYPE_VIEW_FOCUSED ->
-                "VIEW_FOCUSED"
-
-            AccessibilityEvent.TYPE_VIEW_SELECTED ->
-                "VIEW_SELECTED"
-
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
-                "VIEW_TEXT_CHANGED"
-
-            AccessibilityEvent.TYPE_VIEW_SCROLLED ->
-                "VIEW_SCROLLED"
-
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
-                "WINDOW_STATE_CHANGED"
-
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
-                "WINDOW_CONTENT_CHANGED"
-
-            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ->
-                "VIEW_TEXT_SELECTION_CHANGED"
-
-            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED ->
-                "VIEW_ACCESSIBILITY_FOCUSED"
-
-            AccessibilityEvent.TYPE_VIEW_HOVER_ENTER ->
-                "VIEW_HOVER_ENTER"
-
-            AccessibilityEvent.TYPE_VIEW_HOVER_EXIT ->
-                "VIEW_HOVER_EXIT"
-
-            else ->
-                "OTHER($eventType)"
+    private fun findNodeByExactText(root: AccessibilityNodeInfo, targetText: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
+        if (targetText.isEmpty()) return null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            if (node.isVisibleToUser && (!isClickable || node.isClickable)) {
+                if (text.equals(targetText, ignoreCase = true)) {
+                    return node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
         }
+        return null
     }
 
-    // ------------------------------------------------------------------------
-    // INTERRUPT
-    // ------------------------------------------------------------------------
+    private fun findEditableNodeByEvidence(root: AccessibilityNodeInfo, evidence: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            val hint = node.hintText?.toString() ?: ""
+            val desc = node.contentDescription?.toString() ?: ""
+
+            if (node.isVisibleToUser && node.isEditable) {
+                if (text.equals(evidence, ignoreCase = true) || hint.equals(evidence, ignoreCase = true) || desc.equals(evidence, ignoreCase = true)) {
+                    return node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
+    private fun isCaptchaOrOtpPresent(root: AccessibilityNodeInfo): Boolean {
+        return findNodeByExactText(root, EVIDENCE_CAPTCHA) != null ||
+               findNodeByExactText(root, EVIDENCE_OTP) != null
+    }
 
     override fun onInterrupt() {
-
-        Log.d(
-            TAG,
-            "Accessibility Service INTERRUPTED"
-        )
-
-        appendDiagnostic(
-            "SERVICE INTERRUPTED"
-        )
-    }
-
-    // ------------------------------------------------------------------------
-    // DESTROY
-    // ------------------------------------------------------------------------
-
-    override fun onDestroy() {
-
-        Log.d(
-            TAG,
-            "Accessibility Service DESTROYED"
-        )
-
-        removeDiagnosticOverlay()
-
-        super.onDestroy()
-    }
-
-    // ------------------------------------------------------------------------
-    // REMOVE OVERLAY
-    // ------------------------------------------------------------------------
-
-    private fun removeDiagnosticOverlay() {
-
-        try {
-
-            val view =
-                overlayView
-
-            if (view != null) {
-
-                windowManager?.removeView(
-                    view
-                )
-            }
-
-        } catch (exception: Exception) {
-
-            Log.e(
-                TAG,
-                "Failed to remove diagnostic overlay",
-                exception
-            )
-
-        } finally {
-
-            overlayView =
-                null
-
-            logTextView =
-                null
-        }
+        Log.w(TAG, "Service interrupted")
     }
 }
