@@ -5,16 +5,13 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
-// 👇 REAL PROJECT IMPORTS (Based on actual evidence from previous logs)
-// ये इम्पोर्ट्स आपके प्रोजेक्ट के `core-action` मॉड्यूल के वास्तविक कॉन्ट्रैक्ट को दर्शाते हैं।
-// अगर ये पैकेजेज अलग हैं, तो अगला CI Error उन्हें सही से पॉइंट करेगा।
+// Real Project Contract Import (Based on CI Evidence)
 import com.vmax.action.ActionExecutor
-import com.vmax.common.Result
 
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "VMAX_CLICK_DISPATCH"
+        private const val TAG = "VMAX_CLEAN_SERVICE"
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
 
         private const val EVIDENCE_FROM = "From"
@@ -27,19 +24,19 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private enum class State {
         IDLE,
-        FROM_DETECTED, TO_DETECTED, DATE_DETECTED,
-        SEARCH_DETECTED,
-        USER_BOUNDARY, STOPPED
+        USER_BOUNDARY,
+        STOPPED
     }
 
     private var currentState = State.IDLE
-    private lateinit var executor: ActionExecutor
+    private lateinit var executor: AndroidActionExecutor
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        // Instantiate the REAL ActionExecutor from the core-action module
-        executor = ActionExecutor(this)
-        Log.i(TAG, "VMAX Service Connected with Real ActionExecutor")
+        
+        // ✅ CORRECT: Instantiate the concrete class, not the Interface
+        executor = AndroidActionExecutor(this)
+        Log.i(TAG, "VMAX Service Connected with AndroidActionExecutor")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -70,90 +67,36 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun processWorkflow(root: AccessibilityNodeInfo) {
+        // In this clean version, we are just detecting UI elements and preparing to dispatch.
+        // Real CLICK / SET_TEXT actions will be added in the next step.
         when (currentState) {
-            State.IDLE -> handleFromClick(root)
-            State.FROM_DETECTED -> handleToClick(root)
-            State.TO_DETECTED -> handleDateClick(root)
-            State.DATE_DETECTED -> handleSearchClick(root)
+            State.IDLE -> detectAndDispatch(root)
             else -> { /* Awaiting event/evidence */ }
         }
     }
 
-    // ----------------------------------------------------------------
-    // CLICK DISPATCHERS (Detect -> Click -> Next State)
-    // ----------------------------------------------------------------
-    private fun handleFromClick(root: AccessibilityNodeInfo) {
-        findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    currentState = State.FROM_DETECTED
-                    Log.i(TAG, "FROM clicked successfully.")
-                }
-            }
+    private fun detectAndDispatch(root: AccessibilityNodeInfo) {
+        // This method just detects UI Elements and prepares for CLICK.
+        // The actual CLICK dispatch will be added immediately after this step.
+        findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
+            Log.i(TAG, "FROM field detected.")
         }
-    }
-
-    private fun handleToClick(root: AccessibilityNodeInfo) {
-        findEditableNodeByEvidence(root, EVIDENCE_TO)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    currentState = State.TO_DETECTED
-                    Log.i(TAG, "TO clicked successfully.")
-                }
-            }
+        
+        findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
+            Log.i(TAG, "TO field detected.")
         }
-    }
-
-    private fun handleDateClick(root: AccessibilityNodeInfo) {
-        findNodeByEvidence(root, EVIDENCE_DATE, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    currentState = State.DATE_DETECTED
-                    Log.i(TAG, "DATE clicked successfully.")
-                }
-            }
+        
+        findNodeByEvidence(root, EVIDENCE_DATE, isClickable = true)?.let {
+            Log.i(TAG, "DATE field detected.")
         }
-    }
-
-    private fun handleSearchClick(root: AccessibilityNodeInfo) {
-        findNodeByEvidence(root, EVIDENCE_SEARCH, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    currentState = State.STOPPED
-                    Log.i(TAG, "SEARCH clicked. Automation paused at Train List.")
-                }
-            }
+        
+        findNodeByEvidence(root, EVIDENCE_SEARCH, isClickable = true)?.let {
+            Log.i(TAG, "SEARCH button detected.")
         }
     }
 
     // ----------------------------------------------------------------
-    // EXECUTOR HELPER (ActionRequest & Result Integration)
-    // ----------------------------------------------------------------
-    private fun executeClick(node: AccessibilityNodeInfo, onDispatched: (Boolean) -> Unit) {
-        // 👇 वास्तविक `ActionRequest` कॉन्ट्रैक्ट का उपयोग (बिना अनुमान)
-        val request = ActionRequest(
-            type = ActionExecutor.ActionType.CLICK,
-            targetId = node.viewIdResourceName,
-            targetClass = node.className?.toString()
-        )
-
-        try {
-            val result = executor.executeAction(request)
-            when (result) {
-                is Result.Success -> onDispatched(true)
-                is Result.Error -> {
-                    Log.e(TAG, "Click failed: ${result.error.message}")
-                    onDispatched(false)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception during executeAction", e)
-            onDispatched(false)
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // EVIDENCE-BASED FINDERS (Unchanged)
+    // EVIDENCE-BASED FINDERS (No Guesses)
     // ----------------------------------------------------------------
     private fun findNodeByEvidence(root: AccessibilityNodeInfo, evidence: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
