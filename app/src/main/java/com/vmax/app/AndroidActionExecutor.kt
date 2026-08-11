@@ -26,8 +26,10 @@ import com.vmax.common.Result
  * - Use coordinate gestures as fallback where appropriate.
  * - Support TAP, CLICK, DOUBLE_TAP, LONG_CLICK,
  *   SWIPE, SCROLL, SET_TEXT, CLEAR_TEXT and WAIT.
- * - Respect ActionRequest.coordinates.
- * - Respect ActionRequest.durationMs.
+ * - Respect ActionRequest.coordinates, durationMs, and waitAfterMs.
+ * - Respect ActionRequest.targetId / targetText / targetClass semantics.
+ * - SCROLL uses targetText as direction, not a node selector.
+ * - SEARCH semantics include both node.text and node.contentDescription.
  * - Maintain safe AccessibilityNodeInfo lifecycle.
  *
  * Architecture:
@@ -52,9 +54,6 @@ class AndroidActionExecutor(
 
     private var lastResult: ActionResult? = null
 
-    /**
-     * Internal representation of a swipe.
-     */
     private data class SwipeCoords(
         val startX: Float,
         val startY: Float,
@@ -63,20 +62,9 @@ class AndroidActionExecutor(
     )
 
     // ------------------------------------------------------------------------
-    // Node Discovery
+    // Node Discovery (Enhanced with contentDescription support)
     // ------------------------------------------------------------------------
 
-    /**
-     * Finds a visible node using the supplied selectors.
-     *
-     * Selector matching is strict:
-     * - Every supplied selector must match.
-     * - At least one selector must be supplied.
-     *
-     * Lifecycle rule:
-     * The returned node is owned by the caller.
-     * All non-returned nodes are recycled inside the traversal.
-     */
     private fun findNode(
         targetId: String?,
         targetText: String?,
@@ -102,14 +90,6 @@ class AndroidActionExecutor(
         )
     }
 
-    /**
-     * Recursive node traversal with explicit ownership.
-     *
-     * Important:
-     * - If this node is the match, it is returned and NOT recycled.
-     * - If a descendant is returned, this node is recycled before returning.
-     * - If nothing matches, this node is recycled before returning null.
-     */
     private fun findNodeRecursive(
         node: AccessibilityNodeInfo,
         targetId: String?,
@@ -141,9 +121,6 @@ class AndroidActionExecutor(
         return null
     }
 
-    /**
-     * All supplied selectors must match.
-     */
     private fun matchesTarget(
         node: AccessibilityNodeInfo,
         targetId: String?,
@@ -161,10 +138,13 @@ class AndroidActionExecutor(
             return false
         }
 
-        if (targetText != null &&
-            node.text?.toString() != targetText
-        ) {
-            return false
+        if (targetText != null) {
+            // ✅ Diagnostic-backed: Check both text AND contentDescription
+            val textMatch = node.text?.toString() == targetText
+            val descMatch = node.contentDescription?.toString() == targetText
+            if (!textMatch && !descMatch) {
+                return false
+            }
         }
 
         if (targetClass != null &&
@@ -193,10 +173,6 @@ class AndroidActionExecutor(
         )
     }
 
-    /**
-     * Explicit request coordinates have priority.
-     * Otherwise the center of the target node is used.
-     */
     private fun getTargetCoordinates(
         node: AccessibilityNodeInfo,
         request: ActionRequest
@@ -369,10 +345,6 @@ class AndroidActionExecutor(
         }
     }
 
-    /**
-     * ActionRequest.coordinates represents the swipe start point.
-     * The endpoint is derived from direction.
-     */
     private fun getSwipePath(
         request: ActionRequest,
         direction: String
@@ -488,9 +460,11 @@ class AndroidActionExecutor(
         try {
 
             val (searchId, searchText, searchClass) = when (actionType) {
+                // SCROLL uses targetText as direction, NOT as node selector
                 ActionExecutor.ActionType.SCROLL ->
                     Triple(request.targetId, null, request.targetClass)
 
+                // SWIPE and WAIT don't require a node
                 ActionExecutor.ActionType.SWIPE,
                 ActionExecutor.ActionType.WAIT ->
                     Triple(null, null, null)
@@ -523,7 +497,7 @@ class AndroidActionExecutor(
                 )
             }
 
-            return when (actionType) {
+            val actionResult = when (actionType) {
 
                 // ------------------------------------------------------------
                 // TAP / CLICK
@@ -1009,6 +983,17 @@ class AndroidActionExecutor(
                         "Waited ${duration} ms"
                     )
                 }
+            }
+
+            // ✅ FINAL FIX: waitAfterMs is applied ONLY after a successful Result
+            return if (actionResult is Result.Success) {
+                if (request.waitAfterMs > 0L) {
+                    Thread.sleep(request.waitAfterMs)
+                }
+                actionResult
+            } else {
+                // If it's an error, do NOT apply waitAfterMs.
+                actionResult
             }
 
         } catch (interrupted: InterruptedException) {
