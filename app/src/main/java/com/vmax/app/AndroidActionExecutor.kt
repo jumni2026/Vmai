@@ -40,7 +40,7 @@ class AndroidActionExecutor(
         private const val DEFAULT_SWIPE_DISTANCE = 100f
     }
 
-    private var lastResult: Result<ActionExecutor.ActionResult, ActionError>? = null
+    private var lastResult: ActionExecutor.ActionResult? = null  // ✅ FIX #1: Changed to non-wrapped ActionResult
 
     private data class SwipeCoords(
         val startX: Float,
@@ -725,13 +725,15 @@ class AndroidActionExecutor(
                 }
             }
 
-            return if (actionResult is Result.Success) {
+            // ✅ FIX #1: Store unwrapped ActionResult in lastResult
+            if (actionResult is Result.Success) {
+                lastResult = actionResult.data
                 if (request.waitAfterMs > 0L) {
                     Thread.sleep(request.waitAfterMs)
                 }
-                actionResult
+                return actionResult
             } else {
-                actionResult
+                return actionResult
             }
 
         } catch (interrupted: InterruptedException) {
@@ -790,9 +792,20 @@ class AndroidActionExecutor(
     }
 
     // ----------------------------------------------------------------
-    // LAST RESULT
+    // ✅ FIX #2: Added missing abstract method 'executeTap'
     // ----------------------------------------------------------------
-    override fun getLastActionResult(): Result<ActionExecutor.ActionResult, ActionError>? {
+    override fun executeTap(targetId: String): Result<ActionExecutor.ActionResult, ActionError> {
+        val request = ActionExecutor.ActionRequest(
+            type = ActionExecutor.ActionType.TAP,
+            targetId = targetId
+        )
+        return executeAction(request)
+    }
+
+    // ----------------------------------------------------------------
+    // ✅ FIX #1: getLastActionResult now returns unwrapped ActionResult
+    // ----------------------------------------------------------------
+    override fun getLastActionResult(): ActionExecutor.ActionResult? {
         return lastResult
     }
 }
