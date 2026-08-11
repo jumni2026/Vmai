@@ -20,24 +20,13 @@ import com.vmax.common.Result
  * Android implementation of the platform-independent
  * com.vmax.action.ActionExecutor contract.
  *
- * Responsibilities:
- * - Execute Android Accessibility actions.
- * - Use native AccessibilityNodeInfo actions first where appropriate.
- * - Use coordinate gestures as fallback where appropriate.
- * - Support TAP, CLICK, DOUBLE_TAP, LONG_CLICK,
- *   SWIPE, SCROLL, SET_TEXT, CLEAR_TEXT and WAIT.
- * - Respect ActionRequest.coordinates, durationMs, and waitAfterMs.
- * - Respect ActionRequest.targetId / targetText / targetClass semantics.
- * - SCROLL uses targetText as direction, not a node selector.
- * - SEARCH semantics include both node.text and node.contentDescription.
- * - Maintain safe AccessibilityNodeInfo lifecycle.
- *
  * Architecture:
  * ActionExecutor (contract)
  *          ↓
  * AndroidActionExecutor (Android implementation)
  *
  * No business logic.
+ * No IRCTC-specific logic.
  */
 class AndroidActionExecutor(
     private val accessibilityService: AccessibilityService
@@ -82,12 +71,24 @@ class AndroidActionExecutor(
         val root = accessibilityService.rootInActiveWindow
             ?: return null
 
-        return findNodeRecursive(
-            root,
-            targetId,
-            targetText,
-            targetClass
-        )
+        try {
+            // ✅ Find and RETURN a NEW node reference (safe lifecycle)
+            val result = findNodeRecursive(
+                node = root,
+                targetId = targetId,
+                targetText = targetText,
+                targetClass = targetClass
+            )
+
+            // ✅ result is either:
+            //    - A NEW node via AccessibilityNodeInfo.obtain()
+            //    - null (no match found)
+            return result
+
+        } finally {
+            // ✅ root is ALWAYS recycled here (only once)
+            root.recycle()
+        }
     }
 
     private fun findNodeRecursive(
@@ -98,26 +99,37 @@ class AndroidActionExecutor(
     ): AccessibilityNodeInfo? {
 
         if (matchesTarget(node, targetId, targetText, targetClass)) {
-            return node
+            // ✅ Return a NEW reference (caller owns it)
+            // ✅ Current node remains owned by caller (parent)
+            return AccessibilityNodeInfo.obtain(node)
         }
 
+        // ✅ Traverse children
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
 
-            val found = findNodeRecursive(
-                child,
-                targetId,
-                targetText,
-                targetClass
-            )
+            try {
+                val found = findNodeRecursive(
+                    node = child,
+                    targetId = targetId,
+                    targetText = targetText,
+                    targetClass = targetClass
+                )
 
-            if (found != null) {
-                node.recycle()
-                return found
+                if (found != null) {
+                    // ✅ Found a match, return it (child is already a NEW reference)
+                    // ✅ Current node remains owned by caller (will be recycled by parent)
+                    return found
+                }
+            } finally {
+                // ✅ Child is ALWAYS recycled here (regardless of match)
+                // ✅ If match found, child is recycled AFTER obtain() created a copy
+                child.recycle()
             }
         }
 
-        node.recycle()
+        // ✅ No match found, return null
+        // ✅ Current node remains owned by caller (will be recycled by parent)
         return null
     }
 
@@ -140,8 +152,12 @@ class AndroidActionExecutor(
 
         if (targetText != null) {
             // ✅ Diagnostic-backed: Check both text AND contentDescription
-            val textMatch = node.text?.toString() == targetText
-            val descMatch = node.contentDescription?.toString() == targetText
+            val nodeText = node.text?.toString()
+            val nodeDesc = node.contentDescription?.toString()
+
+            val textMatch = nodeText == targetText
+            val descMatch = nodeDesc == targetText
+
             if (!textMatch && !descMatch) {
                 return false
             }
@@ -435,14 +451,22 @@ class AndroidActionExecutor(
         targetId: String?
     ): Result<ActionResult, ActionError> {
 
-        val result = ActionError(
+        // ✅ Store last result even for errors (contract requires it)
+        val errorResult = ActionResult(
+            success = false,
+            actionType = actionType,
+            message = message
+        )
+        lastResult = errorResult
+
+        val error = ActionError(
             code = code,
             message = message,
             actionType = actionType,
             targetId = targetId
         )
 
-        return Result.Error(result)
+        return Result.Error(error)
     }
 
     // ------------------------------------------------------------------------
@@ -1020,6 +1044,7 @@ class AndroidActionExecutor(
         } finally {
 
             /*
+             * ✅ SAFE LIFECYCLE:
              * The node returned by findNode() is owned by this method.
              * Always recycle it after action execution.
              */
