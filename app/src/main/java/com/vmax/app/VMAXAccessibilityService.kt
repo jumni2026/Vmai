@@ -4,39 +4,92 @@ import android.accessibilityservice.AccessibilityService
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-
-// Real Project Contract Import (Based on CI Evidence)
 import com.vmax.action.ActionExecutor
+import com.vmax.common.Result
 
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "VMAX_CLEAN_SERVICE"
+        private const val TAG = "VMAX_EXECUTION_SERVICE"
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
 
+        // UI Evidence
         private const val EVIDENCE_FROM = "From"
         private const val EVIDENCE_TO = "To"
         private const val EVIDENCE_DATE = "Date"
         private const val EVIDENCE_SEARCH = "Search"
+        private const val EVIDENCE_ADD_NEW = "Add New"
+        private const val EVIDENCE_ADD_PASSENGER = "Add Passenger"
+        private const val EVIDENCE_REVIEW = "REVIEW JOURNEY DETAILS"
         private const val EVIDENCE_CAPTCHA = "CAPTCHA"
         private const val EVIDENCE_OTP = "OTP"
     }
 
+    // ----------------------------------------------------------------
+    // CONFIGURATION DATA (Will come from WorkflowController via Bridge later)
+    // ----------------------------------------------------------------
+    private var targetFrom: String = ""
+    private var targetTo: String = ""
+    private var targetDate: String = ""
+    private var targetTrain: String = ""
+    private var targetClass: String = ""
+    private var passengerName: String = ""
+    private var passengerAge: String = ""
+    private var passengerGender: String = ""
+    private var passengerMeal: String = ""
+
+    // ----------------------------------------------------------------
+    // STATE MACHINE (Full Execution Flow)
+    // ----------------------------------------------------------------
     private enum class State {
         IDLE,
-        USER_BOUNDARY,
-        STOPPED
+        FROM_CLICKED, FROM_TYPED, FROM_SUGGESTION_CLICKED,
+        TO_CLICKED, TO_TYPED, TO_SUGGESTION_CLICKED,
+        DATE_CLICKED, DATE_SELECTED, SEARCH_CLICKED,
+        TRAIN_SELECTED, CLASS_SELECTED,
+        PASSENGER_ADD_CLICKED, PASSENGER_NAME_TYPED, PASSENGER_AGE_TYPED,
+        PASSENGER_GENDER_CLICKED, PASSENGER_MEAL_CLICKED, PASSENGER_SUBMITTED,
+        OPTIONS_REVIEW_CLICKED,
+        USER_BOUNDARY, STOPPED
     }
 
     private var currentState = State.IDLE
     private lateinit var executor: AndroidActionExecutor
 
+    // ----------------------------------------------------------------
+    // PUBLIC CONTRACT FOR BRIDGE
+    // ----------------------------------------------------------------
+    fun startWorkflow(
+        from: String, to: String, date: String,
+        train: String, trainClass: String,
+        name: String, age: String, gender: String, meal: String
+    ) {
+        targetFrom = from
+        targetTo = to
+        targetDate = date
+        targetTrain = train
+        targetClass = trainClass
+        passengerName = name
+        passengerAge = age
+        passengerGender = gender
+        passengerMeal = meal
+
+        currentState = State.IDLE
+        Log.i(TAG, "Workflow started with configured data.")
+    }
+
+    fun stopWorkflow() {
+        currentState = State.STOPPED
+        Log.i(TAG, "Workflow stopped.")
+    }
+
+    // ----------------------------------------------------------------
+    // SERVICE LIFECYCLE
+    // ----------------------------------------------------------------
     override fun onServiceConnected() {
         super.onServiceConnected()
-        
-        // ✅ CORRECT: Instantiate the concrete class, not the Interface
         executor = AndroidActionExecutor(this)
-        Log.i(TAG, "VMAX Service Connected with AndroidActionExecutor")
+        Log.i(TAG, "VMAX Service Connected with Real Executor")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -47,6 +100,7 @@ class VMAXAccessibilityService : AccessibilityService() {
 
         val root = rootInActiveWindow ?: return
 
+        // CAPTCHA/OTP Boundary
         if (isCaptchaOrOtpPresent(root)) {
             currentState = State.USER_BOUNDARY
             Log.w(TAG, "CAPTCHA/OTP detected. Locking to USER_BOUNDARY.")
@@ -67,31 +121,182 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun processWorkflow(root: AccessibilityNodeInfo) {
-        // In this clean version, we are just detecting UI elements and preparing to dispatch.
-        // Real CLICK / SET_TEXT actions will be added in the next step.
         when (currentState) {
-            State.IDLE -> detectAndDispatch(root)
+            State.IDLE -> handleFromField(root)
+            State.FROM_CLICKED -> handleFromTyping(root)
+            State.FROM_TYPED -> handleFromSuggestion(root)
+            State.FROM_SUGGESTION_CLICKED -> handleToField(root)
+            State.TO_CLICKED -> handleToTyping(root)
+            State.TO_TYPED -> handleToSuggestion(root)
+            State.TO_SUGGESTION_CLICKED -> handleDateField(root)
+            State.DATE_CLICKED -> handleDateSelection(root)
+            State.DATE_SELECTED -> handleSearch(root)
+            State.SEARCH_CLICKED -> handleTrainSelection(root)
+            State.TRAIN_SELECTED -> handleClassSelection(root)
+            State.CLASS_SELECTED -> handlePassengerScreen(root)
+            State.PASSENGER_ADD_CLICKED -> handlePassengerDetails(root)
+            State.PASSENGER_AGE_TYPED -> handlePassengerGender(root)
+            State.PASSENGER_GENDER_CLICKED -> handlePassengerMeal(root)
+            State.PASSENGER_MEAL_CLICKED -> handleAddPassengerSubmit(root)
+            State.PASSENGER_SUBMITTED -> handleOptionsReview(root)
             else -> { /* Awaiting event/evidence */ }
         }
     }
 
-    private fun detectAndDispatch(root: AccessibilityNodeInfo) {
-        // This method just detects UI Elements and prepares for CLICK.
-        // The actual CLICK dispatch will be added immediately after this step.
+    // ----------------------------------------------------------------
+    // ORCHESTRATION HANDLERS (Using Real Executor)
+    // ----------------------------------------------------------------
+    private fun handleFromField(root: AccessibilityNodeInfo) {
         findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
-            Log.i(TAG, "FROM field detected.")
+            executeClick(it) { success -> if (success) currentState = State.FROM_CLICKED }
         }
-        
+    }
+
+    private fun handleFromTyping(root: AccessibilityNodeInfo) {
+        if (currentState == State.FROM_CLICKED) {
+            findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
+                executeSetText(it, targetFrom) { success -> 
+                    if (success) currentState = State.FROM_TYPED 
+                }
+            }
+        }
+    }
+
+    private fun handleFromSuggestion(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, targetFrom, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.FROM_SUGGESTION_CLICKED }
+        }
+    }
+
+    private fun handleToField(root: AccessibilityNodeInfo) {
         findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
-            Log.i(TAG, "TO field detected.")
+            executeClick(it) { success -> if (success) currentState = State.TO_CLICKED }
         }
-        
+    }
+
+    private fun handleToTyping(root: AccessibilityNodeInfo) {
+        if (currentState == State.TO_CLICKED) {
+            findEditableNodeByEvidence(root, EVIDENCE_TO)?.let {
+                executeSetText(it, targetTo) { success -> 
+                    if (success) currentState = State.TO_TYPED 
+                }
+            }
+        }
+    }
+
+    private fun handleToSuggestion(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, targetTo, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.TO_SUGGESTION_CLICKED }
+        }
+    }
+
+    private fun handleDateField(root: AccessibilityNodeInfo) {
         findNodeByEvidence(root, EVIDENCE_DATE, isClickable = true)?.let {
-            Log.i(TAG, "DATE field detected.")
+            executeClick(it) { success -> if (success) currentState = State.DATE_CLICKED }
         }
-        
+    }
+
+    private fun handleDateSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, targetDate, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.DATE_SELECTED }
+        }
+    }
+
+    private fun handleSearch(root: AccessibilityNodeInfo) {
         findNodeByEvidence(root, EVIDENCE_SEARCH, isClickable = true)?.let {
-            Log.i(TAG, "SEARCH button detected.")
+            executeClick(it) { success -> if (success) currentState = State.SEARCH_CLICKED }
+        }
+    }
+
+    private fun handleTrainSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, targetTrain, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.TRAIN_SELECTED }
+        }
+    }
+
+    private fun handleClassSelection(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, targetClass, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.CLASS_SELECTED }
+        }
+    }
+
+    private fun handlePassengerScreen(root: AccessibilityNodeInfo) {
+        findNodeByEvidence(root, EVIDENCE_ADD_NEW, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.PASSENGER_ADD_CLICKED }
+        }
+    }
+
+    private fun handlePassengerDetails(root: AccessibilityNodeInfo) {
+        findEditableNodeByEvidence(root, "Passenger Name")?.let { nameNode ->
+            executeSetText(nameNode, passengerName) { success ->
+                if (success) {
+                    findEditableNodeByEvidence(root, "Age")?.let { ageNode ->
+                        executeSetText(ageNode, passengerAge) { ageSuccess ->
+                            if (ageSuccess) currentState = State.PASSENGER_AGE_TYPED
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handlePassengerGender(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, passengerGender, isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.PASSENGER_GENDER_CLICKED }
+        }
+    }
+
+    private fun handlePassengerMeal(root: AccessibilityNodeInfo) {
+        findNodeByEvidence(root, "Meal Preference", isClickable = true)?.let {
+            executeClick(it) { success -> if (success) currentState = State.PASSENGER_MEAL_CLICKED }
+        }
+    }
+
+    private fun handleAddPassengerSubmit(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, passengerMeal, isClickable = true)?.let { mealNode ->
+            executeClick(mealNode) {
+                findNodeByExactText(root, EVIDENCE_ADD_PASSENGER, isClickable = true)?.let { addBtn ->
+                    executeClick(addBtn) { success -> if (success) currentState = State.PASSENGER_SUBMITTED }
+                }
+            }
+        }
+    }
+
+    private fun handleOptionsReview(root: AccessibilityNodeInfo) {
+        findNodeByExactText(root, EVIDENCE_REVIEW, isClickable = true)?.let {
+            executeClick(it) { success ->
+                if (success) {
+                    currentState = State.STOPPED
+                    Log.i(TAG, "Review Journey Details clicked. Automation Stopped.")
+                }
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // EXECUTOR HELPERS (Uses Real Executor Contract)
+    // ----------------------------------------------------------------
+    private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
+        if (node == null) { onDispatched(false); return }
+        val result = executor.executeClick(node.viewIdResourceName ?: "")
+        when (result) {
+            is Result.Success -> onDispatched(true)
+            is Result.Error -> {
+                Log.e(TAG, "Click failed: ${result.error.message}")
+                onDispatched(false)
+            }
+        }
+    }
+
+    private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
+        if (node == null) { onDispatched(false); return }
+        val result = executor.executeSetText(node.viewIdResourceName ?: "", text)
+        when (result) {
+            is Result.Success -> onDispatched(true)
+            is Result.Error -> {
+                Log.e(TAG, "SetText failed: ${result.error.message}")
+                onDispatched(false)
+            }
         }
     }
 
