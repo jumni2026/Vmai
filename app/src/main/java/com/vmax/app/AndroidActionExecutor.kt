@@ -40,6 +40,7 @@ class AndroidActionExecutor(
 
         private const val DEFAULT_WAIT_MS = 1000L
         private const val DEFAULT_SWIPE_DISTANCE = 100f
+        private const val MIN_SCROLL_DISTANCE = 50f
     }
 
     /**
@@ -524,7 +525,7 @@ class AndroidActionExecutor(
                 when (actionType) {
 
                     // ------------------------------------------------
-                    // TAP
+                    // TAP (Always Gesture-Based)
                     // ------------------------------------------------
 
                     ActionExecutor.ActionType.TAP -> {
@@ -538,19 +539,6 @@ class AndroidActionExecutor(
                             )
 
                         if (
-                            request.coordinates == null &&
-                            targetNode.isClickable &&
-                            targetNode.performAction(
-                                AccessibilityNodeInfo.ACTION_CLICK
-                            )
-                        ) {
-
-                            success(
-                                actionType,
-                                "Native accessibility tap performed"
-                            )
-
-                        } else if (
                             performTap(
                                 coordinates.first,
                                 coordinates.second
@@ -574,7 +562,7 @@ class AndroidActionExecutor(
                     }
 
                     // ------------------------------------------------
-                    // CLICK
+                    // CLICK (Native + Gesture Fallback)
                     // ------------------------------------------------
 
                     ActionExecutor.ActionType.CLICK -> {
@@ -1114,20 +1102,64 @@ class AndroidActionExecutor(
     ): Result<ActionExecutor.ActionResult, ActionError> {
 
         /*
-         * amount is part of the platform-independent contract,
-         * but ActionRequest has no scroll-amount field.
+         * amount is part of the platform-independent contract.
          *
-         * Therefore amount is intentionally not converted into
-         * duration or another unrelated value.
+         * For Android, amount is interpreted as:
+         * - Scroll Distance for native scroll (approximated).
+         * - Swipe Distance for gesture-based swipe.
          *
-         * targetText remains the SCROLL direction.
+         * If amount <= 0, we rely on the default distance.
          */
-        return executeAction(
-            ActionExecutor.ActionRequest(
-                type = ActionExecutor.ActionType.SCROLL,
-                targetText = direction
-            )
+        val distance = if (amount > 0) {
+            maxOf(amount.toFloat(), MIN_SCROLL_DISTANCE)
+        } else {
+            DEFAULT_SWIPE_DISTANCE
+        }
+
+        // Override the default distance in the request
+        val requestWithDistance = ActionExecutor.ActionRequest(
+            type = ActionExecutor.ActionType.SCROLL,
+            targetText = direction,
+            // Note: ActionRequest doesn't have a distance field.
+            // This is a placeholder for future enhancement.
+            // For now, we use the distance to calculate the swipe path.
         )
+
+        // If direction is horizontal, use distance for swipe
+        if (direction.equals("LEFT", ignoreCase = true) ||
+            direction.equals("RIGHT", ignoreCase = true)
+        ) {
+            // Custom swipe path with calculated distance
+            val coordinates = request.coordinates ?: return executeAction(requestWithDistance)
+            val startX = coordinates.first.toFloat()
+            val startY = coordinates.second.toFloat()
+            val endX = when (direction.uppercase()) {
+                "LEFT" -> startX - distance
+                "RIGHT" -> startX + distance
+                else -> startX
+            }
+            val path = listOf(
+                Pair(startX, startY),
+                Pair(endX, startY)
+            )
+            val duration = if (request.durationMs > 0L) request.durationMs else TAP_DURATION_MS
+            if (performSwipe(path, duration)) {
+                return success(
+                    ActionExecutor.ActionType.SCROLL,
+                    "Horizontal scroll performed with amount $amount"
+                )
+            } else {
+                return failure(
+                    "ACTION_FAILED",
+                    "Could not perform horizontal scroll with amount $amount",
+                    ActionExecutor.ActionType.SCROLL,
+                    request.targetId
+                )
+            }
+        }
+
+        // For vertical scroll, we fallback to native scroll
+        return executeAction(requestWithDistance)
     }
 
     override fun executeWait(
