@@ -3,9 +3,8 @@ package com.vmax.workflow
 import com.vmax.model.BookingRequest
 import com.vmax.model.PassengerProfile
 import com.vmax.runtime.RuntimeCoordinator
-import com.vmax.runtime.RuntimeError
 import com.vmax.common.Result
-import com.vmax.runtime.ExecutionTracker  // ✅ Fixed: Correct import
+import com.vmax.runtime.ExecutionTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -98,11 +97,11 @@ class WorkflowController private constructor(
 
             executionJob?.cancel()
 
-            // ✅ Fixed: Generate and assign sessionId BEFORE state change
+            // Generate and assign sessionId BEFORE state change
             val sessionId = UUID.randomUUID().toString()
             currentSessionId = sessionId
 
-            // ✅ Fixed: Record Session Start
+            // Record Session Start
             executionTracker.startSession(sessionId)
 
             _state.value = WorkflowState.CONFIGURED
@@ -114,7 +113,7 @@ class WorkflowController private constructor(
                 toState = "CONFIGURED"
             )
 
-            // ✅ ACTUAL EXECUTION TRIGGER
+            // ACTUAL EXECUTION TRIGGER
             executionJob = scope.launch {
                 val result = runtimeCoordinator.start()
                 when (result) {
@@ -149,7 +148,12 @@ class WorkflowController private constructor(
 
             // Stop the runtime coordinator as well
             runtimeCoordinator.stop()
-            
+
+            // ✅ RECORD SESSION STOP
+            currentSessionId?.let { sessionId ->
+                executionTracker.stopSession(sessionId)
+            }
+
             currentSessionId = null
             activeBookingRequest = null
             activePassengerProfile = null
@@ -165,11 +169,20 @@ class WorkflowController private constructor(
 
     fun isError(): Boolean = _state.value is WorkflowState.ERROR
 
-    // ✅ Fixed: Added 'suspend' modifier to match mutex.withLock usage
     suspend fun notifyConfigurationError(reason: String) {
         mutex.withLock {
             executionJob?.cancel()
             executionJob = null
+
+            // ✅ RECORD ERROR IN TRACKER
+            currentSessionId?.let { sessionId ->
+                executionTracker.recordSessionError(
+                    sessionId = sessionId,
+                    errorCode = "CONFIGURATION_ERROR",
+                    errorMessage = reason
+                )
+            }
+
             _state.value = WorkflowState.ERROR(reason)
         }
     }
