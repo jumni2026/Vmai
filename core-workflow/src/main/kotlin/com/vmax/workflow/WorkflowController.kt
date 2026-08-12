@@ -2,6 +2,9 @@ package com.vmax.workflow
 
 import com.vmax.model.BookingRequest
 import com.vmax.model.PassengerProfile
+import com.vmax.runtime.RuntimeCoordinator
+import com.vmax.runtime.RuntimeError
+import com.vmax.common.Result
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -9,142 +12,165 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch  // ✅ Added: Essential import for scope.launch
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.UUID
 
 /**
- * VMAX Enterprise v2.6
+ * VMAX Enterprise v2.6.1
  *
  * File — WorkflowController.kt
  *
- * Corrected Working Implementation (Base on existing StateFlow architecture).
- *
- * - Simulation loop removed completely.
- * - Real Execution contract placeholder prepared.
- * - No fake persistence.
- * - Clean cancellation.
+ * FINAL PLATFORM-INDEPENDENT VERSION
+ * - RuntimeCoordinator injected (No Android dependencies)
+ * - ExecutionTracker injected for recording
+ * - Proper CONFIGURED → RUNNING transition
+ * - Session ID generation
+ * - Thread-safe state management
+ * - Clean lifecycle handling
  */
-class WorkflowController private constructor() {
+class WorkflowController private constructor(
+    private val runtimeCoordinator: RuntimeCoordinator,
+    private val executionTracker: ExecutionTracker
+) {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // Active Coroutine Job tracking for real cancellation handling
     private var executionJob: Job? = null
+    private var currentSessionId: String? = null
 
-    // Central State Machine
     private val _state = MutableStateFlow<WorkflowState>(WorkflowState.IDLE)
     val state: StateFlow<WorkflowState> = _state.asStateFlow()
 
-    // Active Request and Profile Memory Holders
     private var activeBookingRequest: BookingRequest? = null
     private var activePassengerProfile: PassengerProfile? = null
+
+    private val mutex = Mutex() // Thread safety for mutable properties
 
     companion object {
         @Volatile
         private var INSTANCE: WorkflowController? = null
 
-        fun getInstance(): WorkflowController {
+        fun getInstance(
+            runtimeCoordinator: RuntimeCoordinator,
+            executionTracker: ExecutionTracker
+        ): WorkflowController {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: WorkflowController().also { INSTANCE = it }
+                INSTANCE ?: WorkflowController(runtimeCoordinator, executionTracker).also { INSTANCE = it }
             }
         }
     }
 
     /**
-     * Validates input parameters, manages coroutine job execution, and drives state machine transitions.
+     * Starts the workflow with validation and triggers the runtime engine.
      */
-    fun start(bookingRequest: BookingRequest, passengerProfile: PassengerProfile) {
-        if (_state.value != WorkflowState.IDLE) {
-            return
-        }
+    suspend fun start(bookingRequest: BookingRequest, passengerProfile: PassengerProfile) {
+        mutex.withLock {
+            if (_state.value != WorkflowState.IDLE) {
+                return
+            }
 
-        // Gate 1: Profile Emptiness Check
-        if (passengerProfile.passengers.isEmpty()) {
-            _state.value = WorkflowState.ERROR("Passenger profile list is empty.")
-            return
-        }
+            // Gate 1: Profile Emptiness Check
+            if (passengerProfile.passengers.isEmpty()) {
+                _state.value = WorkflowState.ERROR("Passenger profile list is empty.")
+                return
+            }
 
-        // Gate 2: Passenger Data Mandatory Fields & Bounds Check
-        val hasInvalidPassenger = passengerProfile.passengers.any { passenger ->
-            passenger.name.isBlank() || passenger.age <= 0 || passenger.age > 120
-        }
-        if (hasInvalidPassenger) {
-            _state.value = WorkflowState.ERROR("Invalid passenger data detected.")
-            return
-        }
+            // Gate 2: Passenger Data Mandatory Fields & Bounds Check
+            val hasInvalidPassenger = passengerProfile.passengers.any { passenger ->
+                passenger.name.isBlank() || passenger.age <= 0 || passenger.age > 120
+            }
+            if (hasInvalidPassenger) {
+                _state.value = WorkflowState.ERROR("Invalid passenger data detected.")
+                return
+            }
 
-        // Gate 3: Target Settings Completeness Check
-        if (bookingRequest.train.number.isBlank() || bookingRequest.train.classType.isBlank()) {
-            _state.value = WorkflowState.ERROR("Target settings incomplete.")
-            return
-        }
+            // Gate 3: Target Settings Completeness Check
+            if (bookingRequest.train.number.isBlank() || bookingRequest.train.classType.isBlank()) {
+                _state.value = WorkflowState.ERROR("Target settings incomplete.")
+                return
+            }
 
-        activeBookingRequest = bookingRequest
-        activePassengerProfile = passengerProfile
+            activeBookingRequest = bookingRequest
+            activePassengerProfile = passengerProfile
 
-        // Cancel any existing background execution job
-        executionJob?.cancel()
+            executionJob?.cancel()
+            _state.value = WorkflowState.CONFIGURED
 
-        _state.value = WorkflowState.CONFIGURED
+            // Record State Transition
+            executionTracker.recordStateTransition(
+                sessionId = currentSessionId ?: UUID.randomUUID().toString(),
+                fromState = "IDLE",
+                toState = "CONFIGURED"
+            )
 
-        // ⚠️ REAL EXECUTION BOUNDARY:
-        // The infinite simulation loop has been removed.
-        // This is now a contract placeholder for the actual Runtime/Action Engine.
-        // To make this real, the following components must be invoked:
-        // 1. RuntimeCoordinator.startAutomation()
-        // 2. ActionExecutor.executeActions()
-        //
-        // Since their exact contract is not yet evidenced, this file remains HOLD.
-        executionJob = scope.launch {
-            // Real execution will be added here when exact contracts are provided.
-            // For now, the WorkflowController remains a State Manager.
+            // ✅ ACTUAL EXECUTION TRIGGER
+            executionJob = scope.launch {
+                val result = runtimeCoordinator.start()
+                when (result) {
+                    is Result.Success -> {
+                        _state.value = WorkflowState.RUNNING
+                        executionTracker.recordStateTransition(
+                            sessionId = currentSessionId!!,
+                            fromState = "CONFIGURED",
+                            toState = "RUNNING"
+                        )
+                    }
+                    is Result.Error -> {
+                        _state.value = WorkflowState.ERROR(result.error.message)
+                        executionTracker.recordSessionError(
+                            sessionId = currentSessionId!!,
+                            errorCode = result.error.code,
+                            errorMessage = result.error.message
+                        )
+                    }
+                }
+            }
         }
     }
 
     /**
-     * Immediately cancels active execution job coroutines and resets state machine to IDLE.
+     * Stops the workflow and cancels runtime execution.
      */
-    fun stop() {
-        // Real Execution Cancellation
-        executionJob?.cancel()
-        executionJob = null
+    suspend fun stop() {
+        mutex.withLock {
+            executionJob?.cancel()
+            executionJob = null
 
-        activeBookingRequest = null
-        activePassengerProfile = null
-        _state.value = WorkflowState.IDLE
+            // Stop the runtime coordinator as well
+            runtimeCoordinator.stop()
+            
+            currentSessionId = null
+            activeBookingRequest = null
+            activePassengerProfile = null
+            _state.value = WorkflowState.IDLE
+        }
     }
 
-    /**
-     * Returns the current booking request if available.
-     */
     fun getActiveBookingRequest(): BookingRequest? = activeBookingRequest
 
-    /**
-     * Returns the current passenger profile if available.
-     */
     fun getActivePassengerProfile(): PassengerProfile? = activePassengerProfile
 
-    /**
-     * Returns true if the workflow is currently running or configured.
-     */
     fun isRunning(): Boolean = _state.value == WorkflowState.RUNNING
 
-    /**
-     * Returns true if the workflow is in an ERROR state.
-     */
     fun isError(): Boolean = _state.value is WorkflowState.ERROR
 
-    /**
-     * Cancels active job execution and forces state machine into ERROR state.
-     */
     fun notifyConfigurationError(reason: String) {
-        executionJob?.cancel()
-        executionJob = null
-        _state.value = WorkflowState.ERROR(reason)
+        mutex.withLock {
+            executionJob?.cancel()
+            executionJob = null
+            _state.value = WorkflowState.ERROR(reason)
+        }
+    }
+
+    fun generateNewSessionId(): String {
+        return UUID.randomUUID().toString()
     }
 }
 
 /**
- * Blueprint v2.6 Workflow Execution States.
+ * Blueprint v2.6.1 Workflow Execution States.
  */
 sealed class WorkflowState(val name: String) {
     object IDLE : WorkflowState("IDLE")
