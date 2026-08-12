@@ -40,7 +40,7 @@ class AndroidActionExecutor(
         private const val DEFAULT_SWIPE_DISTANCE = 100f
     }
 
-    private var lastResult: ActionExecutor.ActionResult? = null  // ✅ FIX #1: Changed to non-wrapped ActionResult
+    private var lastResult: ActionExecutor.ActionResult? = null
 
     private data class SwipeCoords(
         val startX: Float,
@@ -725,7 +725,6 @@ class AndroidActionExecutor(
                 }
             }
 
-            // ✅ FIX #1: Store unwrapped ActionResult in lastResult
             if (actionResult is Result.Success) {
                 lastResult = actionResult.data
                 if (request.waitAfterMs > 0L) {
@@ -761,6 +760,24 @@ class AndroidActionExecutor(
     }
 
     // ----------------------------------------------------------------
+    // ✅ NEW: executeTap Implementation (Abstract Method fulfilled)
+    // ----------------------------------------------------------------
+    override fun executeTap(targetId: String): Result<ActionExecutor.ActionResult, ActionError> {
+        val request = ActionExecutor.ActionRequest(
+            type = ActionExecutor.ActionType.TAP,
+            targetId = targetId
+        )
+        return executeAction(request)
+    }
+
+    // ----------------------------------------------------------------
+    // ✅ FIXED: getLastActionResult return type matches Interface
+    // ----------------------------------------------------------------
+    override fun getLastActionResult(): ActionExecutor.ActionResult? {
+        return lastResult
+    }
+
+    // ----------------------------------------------------------------
     // SWIPE PATH HELPER
     // ----------------------------------------------------------------
     private fun getSwipePath(
@@ -789,23 +806,5 @@ class AndroidActionExecutor(
             Pair(screenCoordinates.startX, screenCoordinates.startY),
             Pair(screenCoordinates.endX, screenCoordinates.endY)
         )
-    }
-
-    // ----------------------------------------------------------------
-    // ✅ FIX #2: Added missing abstract method 'executeTap'
-    // ----------------------------------------------------------------
-    override fun executeTap(targetId: String): Result<ActionExecutor.ActionResult, ActionError> {
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.TAP,
-            targetId = targetId
-        )
-        return executeAction(request)
-    }
-
-    // ----------------------------------------------------------------
-    // ✅ FIX #1: getLastActionResult now returns unwrapped ActionResult
-    // ----------------------------------------------------------------
-    override fun getLastActionResult(): ActionExecutor.ActionResult? {
-        return lastResult
     }
 }
