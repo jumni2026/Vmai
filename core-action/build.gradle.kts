@@ -11,7 +11,6 @@ dependencies {
     implementation(project(":core-model"))
     implementation(project(":core-validation"))
     implementation(project(":core-intelligence"))
-    implementation(project(":core-workflow"))
 
     testImplementation(kotlin("test"))
 }
