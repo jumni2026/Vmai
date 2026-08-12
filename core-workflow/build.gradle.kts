@@ -11,8 +11,9 @@ dependencies {
     implementation(project(":core-model"))
     implementation(project(":core-validation"))
     implementation(project(":core-intelligence"))
+    implementation(project(":core-action"))
+    implementation(project(":runtime"))
 
-    // ✅ नई लाइन (सिर्फ यही जोड़नी है)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
     testImplementation(kotlin("test"))
