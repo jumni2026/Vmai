@@ -40,7 +40,7 @@ class AndroidActionExecutor(
 
         private const val DEFAULT_WAIT_MS = 1000L
         private const val DEFAULT_SWIPE_DISTANCE = 100f
-        private const val MIN_SCROLL_DISTANCE = 50f
+        // ✅ MIN_SCROLL_DISTANCE हटा दिया गया है
     }
 
     /**
@@ -1096,70 +1096,32 @@ class AndroidActionExecutor(
         )
     }
 
+    // ✅ FINAL CORRECTED executeScroll (No 'request' scope issues)
     override fun executeScroll(
         direction: String,
         amount: Int
     ): Result<ActionExecutor.ActionResult, ActionError> {
 
         /*
-         * amount is part of the platform-independent contract.
+         * ActionExecutor contract:
          *
-         * For Android, amount is interpreted as:
-         * - Scroll Distance for native scroll (approximated).
-         * - Swipe Distance for gesture-based swipe.
+         * direction = scroll direction
+         * amount    = contract parameter
          *
-         * If amount <= 0, we rely on the default distance.
+         * ActionRequest में scroll distance field उपलब्ध नहीं है।
+         * इसलिए amount को किसी दूसरे field में map नहीं किया जाएगा।
+         *
+         * SCROLL में targetText केवल direction है।
+         * executeAction() SCROLL के लिए targetText को node selector
+         * के रूप में उपयोग नहीं करता।
          */
-        val distance = if (amount > 0) {
-            maxOf(amount.toFloat(), MIN_SCROLL_DISTANCE)
-        } else {
-            DEFAULT_SWIPE_DISTANCE
-        }
 
-        // Override the default distance in the request
-        val requestWithDistance = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.SCROLL,
-            targetText = direction,
-            // Note: ActionRequest doesn't have a distance field.
-            // This is a placeholder for future enhancement.
-            // For now, we use the distance to calculate the swipe path.
-        )
-
-        // If direction is horizontal, use distance for swipe
-        if (direction.equals("LEFT", ignoreCase = true) ||
-            direction.equals("RIGHT", ignoreCase = true)
-        ) {
-            // Custom swipe path with calculated distance
-            val coordinates = request.coordinates ?: return executeAction(requestWithDistance)
-            val startX = coordinates.first.toFloat()
-            val startY = coordinates.second.toFloat()
-            val endX = when (direction.uppercase()) {
-                "LEFT" -> startX - distance
-                "RIGHT" -> startX + distance
-                else -> startX
-            }
-            val path = listOf(
-                Pair(startX, startY),
-                Pair(endX, startY)
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SCROLL,
+                targetText = direction
             )
-            val duration = if (request.durationMs > 0L) request.durationMs else TAP_DURATION_MS
-            if (performSwipe(path, duration)) {
-                return success(
-                    ActionExecutor.ActionType.SCROLL,
-                    "Horizontal scroll performed with amount $amount"
-                )
-            } else {
-                return failure(
-                    "ACTION_FAILED",
-                    "Could not perform horizontal scroll with amount $amount",
-                    ActionExecutor.ActionType.SCROLL,
-                    request.targetId
-                )
-            }
-        }
-
-        // For vertical scroll, we fallback to native scroll
-        return executeAction(requestWithDistance)
+        )
     }
 
     override fun executeWait(
