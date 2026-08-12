@@ -5,6 +5,7 @@ import com.vmax.model.PassengerProfile
 import com.vmax.runtime.RuntimeCoordinator
 import com.vmax.runtime.RuntimeError
 import com.vmax.common.Result
+import com.vmax.runtime.ExecutionTracker  // ✅ Fixed: Correct import
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,11 +97,19 @@ class WorkflowController private constructor(
             activePassengerProfile = passengerProfile
 
             executionJob?.cancel()
+
+            // ✅ Fixed: Generate and assign sessionId BEFORE state change
+            val sessionId = UUID.randomUUID().toString()
+            currentSessionId = sessionId
+
+            // ✅ Fixed: Record Session Start
+            executionTracker.startSession(sessionId)
+
             _state.value = WorkflowState.CONFIGURED
 
             // Record State Transition
             executionTracker.recordStateTransition(
-                sessionId = currentSessionId ?: UUID.randomUUID().toString(),
+                sessionId = sessionId,
                 fromState = "IDLE",
                 toState = "CONFIGURED"
             )
@@ -112,7 +121,7 @@ class WorkflowController private constructor(
                     is Result.Success -> {
                         _state.value = WorkflowState.RUNNING
                         executionTracker.recordStateTransition(
-                            sessionId = currentSessionId!!,
+                            sessionId = sessionId,
                             fromState = "CONFIGURED",
                             toState = "RUNNING"
                         )
@@ -120,7 +129,7 @@ class WorkflowController private constructor(
                     is Result.Error -> {
                         _state.value = WorkflowState.ERROR(result.error.message)
                         executionTracker.recordSessionError(
-                            sessionId = currentSessionId!!,
+                            sessionId = sessionId,
                             errorCode = result.error.code,
                             errorMessage = result.error.message
                         )
@@ -156,7 +165,8 @@ class WorkflowController private constructor(
 
     fun isError(): Boolean = _state.value is WorkflowState.ERROR
 
-    fun notifyConfigurationError(reason: String) {
+    // ✅ Fixed: Added 'suspend' modifier to match mutex.withLock usage
+    suspend fun notifyConfigurationError(reason: String) {
         mutex.withLock {
             executionJob?.cancel()
             executionJob = null
