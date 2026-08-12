@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowController
-import com.vmax.workflow.WorkflowState   // ✅ Added import for top-level sealed class
+import com.vmax.workflow.WorkflowState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,7 +53,6 @@ class MainViewModel : ViewModel() {
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError: StateFlow<String?> = _validationError.asStateFlow()
 
-    // ✅ Corrected: Use top-level WorkflowState, not nested
     val workflowState: StateFlow<WorkflowState> = workflowController.state
 
     fun updateTrainNumber(value: String) {
@@ -152,11 +151,17 @@ class MainViewModel : ViewModel() {
             updatedTime = LocalDateTime.now()
         )
 
-        workflowController.start(bookingRequest, passengerProfile)
+        // ✅ FIX: Suspend function called inside viewModelScope.launch
+        viewModelScope.launch {
+            workflowController.start(bookingRequest, passengerProfile)
+        }
     }
 
     fun stopWorkflow() {
-        workflowController.stop()
+        // ✅ FIX: Suspend function called inside viewModelScope.launch
+        viewModelScope.launch {
+            workflowController.stop()
+        }
     }
 
     fun isWorkflowActive(): Boolean =
