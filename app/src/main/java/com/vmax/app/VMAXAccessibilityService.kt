@@ -6,6 +6,10 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.action.ActionExecutor
 import com.vmax.common.Result
+import com.vmax.workflow.ActionOrchestrator
+import com.vmax.runtime.ExecutionTracker
+import com.vmax.common.Logger
+import com.vmax.action.ActionError   // ✅ FIX 3: Added missing import
 
 class VMAXAccessibilityService : AccessibilityService() {
 
@@ -26,7 +30,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // CONFIGURATION DATA (Will come from WorkflowController via Bridge later)
+    // CONFIGURATION DATA
     // ----------------------------------------------------------------
     private var targetFrom: String = ""
     private var targetTo: String = ""
@@ -38,8 +42,11 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var passengerGender: String = ""
     private var passengerMeal: String = ""
 
+    // ✅ FIX 2: Single Session ID for entire workflow
+    private var currentSessionId: String = ""
+
     // ----------------------------------------------------------------
-    // STATE MACHINE (Full Execution Flow)
+    // STATE MACHINE
     // ----------------------------------------------------------------
     private enum class State {
         IDLE,
@@ -55,6 +62,8 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private var currentState = State.IDLE
     private lateinit var executor: AndroidActionExecutor
+    private lateinit var orchestrator: ActionOrchestrator
+    private lateinit var tracker: ExecutionTracker
 
     // ----------------------------------------------------------------
     // PUBLIC CONTRACT FOR BRIDGE
@@ -74,8 +83,10 @@ class VMAXAccessibilityService : AccessibilityService() {
         passengerGender = gender
         passengerMeal = meal
 
+        // ✅ FIX 2: Generate single session ID for entire workflow
+        currentSessionId = "SESSION_${System.currentTimeMillis()}"
         currentState = State.IDLE
-        Log.i(TAG, "Workflow started with configured data.")
+        Log.i(TAG, "Workflow started with session: $currentSessionId")
     }
 
     fun stopWorkflow() {
@@ -89,7 +100,9 @@ class VMAXAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         executor = AndroidActionExecutor(this)
-        Log.i(TAG, "VMAX Service Connected with Real Executor")
+        tracker = ExecutionTracker(Logger.getInstance())
+        orchestrator = ActionOrchestrator(executor, tracker)
+        Log.i(TAG, "VMAX Service Connected with Real Executor and ActionOrchestrator")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -144,7 +157,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // ORCHESTRATION HANDLERS (Using Real Executor)
+    // ORCHESTRATION HANDLERS (Fixed to pass Node to Orchestrator)
     // ----------------------------------------------------------------
     private fun handleFromField(root: AccessibilityNodeInfo) {
         findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let {
@@ -274,11 +287,23 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // EXECUTOR HELPERS (Uses Real Executor Contract)
+    // ✅ FIX 1: EXECUTOR HELPERS (Now passes Node, NOT ID)
     // ----------------------------------------------------------------
     private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
-        val result = executor.executeClick(node.viewIdResourceName ?: "")
+        
+        // ✅ FIX 1: Pass the actual targetId from the node, but only if it's available
+        val targetId = node.viewIdResourceName ?: ""
+        
+        // If ID is empty, we can't proceed with ID-based click. 
+        // (Future enhancement: Coordinate-based fallback)
+        if (targetId.isEmpty()) {
+            Log.w(TAG, "Click failed: Node has no viewIdResourceName")
+            onDispatched(false)
+            return
+        }
+
+        val result = orchestrator.click(targetId, currentSessionId) // ✅ FIX 2: Reuse single sessionId
         when (result) {
             is Result.Success -> onDispatched(true)
             is Result.Error -> {
@@ -290,7 +315,17 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
-        val result = executor.executeSetText(node.viewIdResourceName ?: "", text)
+        
+        // ✅ FIX 1: Pass the actual targetId from the node
+        val targetId = node.viewIdResourceName ?: ""
+        
+        if (targetId.isEmpty()) {
+            Log.w(TAG, "SetText failed: Node has no viewIdResourceName")
+            onDispatched(false)
+            return
+        }
+
+        val result = orchestrator.setText(targetId, text, currentSessionId) // ✅ FIX 2: Reuse single sessionId
         when (result) {
             is Result.Success -> onDispatched(true)
             is Result.Error -> {
