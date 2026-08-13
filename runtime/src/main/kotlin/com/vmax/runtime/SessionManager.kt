@@ -1,51 +1,111 @@
-package com.vmax.runtime
+package com.vmax.app
 
+import android.content.Context
+import android.content.SharedPreferences
+import com.google.gson.Gson
 import com.vmax.common.Result
 import com.vmax.model.BookingRequest
 import com.vmax.model.PassengerProfile
+import com.vmax.runtime.SessionManager
+import com.vmax.runtime.SessionError
+import java.util.UUID
 
 /**
- * VMAX Enterprise v2.6
+ * VMAX Enterprise v2.6.1
  *
- * Stage 1 — Skeleton
- * File 20 — SessionManager
+ * File — AndroidSessionManager.kt
  *
- * Manages session data persistence across the workflow.
- * Platform-independent — no Android dependencies.
- * No external dependencies.
- * No business logic.
+ * Android implementation of the SessionManager interface.
+ * Stores session data in SharedPreferences.
  *
- * Minimal contract — session state is tracked by WorkflowController.
- * SessionManager only handles data storage and retrieval.
+ * Responsibilities:
+ * - Create and manage session IDs.
+ * - Persist BookingRequest and PassengerProfile.
+ * - Provide session history retrieval.
  */
-interface SessionManager {
+class AndroidSessionManager(
+    private val context: Context
+) : SessionManager {
 
-    data class SessionData(
-        val sessionId: String,
-        val bookingRequest: BookingRequest? = null,
-        val passengerProfile: PassengerProfile? = null,
-        val timestamp: Long = System.currentTimeMillis()
-    )
+    companion object {
+        private const val PREFS_NAME = "vmax_session_prefs"
+        private const val KEY_SESSION_ID = "session_id"
+        private const val KEY_BOOKING_REQUEST = "booking_request"
+        private const val KEY_PASSENGER_PROFILE = "passenger_profile"
+    }
 
-    fun createSession(): Result<SessionData, SessionError>
+    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val gson = Gson()
 
-    fun getCurrentSession(): Result<SessionData, SessionError>
+    override fun createSession(): Result<SessionManager.SessionData, SessionError> {
+        val sessionId = UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_SESSION_ID, sessionId).apply()
 
-    fun saveBookingRequest(request: BookingRequest): Result<Unit, SessionError>
+        val sessionData = SessionManager.SessionData(
+            sessionId = sessionId
+        )
 
-    fun getBookingRequest(): BookingRequest?
+        return Result.Success(sessionData)
+    }
 
-    fun savePassengerProfile(profile: PassengerProfile): Result<Unit, SessionError>
+    override fun getCurrentSession(): Result<SessionManager.SessionData, SessionError> {
+        val sessionId = prefs.getString(KEY_SESSION_ID, null)
+        return if (sessionId != null) {
+            val bookingRequest = getBookingRequest()
+            val passengerProfile = getPassengerProfile()
+            Result.Success(
+                SessionManager.SessionData(
+                    sessionId = sessionId,
+                    bookingRequest = bookingRequest,
+                    passengerProfile = passengerProfile
+                )
+            )
+        } else {
+            Result.Error(
+                SessionError(
+                    code = "SESSION_NOT_FOUND",
+                    message = "No active session found."
+                )
+            )
+        }
+    }
 
-    fun getPassengerProfile(): PassengerProfile?
+    override fun saveBookingRequest(request: BookingRequest): Result<Unit, SessionError> {
+        val json = gson.toJson(request)
+        prefs.edit().putString(KEY_BOOKING_REQUEST, json).apply()
+        return Result.Success(Unit)
+    }
 
-    fun clearSession(): Result<Unit, SessionError>
+    override fun getBookingRequest(): BookingRequest? {
+        val json = prefs.getString(KEY_BOOKING_REQUEST, null)
+        return if (json != null) {
+            gson.fromJson(json, BookingRequest::class.java)
+        } else {
+            null
+        }
+    }
 
-    fun sessionExists(): Boolean
+    override fun savePassengerProfile(profile: PassengerProfile): Result<Unit, SessionError> {
+        val json = gson.toJson(profile)
+        prefs.edit().putString(KEY_PASSENGER_PROFILE, json).apply()
+        return Result.Success(Unit)
+    }
+
+    override fun getPassengerProfile(): PassengerProfile? {
+        val json = prefs.getString(KEY_PASSENGER_PROFILE, null)
+        return if (json != null) {
+            gson.fromJson(json, PassengerProfile::class.java)
+        } else {
+            null
+        }
+    }
+
+    override fun clearSession(): Result<Unit, SessionError> {
+        prefs.edit().clear().apply()
+        return Result.Success(Unit)
+    }
+
+    override fun sessionExists(): Boolean {
+        return prefs.contains(KEY_SESSION_ID)
+    }
 }
-
-data class SessionError(
-    val code: String,
-    val message: String,
-    val sessionId: String? = null
-)
