@@ -1,8 +1,16 @@
-package com.vmax.runtime
+package com.vmax.workflow
 
 import com.vmax.action.ActionExecutor
 import com.vmax.common.Logger
 
+/**
+ * VMAX Enterprise v2.6.1
+ *
+ * File — ExecutionTracker.kt
+ *
+ * Central recording system for tracking every step of an execution session.
+ * Platform-independent — no Android dependencies.
+ */
 class ExecutionTracker(
     private val logger: Logger
 ) {
