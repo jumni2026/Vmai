@@ -132,19 +132,11 @@ class VMAXAccessibilityService : AccessibilityService() {
 
         executor = AndroidActionExecutor(this)
 
-        // FINAL FIX:
-        // Logger has constructor, but no getInstance()
-        tracker = ExecutionTracker(Logger())
+        // ✅ FINAL CORRECTED LINE: Using AndroidLogger() directly
+        tracker = ExecutionTracker(AndroidLogger())
+        orchestrator = ActionOrchestrator(executor, tracker)
 
-        orchestrator = ActionOrchestrator(
-            executor,
-            tracker
-        )
-
-        Log.i(
-            TAG,
-            "VMAX Service Connected with Real Executor and ActionOrchestrator"
-        )
+        Log.i(TAG, "VMAX Service Connected with Real Executor and ActionOrchestrator")
     }
 
     // ----------------------------------------------------------------
