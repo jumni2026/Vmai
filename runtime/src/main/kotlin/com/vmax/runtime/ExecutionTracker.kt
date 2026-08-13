@@ -2,33 +2,13 @@ package com.vmax.runtime
 
 import com.vmax.action.ActionExecutor
 import com.vmax.common.Logger
-import com.vmax.common.Result
 
-/**
- * VMAX Enterprise v2.6.1
- *
- * File — ExecutionTracker.kt
- *
- * Central recording system for tracking every step of an execution session.
- * It records events, manages session state, and provides a timeline for debugging.
- *
- * Architecture:
- *
- * WorkflowController / RuntimeCoordinator / ActionExecutor
- *              ↓
- *          ExecutionTracker
- *              ↓
- *      In-Memory Event List (Persistent storage to be added later)
- */
 class ExecutionTracker(
     private val logger: Logger
 ) {
 
     private val sessions = mutableMapOf<String, MutableList<ExecutionEvent>>()
 
-    /**
-     * Starts a new execution session and records the first event.
-     */
     fun startSession(sessionId: String): ExecutionEvent.SessionStarted {
         val event = ExecutionEvent.SessionStarted(sessionId)
         sessions[sessionId] = mutableListOf(event)
@@ -36,9 +16,6 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Records a workflow state transition.
-     */
     fun recordStateTransition(
         sessionId: String,
         fromState: String,
@@ -50,9 +27,6 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Records an action being dispatched to the executor.
-     */
     fun recordActionDispatched(
         sessionId: String,
         actionType: ActionExecutor.ActionType,
@@ -65,9 +39,6 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Records a successful action execution.
-     */
     fun recordActionSucceeded(
         sessionId: String,
         actionType: ActionExecutor.ActionType,
@@ -79,9 +50,6 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Records a failed action execution.
-     */
     fun recordActionFailed(
         sessionId: String,
         actionType: ActionExecutor.ActionType,
@@ -94,9 +62,6 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Stops the session and records the final event.
-     */
     fun stopSession(sessionId: String): ExecutionEvent.SessionStopped {
         val event = ExecutionEvent.SessionStopped(sessionId)
         getSessionEvents(sessionId).add(event)
@@ -104,9 +69,6 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Records a session-level error (e.g., CAPTCHA/OTP, Network failure).
-     */
     fun recordSessionError(
         sessionId: String,
         errorCode: String,
@@ -118,29 +80,17 @@ class ExecutionTracker(
         return event
     }
 
-    /**
-     * Returns the complete event timeline for a given session.
-     */
     fun getSessionTimeline(sessionId: String): List<ExecutionEvent> {
         return sessions[sessionId] ?: emptyList()
     }
 
-    /**
-     * Returns all active session IDs.
-     */
     fun getAllSessionIds(): Set<String> = sessions.keys
 
-    /**
-     * Clears all recorded sessions (useful for testing or reset).
-     */
     fun clearAllSessions() {
         sessions.clear()
         logger.warn("ExecutionTracker", "All sessions cleared")
     }
 
-    // ----------------------------------------------------------------
-    // PRIVATE HELPERS
-    // ----------------------------------------------------------------
     private fun getSessionEvents(sessionId: String): MutableList<ExecutionEvent> {
         return sessions[sessionId] ?: throw IllegalStateException("Session $sessionId not found")
     }
