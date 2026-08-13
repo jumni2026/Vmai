@@ -1,7 +1,6 @@
-package com.vmax.runtime
+package com.vmax.workflow
 
 import com.vmax.action.ActionExecutor
-import com.vmax.common.Result
 
 /**
  * VMAX Enterprise v2.6.1
