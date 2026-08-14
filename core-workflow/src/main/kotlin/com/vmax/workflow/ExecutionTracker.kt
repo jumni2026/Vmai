@@ -1,6 +1,7 @@
 package com.vmax.workflow
 
 import com.vmax.action.ActionExecutor
+import com.vmax.action.ExecutionEvent
 import com.vmax.common.Logger
 
 /**
@@ -41,7 +42,12 @@ class ExecutionTracker(
         targetId: String?,
         targetText: String?
     ): ExecutionEvent.ActionDispatched {
-        val event = ExecutionEvent.ActionDispatched(sessionId, actionType, targetId, targetText)
+        val event = ExecutionEvent.ActionDispatched(
+            sessionId,
+            actionType,
+            targetId,
+            targetText
+        )
         getSessionEvents(sessionId).add(event)
         logger.debug("ExecutionTracker", "Action dispatched: $actionType")
         return event
@@ -52,7 +58,11 @@ class ExecutionTracker(
         actionType: ActionExecutor.ActionType,
         resultMessage: String?
     ): ExecutionEvent.ActionSucceeded {
-        val event = ExecutionEvent.ActionSucceeded(sessionId, actionType, resultMessage)
+        val event = ExecutionEvent.ActionSucceeded(
+            sessionId,
+            actionType,
+            resultMessage
+        )
         getSessionEvents(sessionId).add(event)
         logger.info("ExecutionTracker", "Action succeeded: $actionType")
         return event
@@ -64,9 +74,17 @@ class ExecutionTracker(
         errorCode: String,
         errorMessage: String
     ): ExecutionEvent.ActionFailed {
-        val event = ExecutionEvent.ActionFailed(sessionId, actionType, errorCode, errorMessage)
+        val event = ExecutionEvent.ActionFailed(
+            sessionId,
+            actionType,
+            errorCode,
+            errorMessage
+        )
         getSessionEvents(sessionId).add(event)
-        logger.error("ExecutionTracker", "Action failed: $actionType -> $errorCode: $errorMessage")
+        logger.error(
+            "ExecutionTracker",
+            "Action failed: $actionType -> $errorCode: $errorMessage"
+        )
         return event
     }
 
@@ -82,9 +100,16 @@ class ExecutionTracker(
         errorCode: String,
         errorMessage: String
     ): ExecutionEvent.SessionError {
-        val event = ExecutionEvent.SessionError(sessionId, errorCode, errorMessage)
+        val event = ExecutionEvent.SessionError(
+            sessionId,
+            errorCode,
+            errorMessage
+        )
         getSessionEvents(sessionId).add(event)
-        logger.error("ExecutionTracker", "Session error: $errorCode -> $errorMessage")
+        logger.error(
+            "ExecutionTracker",
+            "Session error: $errorCode -> $errorMessage"
+        )
         return event
     }
 
@@ -100,6 +125,7 @@ class ExecutionTracker(
     }
 
     private fun getSessionEvents(sessionId: String): MutableList<ExecutionEvent> {
-        return sessions[sessionId] ?: throw IllegalStateException("Session $sessionId not found")
+        return sessions[sessionId]
+            ?: throw IllegalStateException("Session $sessionId not found")
     }
 }
