@@ -1,8 +1,6 @@
 package com.vmax.app
 
-import com.vmax.runtime.ExecutionEvent
 import com.vmax.runtime.ExecutionHistoryRepository
-import com.vmax.runtime.MetricsCollector
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -27,13 +25,18 @@ class AndroidExecutionHistoryRepository(
     private val metricsCollector: AndroidMetricsCollector
 ) : ExecutionHistoryRepository {
 
-    override suspend fun getSessionHistory(sessionId: String): ExecutionHistoryRepository.SessionHistory? {
+    override suspend fun getSessionHistory(
+        sessionId: String
+    ): ExecutionHistoryRepository.SessionHistory? {
         return withContext(Dispatchers.IO) {
             val events = historyStore.getSessionEvents(sessionId)
+
             if (events.isEmpty()) {
                 return@withContext null
             }
+
             val metrics = metricsCollector.getSessionMetrics(sessionId)
+
             ExecutionHistoryRepository.SessionHistory(
                 sessionId = sessionId,
                 events = events,
@@ -46,21 +49,32 @@ class AndroidExecutionHistoryRepository(
         return historyStore.getAllSessionIds()
     }
 
-    override suspend fun getAllSessionHistories(): List<ExecutionHistoryRepository.SessionHistory> {
+    override suspend fun getAllSessionHistories():
+        List<ExecutionHistoryRepository.SessionHistory> {
+
         val allIds = getAllSessionIds()
-        if (allIds.isEmpty()) return emptyList()
+
+        if (allIds.isEmpty()) {
+            return emptyList()
+        }
 
         return coroutineScope {
-            allIds.map { sessionId ->
-                async { getSessionHistory(sessionId) }
-            }.awaitAll().filterNotNull()
+            allIds
+                .map { sessionId ->
+                    async {
+                        getSessionHistory(sessionId)
+                    }
+                }
+                .awaitAll()
+                .filterNotNull()
         }
     }
 
     override suspend fun deleteSession(sessionId: String) {
         historyStore.deleteSession(sessionId)
-        // Note: Metrics are currently kept for historical aggregation,
-        // but can be cleared here if the contract requires it.
+
+        // Metrics are currently retained for historical aggregation.
+        // They can be cleared here if the contract requires it.
     }
 
     override suspend fun clearAll() {
