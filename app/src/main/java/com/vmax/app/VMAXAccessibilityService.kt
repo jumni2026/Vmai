@@ -111,6 +111,9 @@ class VMAXAccessibilityService : AccessibilityService() {
 
         currentSessionId = "SESSION_${System.currentTimeMillis()}"
 
+        // ✅ FIX 1: Start the tracker session immediately after generating ID
+        tracker.startSession(currentSessionId)
+
         // Session start records
         metrics.startMetrics(currentSessionId)
         recorder.recordEvent(ExecutionEvent.SessionStarted(currentSessionId))
@@ -127,6 +130,9 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
 
         if (currentSessionId.isNotEmpty()) {
+            // ✅ FIX 2: Stop the tracker session before stopping metrics/recorder
+            tracker.stopSession(currentSessionId)
+
             recorder.recordEvent(ExecutionEvent.SessionStopped(currentSessionId))
             metrics.stopMetrics(currentSessionId, "STOPPED")
         }
