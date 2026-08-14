@@ -13,21 +13,25 @@ import com.vmax.common.Result
 /**
  * VMAX Enterprise v2.6.1
  *
- * Android implementation of the platform-independent
- * ActionExecutor contract.
+ * File — AndroidActionExecutor.kt
+ *
+ * Android implementation of the platform-independent ActionExecutor contract.
+ * This is the final bridge between VMAX Action Requests and Android's UI.
  *
  * Architecture:
  *
- * ActionExecutor
+ * ActionExecutor (Platform-Independent Contract)
  *       ↓
- * AndroidActionExecutor
+ * AndroidActionExecutor (Android Implementation)
+ *       ↓
+ * AccessibilityService (Android System API)
  *
  * Rules:
  * - No business logic
  * - No IRCTC-specific logic
  * - No VMAXAccessibilityService implementation
- * - SCROLL targetText is treated as direction
- * - targetText is NOT used as a node selector for SCROLL
+ * - SCROLL targetText is strictly treated as direction
+ * - targetText is NEVER used as a node selector for SCROLL
  */
 class AndroidActionExecutor(
     private val accessibilityService: AccessibilityService
@@ -60,7 +64,6 @@ class AndroidActionExecutor(
         targetText: String?,
         targetClass: String?
     ): AccessibilityNodeInfo? {
-
         if (targetId == null && targetText == null && targetClass == null) {
             return null
         }
@@ -85,21 +88,12 @@ class AndroidActionExecutor(
         targetText: String?,
         targetClass: String?
     ): AccessibilityNodeInfo? {
-
-        if (
-            matchesTarget(
-                node = node,
-                targetId = targetId,
-                targetText = targetText,
-                targetClass = targetClass
-            )
-        ) {
+        if (matchesTarget(node, targetId, targetText, targetClass)) {
             return AccessibilityNodeInfo.obtain(node)
         }
 
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
-
             try {
                 val found = findNodeRecursive(
                     node = child,
@@ -107,7 +101,6 @@ class AndroidActionExecutor(
                     targetText = targetText,
                     targetClass = targetClass
                 )
-
                 if (found != null) {
                     return found
                 }
@@ -125,27 +118,15 @@ class AndroidActionExecutor(
         targetText: String?,
         targetClass: String?
     ): Boolean {
+        if (!node.isVisibleToUser) return false
 
-        if (!node.isVisibleToUser) {
-            return false
-        }
-
-        if (targetId != null && node.viewIdResourceName != targetId) {
-            return false
-        }
-
+        if (targetId != null && node.viewIdResourceName != targetId) return false
         if (targetText != null) {
             val nodeText = node.text?.toString()
             val nodeDescription = node.contentDescription?.toString()
-
-            if (nodeText != targetText && nodeDescription != targetText) {
-                return false
-            }
+            if (nodeText != targetText && nodeDescription != targetText) return false
         }
-
-        if (targetClass != null && node.className?.toString() != targetClass) {
-            return false
-        }
+        if (targetClass != null && node.className?.toString() != targetClass) return false
 
         return true
     }
@@ -545,6 +526,7 @@ class AndroidActionExecutor(
     }
 
     override fun executeScroll(direction: String, amount: Int): Result<ActionExecutor.ActionResult, ActionError> {
+        // Note: amount is part of the contract but unused because ActionRequest has no distance field.
         return executeAction(ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.SCROLL, targetText = direction))
     }
 
