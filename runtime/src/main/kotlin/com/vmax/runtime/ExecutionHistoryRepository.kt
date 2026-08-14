@@ -1,6 +1,6 @@
 package com.vmax.runtime
 
-import com.vmax.action.ActionExecutor
+import com.vmax.action.ExecutionEvent
 
 /**
  * VMAX Enterprise v2.6.1
