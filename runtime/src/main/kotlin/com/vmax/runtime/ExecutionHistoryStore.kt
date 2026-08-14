@@ -1,5 +1,7 @@
 package com.vmax.runtime
 
+import com.vmax.action.ExecutionEvent
+
 /**
  * VMAX Enterprise v2.6.1
  *
@@ -23,13 +25,18 @@ interface ExecutionHistoryStore {
     /**
      * Persists a list of ExecutionEvent for a given session ID.
      */
-    suspend fun saveSessionEvents(sessionId: String, events: List<ExecutionEvent>)
+    suspend fun saveSessionEvents(
+        sessionId: String,
+        events: List<ExecutionEvent>
+    )
 
     /**
      * Retrieves the list of ExecutionEvent for a given session ID.
      * Returns an empty list if the session does not exist.
      */
-    suspend fun getSessionEvents(sessionId: String): List<ExecutionEvent>
+    suspend fun getSessionEvents(
+        sessionId: String
+    ): List<ExecutionEvent>
 
     /**
      * Deletes the history for a specific session ID.
