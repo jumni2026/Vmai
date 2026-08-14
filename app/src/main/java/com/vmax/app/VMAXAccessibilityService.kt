@@ -7,10 +7,9 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 // Core contracts
 import com.vmax.action.ActionExecutor
-import com.vmax.action.ExecutionEvent          // ✅ सही: core-action से
-import com.vmax.workflow.ExecutionTracker     // ✅ सही: core-workflow से
+import com.vmax.action.ExecutionEvent
+import com.vmax.workflow.ExecutionTracker
 import com.vmax.workflow.ActionOrchestrator
-import com.vmax.common.Logger
 import com.vmax.common.Result
 import com.vmax.runtime.MetricsCollector
 import com.vmax.runtime.ExecutionRecorder
@@ -93,6 +92,12 @@ class VMAXAccessibilityService : AccessibilityService() {
         train: String, trainClass: String,
         name: String, age: String, gender: String, meal: String
     ) {
+        // ✅ Fix: Prevent starting a new session while one is already active
+        if (currentState != State.IDLE) {
+            Log.w(TAG, "Workflow already active. Ignoring start request.")
+            return
+        }
+
         targetFrom = from
         targetTo = to
         targetDate = date
@@ -115,8 +120,16 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     fun stopWorkflow() {
-        recorder.recordEvent(ExecutionEvent.SessionStopped(currentSessionId))
-        metrics.stopMetrics(currentSessionId, "STOPPED")
+        // ✅ Fix: Prevent duplicate stop calls
+        if (currentState == State.STOPPED || currentState == State.IDLE) {
+            Log.w(TAG, "Workflow already stopped or idle. Ignoring stop request.")
+            return
+        }
+
+        if (currentSessionId.isNotEmpty()) {
+            recorder.recordEvent(ExecutionEvent.SessionStopped(currentSessionId))
+            metrics.stopMetrics(currentSessionId, "STOPPED")
+        }
 
         currentState = State.STOPPED
         Log.i(TAG, "Workflow stopped.")
@@ -153,20 +166,30 @@ class VMAXAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
 
         try {
+            // ✅ Fix: Prevent recording with empty sessionId
+            if (currentSessionId.isEmpty()) {
+                // If no session started, we still allow workflow processing,
+                // but no history recording will happen.
+                Log.d(TAG, "No active session, skipping history recording.")
+            }
+
             // CAPTCHA / OTP USER BOUNDARY
             if (isCaptchaOrOtpPresent(root)) {
-                currentState = State.USER_BOUNDARY
-
-                recorder.recordEvent(
-                    ExecutionEvent.SessionError(
-                        sessionId = currentSessionId,
-                        errorCode = "CAPTCHA_OTP_DETECTED",
-                        errorMessage = "CAPTCHA or OTP screen detected. Automation paused."
-                    )
-                )
-                metrics.stopMetrics(currentSessionId, "USER_BOUNDARY")
-
-                Log.w(TAG, "CAPTCHA/OTP detected. Locking to USER_BOUNDARY.")
+                // ✅ Fix: Only record the boundary event once
+                if (currentState != State.USER_BOUNDARY) {
+                    if (currentSessionId.isNotEmpty()) {
+                        recorder.recordEvent(
+                            ExecutionEvent.SessionError(
+                                sessionId = currentSessionId,
+                                errorCode = "CAPTCHA_OTP_DETECTED",
+                                errorMessage = "CAPTCHA or OTP screen detected. Automation paused."
+                            )
+                        )
+                        metrics.stopMetrics(currentSessionId, "USER_BOUNDARY")
+                    }
+                    currentState = State.USER_BOUNDARY
+                    Log.w(TAG, "CAPTCHA/OTP detected. Locking to USER_BOUNDARY.")
+                }
                 return
             }
 
@@ -564,4 +587,4 @@ class VMAXAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         Log.w(TAG, "Service interrupted")
     }
-}v
+}
