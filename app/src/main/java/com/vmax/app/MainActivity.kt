@@ -27,11 +27,28 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             VMAXTheme {
+                // ✅ Navigation State: true = History Screen, false = Dashboard
+                var showHistory by remember { mutableStateOf(false) }
+
+                // ✅ Create Repository for History Screen
+                val historyStore = AndroidExecutionHistoryStore(this)
+                val metricsCollector = AndroidMetricsCollector()
+                val historyRepository = AndroidExecutionHistoryRepository(historyStore, metricsCollector)
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    VMAXDashboard()
+                    if (showHistory) {
+                        HistoryScreen(
+                            repository = historyRepository,
+                            onBack = { showHistory = false }
+                        )
+                    } else {
+                        VMAXDashboard(
+                            onHistoryClick = { showHistory = true }
+                        )
+                    }
                 }
             }
         }
@@ -40,7 +57,9 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VMAXDashboard() {
+fun VMAXDashboard(
+    onHistoryClick: () -> Unit  // ✅ New callback for History button
+) {
 
     val viewModel: MainViewModel = viewModel()
 
@@ -92,6 +111,20 @@ fun VMAXDashboard() {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+
+        // ✅ Added TopAppBar with History button
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text("VMAX Enterprise")
+                },
+                actions = {
+                    TextButton(onClick = onHistoryClick) {
+                        Text("History")
+                    }
+                }
+            )
+        },
 
         bottomBar = {
             Surface(
@@ -475,8 +508,6 @@ fun VMAXDashboard() {
                 }
             )
 
-            // Extra bottom breathing room for the scrollable content.
-            // The actual action button is owned by Scaffold.bottomBar.
             Spacer(
                 modifier = Modifier.height(16.dp)
             )
