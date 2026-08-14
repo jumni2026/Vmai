@@ -14,6 +14,8 @@ import com.vmax.action.ExecutionEvent
 import com.vmax.runtime.ExecutionHistoryRepository
 import kotlinx.coroutines.launch
 
+// ✅ Fix 1: Explicit opt-in for ExperimentalMaterial3Api
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
     repository: AndroidExecutionHistoryRepository,
@@ -37,12 +39,10 @@ fun HistoryScreen(
                 title = {
                     Text("Execution History")
                 },
+                // ✅ Fix 2: Replace ArrowBack with TextButton
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                    TextButton(onClick = onBack) {
+                        Text("Back")
                     }
                 }
             )
