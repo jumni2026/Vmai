@@ -4,16 +4,18 @@ import android.accessibilityservice.AccessibilityService
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+
+// Core contracts
+import com.vmax.action.ActionExecutor
+import com.vmax.action.ExecutionEvent          // ✅ सही: core-action से
+import com.vmax.workflow.ExecutionTracker     // ✅ सही: core-workflow से
+import com.vmax.workflow.ActionOrchestrator
 import com.vmax.common.Logger
 import com.vmax.common.Result
-import com.vmax.runtime.ExecutionTracker
-import com.vmax.runtime.ExecutionRecorder
 import com.vmax.runtime.MetricsCollector
-import com.vmax.runtime.ExecutionEvent
-import com.vmax.workflow.ActionOrchestrator
-import com.vmax.action.ActionExecutor
+import com.vmax.runtime.ExecutionRecorder
 
-// Import Android-specific implementations (these must exist in app module)
+// Android-specific implementations
 import com.vmax.app.AndroidLogger
 import com.vmax.app.AndroidExecutionHistoryStore
 import com.vmax.app.AndroidExecutionRecorder
@@ -51,7 +53,6 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var passengerGender: String = ""
     private var passengerMeal: String = ""
 
-    // Single session ID for the complete workflow
     private var currentSessionId: String = ""
 
     // ----------------------------------------------------------------
@@ -103,9 +104,9 @@ class VMAXAccessibilityService : AccessibilityService() {
         passengerGender = gender
         passengerMeal = meal
 
-        // ✅ Session ID and History Recording
         currentSessionId = "SESSION_${System.currentTimeMillis()}"
-        
+
+        // Session start records
         metrics.startMetrics(currentSessionId)
         recorder.recordEvent(ExecutionEvent.SessionStarted(currentSessionId))
 
@@ -116,7 +117,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     fun stopWorkflow() {
         recorder.recordEvent(ExecutionEvent.SessionStopped(currentSessionId))
         metrics.stopMetrics(currentSessionId, "STOPPED")
-        
+
         currentState = State.STOPPED
         Log.i(TAG, "Workflow stopped.")
     }
@@ -132,7 +133,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         tracker = ExecutionTracker(AndroidLogger())
         orchestrator = ActionOrchestrator(executor, tracker)
 
-        // ✅ Initialize History System
         historyStore = AndroidExecutionHistoryStore(this)
         recorder = AndroidExecutionRecorder(historyStore)
         metrics = AndroidMetricsCollector()
@@ -156,7 +156,7 @@ class VMAXAccessibilityService : AccessibilityService() {
             // CAPTCHA / OTP USER BOUNDARY
             if (isCaptchaOrOtpPresent(root)) {
                 currentState = State.USER_BOUNDARY
-                
+
                 recorder.recordEvent(
                     ExecutionEvent.SessionError(
                         sessionId = currentSessionId,
@@ -209,7 +209,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // ORCHESTRATION HANDLERS (History Tracking Added)
+    // ORCHESTRATION HANDLERS (Metrics Tracking Only)
     // ----------------------------------------------------------------
 
     private fun handleFromField(root: AccessibilityNodeInfo) {
@@ -564,4 +564,4 @@ class VMAXAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         Log.w(TAG, "Service interrupted")
     }
-}
+}v
