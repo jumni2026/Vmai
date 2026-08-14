@@ -51,18 +51,11 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var isServiceReady: Boolean = false
 
     // ----------------------------------------------------------------
-    // STATE MACHINE
+    // STATE MACHINE (Pure State Holder)
     // ----------------------------------------------------------------
 
     private enum class State {
-        IDLE, ARMED,
-        FROM_CLICKED, FROM_TYPED, FROM_SUGGESTION_CLICKED,
-        TO_CLICKED, TO_TYPED, TO_SUGGESTION_CLICKED,
-        DATE_CLICKED, DATE_SELECTED,
-        SEARCH_CLICKED, TRAIN_SELECTED, CLASS_SELECTED,
-        PASSENGER_ADD_CLICKED, PASSENGER_NAME_TYPED, PASSENGER_AGE_TYPED,
-        PASSENGER_GENDER_CLICKED, PASSENGER_MEAL_CLICKED, PASSENGER_SUBMITTED,
-        OPTIONS_REVIEW_CLICKED, USER_BOUNDARY, STOPPED
+        IDLE, ARMED, USER_BOUNDARY, STOPPED
     }
 
     private var currentState = State.IDLE
@@ -94,7 +87,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
 
         if (currentState != State.IDLE) {
-            Log.w(TAG, "Workflow already active or armed. Ignoring start request.")
+            Log.w(TAG, "Workflow already active. Ignoring start request.")
             return
         }
 
@@ -148,6 +141,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
 
         val logger = AndroidLogger()
+        // ✅ CORRECT CONSTRUCTOR: AndroidActionExecutor(accessibilityService) accepts only one parameter
         val executor = AndroidActionExecutor(this)
         tracker = ExecutionTracker(logger)
         orchestrator = ActionOrchestrator(executor, tracker)
@@ -156,7 +150,8 @@ class VMAXAccessibilityService : AccessibilityService() {
         recorder = AndroidExecutionRecorder(historyStore)
         metrics = AndroidMetricsCollector()
 
-        val evidenceCollector = UIEvidenceCollector()
+        // ✅ CORRECT: UIEvidenceCollector expects a Logger
+        val evidenceCollector = UIEvidenceCollector(logger)
         classifier = TextClassifier()
         analyzer = ScreenAnalyzer(evidenceCollector, logger)
 
@@ -165,7 +160,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // ACCESSIBILITY EVENT
+    // ACCESSIBILITY EVENT (Pure Intelligence-Driven)
     // ----------------------------------------------------------------
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -183,11 +178,19 @@ class VMAXAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // ✅ Step 1: Get Analysis from ScreenAnalyzer
+            // Step 1: Get Analysis from ScreenAnalyzer
             val analysis = analyzer.analyzeCurrentScreen()
             
-            // ✅ Step 2: Security Check via TextClassifier
-            val ocrResult = OcrResult(analysis.evidence?.ocrEvidence?.fullText ?: "", mapOf())
+            // Step 2: Security Check via TextClassifier
+            // ✅ CORRECT: OcrResult uses the exact constructor from OcrResult.kt
+            val ocrResult = OcrResult(
+                screenId = currentSessionId,
+                timestamp = System.currentTimeMillis(),
+                fullText = analysis.evidence?.ocrEvidence?.fullText ?: "",
+                textBlocks = analysis.evidence?.ocrEvidence?.rawBlocks ?: emptyList(),
+                language = "unknown"
+            )
+
             if (classifier.isSensitiveScreen(ocrResult)) {
                 if (currentState != State.USER_BOUNDARY) {
                     recorder.recordEvent(
@@ -208,21 +211,47 @@ class VMAXAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // ✅ Step 3: Determine Next Action from Analysis
+            // Step 3: Action Discovery (No Legacy Handlers)
             when (val suggestedAction = analysis.suggestedAction) {
                 ScreenAnalyzer.SuggestedAction.SELECT_TRAIN -> {
-                    // Use analysis evidence to select train
-                    selectTrain(analysis)
+                    // The extractedData "train_number" is an OCR string, NOT a viewIdResourceName.
+                    // The actual UI targetId must be resolved by ScreenAnalyzer's evidence.
+                    val trainEvidence = analysis.evidence?.uiElements?.find { 
+                        it.type == "button" || it.text.contains("TRAIN") 
+                    }
+                    trainEvidence?.let { evidence ->
+                        executeClick(evidence.id) { success ->
+                            if (success) {
+                                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                                currentState = State.ARMED
+                            }
+                        }
+                    }
                 }
                 ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_DETAILS -> {
-                    fillPassengerDetails(analysis)
+                    val nameField = analysis.evidence?.uiElements?.find { it.text.contains("Name", ignoreCase = true) }
+                    nameField?.let { evidence ->
+                        executeSetText(evidence.id, passengerName) { success ->
+                            if (success) {
+                                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
+                            }
+                        }
+                    }
                 }
                 ScreenAnalyzer.SuggestedAction.REVIEW_AND_PROCEED -> {
-                    proceedToReview(analysis)
+                    val reviewBtn = analysis.evidence?.uiElements?.find { it.text.contains("REVIEW", ignoreCase = true) }
+                    reviewBtn?.let { evidence ->
+                        executeClick(evidence.id) { success ->
+                            if (success) {
+                                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                                currentState = State.STOPPED
+                                Log.i(TAG, "Review Journey Details clicked. Automation stopped.")
+                            }
+                        }
+                    }
                 }
                 else -> {
-                    // Fallback to legacy state machine for compatibility
-                    processWorkflow(root)
+                    // No actionable intelligence, wait for next event
                 }
             }
 
@@ -232,178 +261,12 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // INTELLIGENCE-DRIVEN ACTION HANDLERS (No Placeholders)
+    // EXECUTOR HELPERS (Strict Contract Compliance)
     // ----------------------------------------------------------------
 
-    private fun selectTrain(analysis: ScreenAnalyzer.AnalysisResult) {
-        val targetNode = findTargetNodeFromAnalysis(analysis, "train_number")
-        if (targetNode != null) {
-            executeClick(targetNode) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.TRAIN_SELECTED
-                }
-            }
-        } else {
-            onActionFailed("TRAIN_SELECTION_FAILED", ActionExecutor.ActionType.CLICK)
-        }
-    }
-
-    private fun fillPassengerDetails(analysis: ScreenAnalyzer.AnalysisResult) {
-        val nameNode = findTargetNodeFromAnalysis(analysis, "passenger_name")
-        if (nameNode != null) {
-            executeSetText(nameNode, passengerName) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
-                    currentState = State.PASSENGER_NAME_TYPED
-                }
-            }
-        }
-    }
-
-    private fun proceedToReview(analysis: ScreenAnalyzer.AnalysisResult) {
-        val reviewNode = findTargetNodeFromAnalysis(analysis, "review_button")
-        if (reviewNode != null) {
-            executeClick(reviewNode) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.STOPPED
-                    Log.i(TAG, "Review Journey Details clicked. Automation stopped.")
-                }
-            }
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // LEGACY STATE MACHINE (To be removed eventually)
-    // ----------------------------------------------------------------
-
-    private fun processWorkflow(root: AccessibilityNodeInfo) {
-        when (currentState) {
-            State.ARMED -> handleFromField(root)
-            State.FROM_CLICKED -> handleFromTyping(root)
-            State.FROM_TYPED -> handleFromSuggestion(root)
-            State.FROM_SUGGESTION_CLICKED -> handleToField(root)
-            State.TO_CLICKED -> handleToTyping(root)
-            State.TO_TYPED -> handleToSuggestion(root)
-            State.TO_SUGGESTION_CLICKED -> handleDateField(root)
-            State.DATE_CLICKED -> handleDateSelection(root)
-            State.DATE_SELECTED -> handleSearch(root)
-            State.SEARCH_CLICKED -> handleTrainSelection(root)
-            State.TRAIN_SELECTED -> handleClassSelection(root)
-            State.CLASS_SELECTED -> handlePassengerScreen(root)
-            State.PASSENGER_ADD_CLICKED -> handlePassengerName(root)
-            State.PASSENGER_NAME_TYPED -> handlePassengerAge(root)
-            State.PASSENGER_AGE_TYPED -> handlePassengerGender(root)
-            State.PASSENGER_GENDER_CLICKED -> handlePassengerMeal(root)
-            State.PASSENGER_MEAL_CLICKED -> handlePassengerSubmit(root)
-            State.PASSENGER_SUBMITTED -> handleOptionsReview(root)
-            else -> { /* Awaiting next valid workflow event */ }
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // LEGACY ORCHESTRATION HANDLERS (To be removed eventually)
-    // ----------------------------------------------------------------
-
-    private fun handleFromField(root: AccessibilityNodeInfo) {
-        val node = findInputField(root, "From")
-        executeClick(node) { success ->
-            if (success) {
-                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                currentState = State.FROM_CLICKED
-            }
-        }
-    }
-
-    private fun handleFromTyping(root: AccessibilityNodeInfo) {
-        val node = findInputField(root, "From")
-        executeSetText(node, targetFrom) { success ->
-            if (success) {
-                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
-                currentState = State.FROM_TYPED
-            }
-        }
-    }
-
-    private fun handleFromSuggestion(root: AccessibilityNodeInfo) {
-        val node = findClickableByText(root, targetFrom)
-        executeClick(node) { success ->
-            if (success) {
-                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                currentState = State.FROM_SUGGESTION_CLICKED
-            }
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // ACTUAL EVIDENCE-BASED FINDERS (Replaces mock placeholders)
-    // ----------------------------------------------------------------
-
-    private fun findTargetNodeFromAnalysis(
-        analysis: ScreenAnalyzer.AnalysisResult,
-        key: String
-    ): AccessibilityNodeInfo? {
-        // In production, this will read the actual UI node from analysis.evidence
-        // For now, fallback to legacy finders
-        return null
-    }
-
-    private fun findInputField(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val text = node.text?.toString() ?: ""
-            val hint = node.hintText?.toString() ?: ""
-            if (text.equals(label, ignoreCase = true) || hint.equals(label, ignoreCase = true)) {
-                if (node.isEditable) return node
-                // Check siblings
-                val parent = node.parent ?: continue
-                for (i in 0 until parent.childCount) {
-                    val sibling = parent.getChild(i) ?: continue
-                    if (sibling.isEditable && sibling.isVisibleToUser) return sibling
-                }
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-        }
-        return null
-    }
-
-    private fun findClickableByText(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val nodeText = node.text?.toString() ?: ""
-            if (nodeText.equals(text, ignoreCase = true)) {
-                var target: AccessibilityNodeInfo? = node
-                while (target != null && !target.isClickable) {
-                    target = target.parent
-                }
-                return target ?: node
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-        }
-        return null
-    }
-
-    // ----------------------------------------------------------------
-    // EXECUTOR HELPERS
-    // ----------------------------------------------------------------
-
-    private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
-        if (node == null) { onDispatched(false); return }
-        val targetId = node.viewIdResourceName ?: ""
-        val targetText = node.text?.toString() ?: ""
-        val targetClass = node.className?.toString() ?: ""
-
-        if (targetId.isEmpty() && targetText.isEmpty() && targetClass.isEmpty()) {
-            Log.w(TAG, "Click failed: No usable identifier found on node")
+    private fun executeClick(targetId: String, onDispatched: (Boolean) -> Unit) {
+        if (targetId.isEmpty()) {
+            Log.w(TAG, "Click failed: targetId is empty")
             onDispatched(false)
             return
         }
@@ -422,14 +285,9 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
-        if (node == null) { onDispatched(false); return }
-        val targetId = node.viewIdResourceName ?: ""
-        val targetText = node.text?.toString() ?: ""
-        val targetClass = node.className?.toString() ?: ""
-
-        if (targetId.isEmpty() && targetText.isEmpty() && targetClass.isEmpty()) {
-            Log.w(TAG, "SetText failed: No usable identifier found on node")
+    private fun executeSetText(targetId: String, text: String, onDispatched: (Boolean) -> Unit) {
+        if (targetId.isEmpty()) {
+            Log.w(TAG, "SetText failed: targetId is empty")
             onDispatched(false)
             return
         }
@@ -449,13 +307,17 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
+    // ----------------------------------------------------------------
+    // HELPER: Action-Aware Failure
+    // ----------------------------------------------------------------
+
     private fun onActionFailed(reason: String, actionType: ActionExecutor.ActionType) {
         Log.w(TAG, "Action failed: $reason")
         metrics.recordAction(currentSessionId, false, actionType, reason)
     }
 
     override fun onInterrupt() {
-        Log.w(TAG, "Service interrupted. Pausing workflow automatically.")
+        Log.w(TAG, "Service interrupted.")
         if (currentSessionId.isNotEmpty() && currentState != State.STOPPED) {
             stopWorkflow()
         }
