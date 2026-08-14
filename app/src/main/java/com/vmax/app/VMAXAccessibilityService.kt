@@ -141,7 +141,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
 
         val logger = AndroidLogger()
-        // ✅ CORRECT CONSTRUCTOR: AndroidActionExecutor(accessibilityService) accepts only one parameter
         val executor = AndroidActionExecutor(this)
         tracker = ExecutionTracker(logger)
         orchestrator = ActionOrchestrator(executor, tracker)
@@ -150,7 +149,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         recorder = AndroidExecutionRecorder(historyStore)
         metrics = AndroidMetricsCollector()
 
-        // ✅ CORRECT: UIEvidenceCollector expects a Logger
         val evidenceCollector = UIEvidenceCollector(logger)
         classifier = TextClassifier()
         analyzer = ScreenAnalyzer(evidenceCollector, logger)
@@ -180,9 +178,8 @@ class VMAXAccessibilityService : AccessibilityService() {
 
             // Step 1: Get Analysis from ScreenAnalyzer
             val analysis = analyzer.analyzeCurrentScreen()
-            
+
             // Step 2: Security Check via TextClassifier
-            // ✅ CORRECT: OcrResult uses the exact constructor from OcrResult.kt
             val ocrResult = OcrResult(
                 screenId = currentSessionId,
                 timestamp = System.currentTimeMillis(),
@@ -214,16 +211,13 @@ class VMAXAccessibilityService : AccessibilityService() {
             // Step 3: Action Discovery (No Legacy Handlers)
             when (val suggestedAction = analysis.suggestedAction) {
                 ScreenAnalyzer.SuggestedAction.SELECT_TRAIN -> {
-                    // The extractedData "train_number" is an OCR string, NOT a viewIdResourceName.
-                    // The actual UI targetId must be resolved by ScreenAnalyzer's evidence.
-                    val trainEvidence = analysis.evidence?.uiElements?.find { 
-                        it.type == "button" || it.text.contains("TRAIN") 
+                    val trainEvidence = analysis.evidence?.uiElements?.find {
+                        it.type == "button" || it.text.contains("TRAIN")
                     }
                     trainEvidence?.let { evidence ->
                         executeClick(evidence.id) { success ->
                             if (success) {
                                 metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                                currentState = State.ARMED
                             }
                         }
                     }
@@ -306,10 +300,6 @@ class VMAXAccessibilityService : AccessibilityService() {
             }
         }
     }
-
-    // ----------------------------------------------------------------
-    // HELPER: Action-Aware Failure
-    // ----------------------------------------------------------------
 
     private fun onActionFailed(reason: String, actionType: ActionExecutor.ActionType) {
         Log.w(TAG, "Action failed: $reason")
