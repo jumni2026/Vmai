@@ -36,6 +36,12 @@ class VMAXAccessibilityService : AccessibilityService() {
         private const val EVIDENCE_REVIEW = "REVIEW JOURNEY DETAILS"
         private const val EVIDENCE_CAPTCHA = "CAPTCHA"
         private const val EVIDENCE_OTP = "OTP"
+
+        // 📌 Extended Security Evidence
+        private val SECURITY_EVIDENCE = listOf(
+            "CAPTCHA", "OTP", "Enter OTP", "Verification Code",
+            "Security Code", "Captcha required"
+        )
     }
 
     // ----------------------------------------------------------------
@@ -53,21 +59,21 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var passengerMeal: String = ""
 
     private var currentSessionId: String = ""
+    private var isServiceReady: Boolean = false  // ✅ Lateinit safety guard
 
     // ----------------------------------------------------------------
     // STATE MACHINE
     // ----------------------------------------------------------------
 
     private enum class State {
-        IDLE,
+        IDLE, ARMED,
         FROM_CLICKED, FROM_TYPED, FROM_SUGGESTION_CLICKED,
         TO_CLICKED, TO_TYPED, TO_SUGGESTION_CLICKED,
         DATE_CLICKED, DATE_SELECTED,
         SEARCH_CLICKED, TRAIN_SELECTED, CLASS_SELECTED,
         PASSENGER_ADD_CLICKED, PASSENGER_NAME_TYPED, PASSENGER_AGE_TYPED,
         PASSENGER_GENDER_CLICKED, PASSENGER_MEAL_CLICKED, PASSENGER_SUBMITTED,
-        OPTIONS_REVIEW_CLICKED,
-        USER_BOUNDARY, STOPPED
+        OPTIONS_REVIEW_CLICKED, USER_BOUNDARY, STOPPED
     }
 
     private var currentState = State.IDLE
@@ -92,9 +98,21 @@ class VMAXAccessibilityService : AccessibilityService() {
         train: String, trainClass: String,
         name: String, age: String, gender: String, meal: String
     ) {
-        // ✅ Fix: Prevent starting a new session while one is already active
+        // ✅ P0: Lateinit Safety + Configuration Validation
+        if (!isServiceReady) {
+            Log.e(TAG, "Service not ready. Cannot start workflow.")
+            return
+        }
+
         if (currentState != State.IDLE) {
-            Log.w(TAG, "Workflow already active. Ignoring start request.")
+            Log.w(TAG, "Workflow already active or armed. Ignoring start request.")
+            return
+        }
+
+        // ✅ P0: Configuration Validation
+        if (from.isBlank() || to.isBlank() || train.isBlank() || trainClass.isBlank() ||
+            name.isBlank() || age.isBlank() || gender.isBlank()) {
+            Log.e(TAG, "Invalid configuration passed to startWorkflow.")
             return
         }
 
@@ -111,28 +129,23 @@ class VMAXAccessibilityService : AccessibilityService() {
 
         currentSessionId = "SESSION_${System.currentTimeMillis()}"
 
-        // ✅ FIX 1: Start the tracker session immediately after generating ID
+        // Always start session before any logic
         tracker.startSession(currentSessionId)
-
-        // Session start records
         metrics.startMetrics(currentSessionId)
         recorder.recordEvent(ExecutionEvent.SessionStarted(currentSessionId))
 
-        currentState = State.IDLE
-        Log.i(TAG, "Workflow started: $currentSessionId")
+        currentState = State.ARMED
+        Log.i(TAG, "Workflow armed with session: $currentSessionId")
     }
 
     fun stopWorkflow() {
-        // ✅ Fix: Prevent duplicate stop calls
         if (currentState == State.STOPPED || currentState == State.IDLE) {
             Log.w(TAG, "Workflow already stopped or idle. Ignoring stop request.")
             return
         }
 
         if (currentSessionId.isNotEmpty()) {
-            // ✅ FIX 2: Stop the tracker session before stopping metrics/recorder
             tracker.stopSession(currentSessionId)
-
             recorder.recordEvent(ExecutionEvent.SessionStopped(currentSessionId))
             metrics.stopMetrics(currentSessionId, "STOPPED")
         }
@@ -147,7 +160,6 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-
         executor = AndroidActionExecutor(this)
         tracker = ExecutionTracker(AndroidLogger())
         orchestrator = ActionOrchestrator(executor, tracker)
@@ -156,7 +168,8 @@ class VMAXAccessibilityService : AccessibilityService() {
         recorder = AndroidExecutionRecorder(historyStore)
         metrics = AndroidMetricsCollector()
 
-        Log.i(TAG, "VMAX Service Connected with Real Executor, ActionOrchestrator, and History System")
+        isServiceReady = true  // ✅ Lateinit guard
+        Log.i(TAG, "VMAX Service Connected. Ready for Workflow.")
     }
 
     // ----------------------------------------------------------------
@@ -165,6 +178,7 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        if (!isServiceReady) return
 
         val packageName = event.packageName?.toString() ?: return
         if (packageName != IRCTC_PACKAGE) return
@@ -172,33 +186,30 @@ class VMAXAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
 
         try {
-            // ✅ Fix: Prevent recording with empty sessionId
+            // ✅ Session Guard
             if (currentSessionId.isEmpty()) {
-                // If no session started, we still allow workflow processing,
-                // but no history recording will happen.
-                Log.d(TAG, "No active session, skipping history recording.")
+                Log.d(TAG, "No active session. Ignoring all events.")
+                return
             }
 
-            // CAPTCHA / OTP USER BOUNDARY
-            if (isCaptchaOrOtpPresent(root)) {
-                // ✅ Fix: Only record the boundary event once
+            // ✅ P0: CAPTCHA/OTP USER BOUNDARY (Extended detection)
+            if (isSecurityBoundaryPresent(root)) {
                 if (currentState != State.USER_BOUNDARY) {
-                    if (currentSessionId.isNotEmpty()) {
-                        recorder.recordEvent(
-                            ExecutionEvent.SessionError(
-                                sessionId = currentSessionId,
-                                errorCode = "CAPTCHA_OTP_DETECTED",
-                                errorMessage = "CAPTCHA or OTP screen detected. Automation paused."
-                            )
+                    recorder.recordEvent(
+                        ExecutionEvent.SessionError(
+                            sessionId = currentSessionId,
+                            errorCode = "CAPTCHA_OTP_DETECTED",
+                            errorMessage = "CAPTCHA or OTP screen detected. Automation paused."
                         )
-                        metrics.stopMetrics(currentSessionId, "USER_BOUNDARY")
-                    }
+                    )
+                    metrics.stopMetrics(currentSessionId, "USER_BOUNDARY")
                     currentState = State.USER_BOUNDARY
-                    Log.w(TAG, "CAPTCHA/OTP detected. Locking to USER_BOUNDARY.")
+                    Log.w(TAG, "Security boundary detected. Locking to USER_BOUNDARY.")
                 }
                 return
             }
 
+            // Terminal states
             if (currentState == State.USER_BOUNDARY || currentState == State.STOPPED) {
                 return
             }
@@ -216,7 +227,7 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private fun processWorkflow(root: AccessibilityNodeInfo) {
         when (currentState) {
-            State.IDLE -> handleFromField(root)
+            State.ARMED -> handleFromField(root)
             State.FROM_CLICKED -> handleFromTyping(root)
             State.FROM_TYPED -> handleFromSuggestion(root)
             State.FROM_SUGGESTION_CLICKED -> handleToField(root)
@@ -228,41 +239,191 @@ class VMAXAccessibilityService : AccessibilityService() {
             State.SEARCH_CLICKED -> handleTrainSelection(root)
             State.TRAIN_SELECTED -> handleClassSelection(root)
             State.CLASS_SELECTED -> handlePassengerScreen(root)
-            State.PASSENGER_ADD_CLICKED -> handlePassengerDetails(root)
+            State.PASSENGER_ADD_CLICKED -> handlePassengerName(root)
+            State.PASSENGER_NAME_TYPED -> handlePassengerAge(root)
             State.PASSENGER_AGE_TYPED -> handlePassengerGender(root)
             State.PASSENGER_GENDER_CLICKED -> handlePassengerMeal(root)
-            State.PASSENGER_MEAL_CLICKED -> handleAddPassengerSubmit(root)
-            State.PASSENGER_SUBMITTED -> handleOptionsReview(root)
+            State.PASSENGER_MEAL_CLICKED -> handlePassengerSubmit(root)
+            State.PASSENGER_SUBMITTED -> handleOptionsReview(root)  // ✅ Fix: Dead state fixed
             else -> { /* Awaiting next valid workflow event */ }
         }
     }
 
     // ----------------------------------------------------------------
-    // ORCHESTRATION HANDLERS (Metrics Tracking Only)
+    // ORCHESTRATION HANDLERS (Event-Driven)
     // ----------------------------------------------------------------
 
+    // 📌 P0/P1 Enhancement: Semantic Evidence Finders
+    private fun findInputFieldByLabel(root: AccessibilityNodeInfo, labelText: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            val hint = node.hintText?.toString() ?: ""
+            val desc = node.contentDescription?.toString() ?: ""
+            val resId = node.viewIdResourceName ?: ""
+
+            // Priority 1: Resource ID
+            if (resId.contains(labelText.lowercase(), ignoreCase = true) && node.isEditable) return node
+
+            // Priority 2: Text/Hint/Desc match
+            val labelMatch = text.equals(labelText, ignoreCase = true) || 
+                             hint.equals(labelText, ignoreCase = true) ||
+                             desc.equals(labelText, ignoreCase = true)
+            if (labelMatch && node.isEditable) return node
+
+            // Priority 3: Label is a sibling/child of an editable node (UI structure)
+            if (labelMatch && !node.isEditable) {
+                // Search for an editable sibling or child
+                val parent = node.parent ?: continue
+                for (i in 0 until parent.childCount) {
+                    val sibling = parent.getChild(i) ?: continue
+                    if (sibling.isEditable && sibling.isVisibleToUser) {
+                        return sibling
+                    }
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findClickableByText(root: AccessibilityNodeInfo, targetText: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+
+            if (text.equals(targetText, ignoreCase = true) && node.isVisibleToUser) {
+                // Find the nearest clickable ancestor or self
+                var target: AccessibilityNodeInfo? = node
+                while (target != null && !target.isClickable) {
+                    target = target.parent
+                }
+                return target ?: node
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findClickableControlByLabel(root: AccessibilityNodeInfo, labelText: String): AccessibilityNodeInfo? {
+        // ✅ P0: Used for buttons/controls instead of input fields
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            val hint = node.hintText?.toString() ?: ""
+            val desc = node.contentDescription?.toString() ?: ""
+            val resId = node.viewIdResourceName ?: ""
+
+            if (node.isVisibleToUser && node.isClickable) {
+                if (text.equals(labelText, ignoreCase = true) ||
+                    hint.equals(labelText, ignoreCase = true) ||
+                    desc.equals(labelText, ignoreCase = true) ||
+                    resId.contains(labelText.lowercase(), ignoreCase = true)) {
+                    return node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findAvailableClass(root: AccessibilityNodeInfo, targetClass: String): AccessibilityNodeInfo? {
+        // ✅ P0: Proper Class + Availability Verification
+        val trainNode = findClickableByText(root, targetTrain) ?: return null
+        val trainRow = trainNode.parent ?: return null
+
+        // Search for the target class within the same train row
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(trainRow)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+
+            if (text.contains(targetClass, ignoreCase = true) && node.isVisibleToUser) {
+                // Check availability in the same node or sibling
+                var availabilityNode: AccessibilityNodeInfo? = node
+                var available = false
+                while (availabilityNode != null && !available) {
+                    val availText = availabilityNode.text?.toString() ?: ""
+                    if (availText.contains("AVL", ignoreCase = true) ||
+                        availText.contains("AVAILABLE", ignoreCase = true)) {
+                        available = true
+                        break
+                    }
+                    availabilityNode = availabilityNode.parent
+                }
+                if (available) {
+                    var clickable: AccessibilityNodeInfo? = node
+                    while (clickable != null && !clickable.isClickable) {
+                        clickable = clickable.parent
+                    }
+                    return clickable ?: node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findDateInCalendar(root: AccessibilityNodeInfo, targetDate: String): AccessibilityNodeInfo? {
+        // ✅ P0: Exact Date Semantic Matching
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+
+            // Match exact date string (e.g., "14 Aug" or "14/08/2026")
+            if (node.isVisibleToUser && node.isClickable) {
+                if (text.equals(targetDate, ignoreCase = true)) {
+                    return node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
+    }
+
     private fun handleFromField(root: AccessibilityNodeInfo) {
-        findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let { node ->
+        findInputFieldByLabel(root, EVIDENCE_FROM)?.let { node ->
             executeClick(node) { success ->
                 if (success) {
                     metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
                     currentState = State.FROM_CLICKED
                 } else {
                     metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                    onActionFailed("FROM_CLICK", ActionExecutor.ActionType.CLICK)
                 }
             }
-        }
+        } ?: onActionFailed("FROM_FIELD_NOT_FOUND", ActionExecutor.ActionType.CLICK)
     }
 
     private fun handleFromTyping(root: AccessibilityNodeInfo) {
         if (currentState == State.FROM_CLICKED) {
-            findEditableNodeByEvidence(root, EVIDENCE_FROM)?.let { node ->
+            findInputFieldByLabel(root, EVIDENCE_FROM)?.let { node ->
                 executeSetText(node, targetFrom) { success ->
                     if (success) {
                         metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
                         currentState = State.FROM_TYPED
                     } else {
                         metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.SET_TEXT)
+                        onActionFailed("FROM_SET_TEXT", ActionExecutor.ActionType.SET_TEXT)
                     }
                 }
             }
@@ -270,26 +431,32 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun handleFromSuggestion(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, targetFrom, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.FROM_SUGGESTION_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.FROM_TYPED) {
+            findClickableByText(root, targetFrom)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.FROM_SUGGESTION_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("FROM_SUGGESTION", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handleToField(root: AccessibilityNodeInfo) {
-        findEditableNodeByEvidence(root, EVIDENCE_TO)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.TO_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.FROM_SUGGESTION_CLICKED) {
+            findInputFieldByLabel(root, EVIDENCE_TO)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.TO_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("TO_CLICK", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
@@ -297,13 +464,14 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private fun handleToTyping(root: AccessibilityNodeInfo) {
         if (currentState == State.TO_CLICKED) {
-            findEditableNodeByEvidence(root, EVIDENCE_TO)?.let { node ->
+            findInputFieldByLabel(root, EVIDENCE_TO)?.let { node ->
                 executeSetText(node, targetTo) { success ->
                     if (success) {
                         metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
                         currentState = State.TO_TYPED
                     } else {
                         metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.SET_TEXT)
+                        onActionFailed("TO_SET_TEXT", ActionExecutor.ActionType.SET_TEXT)
                     }
                 }
             }
@@ -311,111 +479,143 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun handleToSuggestion(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, targetTo, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.TO_SUGGESTION_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.TO_TYPED) {
+            findClickableByText(root, targetTo)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.TO_SUGGESTION_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("TO_SUGGESTION", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handleDateField(root: AccessibilityNodeInfo) {
-        findNodeByEvidence(root, EVIDENCE_DATE, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.DATE_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.TO_SUGGESTION_CLICKED) {
+            findInputFieldByLabel(root, EVIDENCE_DATE)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.DATE_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("DATE_CLICK", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handleDateSelection(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, targetDate, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.DATE_SELECTED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.DATE_CLICKED) {
+            findDateInCalendar(root, targetDate)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.DATE_SELECTED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("DATE_SELECTION", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handleSearch(root: AccessibilityNodeInfo) {
-        findNodeByEvidence(root, EVIDENCE_SEARCH, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.SEARCH_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.DATE_SELECTED) {
+            findInputFieldByLabel(root, EVIDENCE_SEARCH)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.SEARCH_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("SEARCH_CLICK", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handleTrainSelection(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, targetTrain, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.TRAIN_SELECTED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.SEARCH_CLICKED) {
+            findClickableByText(root, targetTrain)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.TRAIN_SELECTED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("TRAIN_SELECTION", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handleClassSelection(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, targetClass, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.CLASS_SELECTED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.TRAIN_SELECTED) {
+            findAvailableClass(root, targetClass)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.CLASS_SELECTED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("CLASS_SELECTION", ActionExecutor.ActionType.CLICK)
+                    }
                 }
-            }
+            } ?: onActionFailed("CLASS_NOT_AVAILABLE", ActionExecutor.ActionType.CLICK)
         }
     }
 
     private fun handlePassengerScreen(root: AccessibilityNodeInfo) {
-        findNodeByEvidence(root, EVIDENCE_ADD_NEW, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.PASSENGER_ADD_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.CLASS_SELECTED) {
+            findClickableControlByLabel(root, EVIDENCE_ADD_NEW)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.PASSENGER_ADD_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("ADD_NEW_CLICK", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
-    private fun handlePassengerDetails(root: AccessibilityNodeInfo) {
-        findEditableNodeByEvidence(root, "Passenger Name")?.let { nameNode ->
-            executeSetText(nameNode, passengerName) { nameSuccess ->
-                if (!nameSuccess) return@executeSetText
-                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
-                currentState = State.PASSENGER_NAME_TYPED
+    private fun handlePassengerName(root: AccessibilityNodeInfo) {
+        if (currentState == State.PASSENGER_ADD_CLICKED) {
+            findInputFieldByLabel(root, "Passenger Name")?.let { nameNode ->
+                executeSetText(nameNode, passengerName) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
+                        currentState = State.PASSENGER_NAME_TYPED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.SET_TEXT)
+                        onActionFailed("PASSENGER_NAME", ActionExecutor.ActionType.SET_TEXT)
+                    }
+                }
+            }
+        }
+    }
 
-                findEditableNodeByEvidence(root, "Age")?.let { ageNode ->
-                    executeSetText(ageNode, passengerAge) { ageSuccess ->
-                        if (ageSuccess) {
-                            metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
-                            currentState = State.PASSENGER_AGE_TYPED
-                        } else {
-                            metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.SET_TEXT)
-                        }
+    private fun handlePassengerAge(root: AccessibilityNodeInfo) {
+        if (currentState == State.PASSENGER_NAME_TYPED) {
+            findInputFieldByLabel(root, "Age")?.let { ageNode ->
+                executeSetText(ageNode, passengerAge) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
+                        currentState = State.PASSENGER_AGE_TYPED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.SET_TEXT)
+                        onActionFailed("PASSENGER_AGE", ActionExecutor.ActionType.SET_TEXT)
                     }
                 }
             }
@@ -423,42 +623,48 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun handlePassengerGender(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, passengerGender, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.PASSENGER_GENDER_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.PASSENGER_AGE_TYPED) {
+            findClickableByText(root, passengerGender)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.PASSENGER_GENDER_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("PASSENGER_GENDER", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     private fun handlePassengerMeal(root: AccessibilityNodeInfo) {
-        findNodeByEvidence(root, "Meal Preference", isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.PASSENGER_MEAL_CLICKED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.PASSENGER_GENDER_CLICKED) {
+            findInputFieldByLabel(root, "Meal Preference")?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.PASSENGER_MEAL_CLICKED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("MEAL_PREFERENCE", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
-    private fun handleAddPassengerSubmit(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, passengerMeal, isClickable = true)?.let { mealNode ->
-            executeClick(mealNode) {
-                findNodeByExactText(root, EVIDENCE_ADD_PASSENGER, isClickable = true)?.let { addNode ->
-                    executeClick(addNode) { success ->
-                        if (success) {
-                            metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                            currentState = State.PASSENGER_SUBMITTED
-                        } else {
-                            metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
-                        }
+    private fun handlePassengerSubmit(root: AccessibilityNodeInfo) {
+        if (currentState == State.PASSENGER_MEAL_CLICKED) {
+            // ✅ P0: Find Submit button using ClickableControl (not InputField)
+            findClickableControlByLabel(root, EVIDENCE_ADD_PASSENGER)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.PASSENGER_SUBMITTED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("ADD_PASSENGER_SUBMIT", ActionExecutor.ActionType.CLICK)
                     }
                 }
             }
@@ -466,28 +672,30 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun handleOptionsReview(root: AccessibilityNodeInfo) {
-        findNodeByExactText(root, EVIDENCE_REVIEW, isClickable = true)?.let { node ->
-            executeClick(node) { success ->
-                if (success) {
-                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    currentState = State.OPTIONS_REVIEW_CLICKED
-                    Log.i(TAG, "Review Journey Details clicked. Automation stopped.")
-                    currentState = State.STOPPED
-                } else {
-                    metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+        if (currentState == State.PASSENGER_SUBMITTED) {
+            // ✅ P0: Find Review Button using ClickableControl (not InputField)
+            findClickableControlByLabel(root, EVIDENCE_REVIEW)?.let { node ->
+                executeClick(node) { success ->
+                    if (success) {
+                        metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                        currentState = State.OPTIONS_REVIEW_CLICKED
+                        Log.i(TAG, "Review Journey Details clicked. Automation stopped.")
+                        currentState = State.STOPPED
+                    } else {
+                        metrics.recordAction(currentSessionId, false, ActionExecutor.ActionType.CLICK)
+                        onActionFailed("REVIEW_CLICK", ActionExecutor.ActionType.CLICK)
+                    }
                 }
             }
         }
     }
 
     // ----------------------------------------------------------------
-    // EXECUTOR HELPERS (Uses Orchestrator)
+    // EXECUTOR HELPERS (Pass full node details)
     // ----------------------------------------------------------------
 
-    // ✅ UPGRADED: Now passes targetText and targetClass along with targetId
     private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
-
         val targetId = node.viewIdResourceName ?: ""
         val targetText = node.text?.toString() ?: ""
         val targetClass = node.className?.toString() ?: ""
@@ -514,10 +722,8 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ✅ UPGRADED: Now passes targetText and targetClass along with targetId
     private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
-
         val targetId = node.viewIdResourceName ?: ""
         val targetText = node.text?.toString() ?: ""
         val targetClass = node.className?.toString() ?: ""
@@ -546,10 +752,21 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // EVIDENCE FINDERS
+    // HELPER: Action Failure Handling (Action-Aware)
     // ----------------------------------------------------------------
 
-    private fun findNodeByEvidence(root: AccessibilityNodeInfo, evidence: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
+    private fun onActionFailed(reason: String, actionType: ActionExecutor.ActionType) {
+        // ✅ P0: Record action failure with correct ActionType
+        Log.w(TAG, "Action failed: $reason")
+        metrics.recordAction(currentSessionId, false, actionType, reason)
+        // Optionally: record a failed step in recorder
+    }
+
+    // ----------------------------------------------------------------
+    // SECURITY & HELPER FUNCTIONS
+    // ----------------------------------------------------------------
+
+    private fun isSecurityBoundaryPresent(root: AccessibilityNodeInfo): Boolean {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
@@ -558,64 +775,26 @@ class VMAXAccessibilityService : AccessibilityService() {
             val hint = node.hintText?.toString() ?: ""
             val desc = node.contentDescription?.toString() ?: ""
 
-            if (node.isVisibleToUser && (!isClickable || node.isClickable)) {
-                if (text.equals(evidence, ignoreCase = true) || hint.equals(evidence, ignoreCase = true) || desc.equals(evidence, ignoreCase = true)) {
-                    return node
+            if (node.isVisibleToUser) {
+                if (SECURITY_EVIDENCE.any { 
+                    text.contains(it, ignoreCase = true) ||
+                    hint.contains(it, ignoreCase = true) ||
+                    desc.contains(it, ignoreCase = true)
+                }) {
+                    return true
                 }
             }
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.addLast(it) }
             }
         }
-        return null
-    }
-
-    private fun findEditableNodeByEvidence(root: AccessibilityNodeInfo, evidence: String): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val text = node.text?.toString() ?: ""
-            val hint = node.hintText?.toString() ?: ""
-            val desc = node.contentDescription?.toString() ?: ""
-
-            if (node.isVisibleToUser && node.isEditable) {
-                if (text.equals(evidence, ignoreCase = true) || hint.equals(evidence, ignoreCase = true) || desc.equals(evidence, ignoreCase = true)) {
-                    return node
-                }
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-        }
-        return null
-    }
-
-    private fun findNodeByExactText(root: AccessibilityNodeInfo, targetText: String, isClickable: Boolean = false): AccessibilityNodeInfo? {
-        if (targetText.isEmpty()) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val text = node.text?.toString() ?: ""
-            if (node.isVisibleToUser && (!isClickable || node.isClickable)) {
-                if (text.equals(targetText, ignoreCase = true)) {
-                    return node
-                }
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-        }
-        return null
-    }
-
-    private fun isCaptchaOrOtpPresent(root: AccessibilityNodeInfo): Boolean {
-        return findNodeByExactText(root, EVIDENCE_CAPTCHA) != null ||
-                findNodeByExactText(root, EVIDENCE_OTP) != null
+        return false
     }
 
     override fun onInterrupt() {
-        Log.w(TAG, "Service interrupted")
+        Log.w(TAG, "Service interrupted. Pausing workflow automatically.")
+        if (currentSessionId.isNotEmpty() && currentState != State.STOPPED) {
+            stopWorkflow()
+        }
     }
 }
