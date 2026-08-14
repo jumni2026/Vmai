@@ -5,14 +5,21 @@ package com.vmax.action
  *
  * File — ExecutionEvent.kt
  *
- * Defines the contract for every step within a single execution session.
- * Platform-independent — no Android dependencies.
- * No business logic.
+ * Canonical contract for every event within an execution session.
+ *
+ * Architecture:
+ * - Platform-independent
+ * - No Android dependencies
+ * - No persistence logic
+ * - No business logic
+ *
+ * This class is owned by the core-action module and must NOT be
+ * duplicated in runtime or app modules.
  */
 sealed class ExecutionEvent {
 
     /**
-     * Session Lifecycle Events
+     * Session lifecycle events.
      */
     data class SessionStarted(
         val sessionId: String,
@@ -32,7 +39,7 @@ sealed class ExecutionEvent {
     ) : ExecutionEvent()
 
     /**
-     * Workflow State Events
+     * Workflow state transition event.
      */
     data class WorkflowStateChanged(
         val sessionId: String,
@@ -42,7 +49,7 @@ sealed class ExecutionEvent {
     ) : ExecutionEvent()
 
     /**
-     * Action Execution Events
+     * Action execution events.
      */
     data class ActionDispatched(
         val sessionId: String,
