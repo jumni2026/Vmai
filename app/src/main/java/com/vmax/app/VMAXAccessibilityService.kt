@@ -275,7 +275,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // LEGACY STATE MACHINE (For Backward Compatibility)
+    // LEGACY STATE MACHINE (To be removed eventually)
     // ----------------------------------------------------------------
 
     private fun processWorkflow(root: AccessibilityNodeInfo) {
@@ -305,9 +305,6 @@ class VMAXAccessibilityService : AccessibilityService() {
     // ----------------------------------------------------------------
     // LEGACY ORCHESTRATION HANDLERS (To be removed eventually)
     // ----------------------------------------------------------------
-
-    // Note: These will be replaced by Intelligence-Driven handlers above.
-    // They are kept only to ensure the current State Machine continues to work.
 
     private fun handleFromField(root: AccessibilityNodeInfo) {
         val node = findInputField(root, "From")
@@ -413,8 +410,6 @@ class VMAXAccessibilityService : AccessibilityService() {
 
         val result = orchestrator.click(
             targetId = targetId,
-            targetText = targetText,
-            targetClass = targetClass,
             sessionId = currentSessionId
         )
 
@@ -442,8 +437,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         val result = orchestrator.setText(
             targetId = targetId,
             text = text,
-            targetText = targetText,
-            targetClass = targetClass,
             sessionId = currentSessionId
         )
 
