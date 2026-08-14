@@ -484,15 +484,27 @@ class VMAXAccessibilityService : AccessibilityService() {
     // EXECUTOR HELPERS (Uses Orchestrator)
     // ----------------------------------------------------------------
 
+    // ✅ UPGRADED: Now passes targetText and targetClass along with targetId
     private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
+
         val targetId = node.viewIdResourceName ?: ""
-        if (targetId.isEmpty()) {
-            Log.w(TAG, "Click failed: Node has no viewIdResourceName")
+        val targetText = node.text?.toString() ?: ""
+        val targetClass = node.className?.toString() ?: ""
+
+        if (targetId.isEmpty() && targetText.isEmpty() && targetClass.isEmpty()) {
+            Log.w(TAG, "Click failed: No usable identifier found on node")
             onDispatched(false)
             return
         }
-        val result = orchestrator.click(targetId, currentSessionId)
+
+        val result = orchestrator.click(
+            targetId = targetId,
+            targetText = targetText,
+            targetClass = targetClass,
+            sessionId = currentSessionId
+        )
+
         when (result) {
             is Result.Success -> onDispatched(true)
             is Result.Error -> {
@@ -502,15 +514,28 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
+    // ✅ UPGRADED: Now passes targetText and targetClass along with targetId
     private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
         if (node == null) { onDispatched(false); return }
+
         val targetId = node.viewIdResourceName ?: ""
-        if (targetId.isEmpty()) {
-            Log.w(TAG, "SetText failed: Node has no viewIdResourceName")
+        val targetText = node.text?.toString() ?: ""
+        val targetClass = node.className?.toString() ?: ""
+
+        if (targetId.isEmpty() && targetText.isEmpty() && targetClass.isEmpty()) {
+            Log.w(TAG, "SetText failed: No usable identifier found on node")
             onDispatched(false)
             return
         }
-        val result = orchestrator.setText(targetId, text, currentSessionId)
+
+        val result = orchestrator.setText(
+            targetId = targetId,
+            text = text,
+            targetText = targetText,
+            targetClass = targetClass,
+            sessionId = currentSessionId
+        )
+
         when (result) {
             is Result.Success -> onDispatched(true)
             is Result.Error -> {
