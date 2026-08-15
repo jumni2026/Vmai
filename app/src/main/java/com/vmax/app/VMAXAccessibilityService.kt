@@ -51,11 +51,12 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var isServiceReady: Boolean = false
 
     // ----------------------------------------------------------------
-    // STATE MACHINE
+    // STATE MACHINE (Extended for dropdowns)
     // ----------------------------------------------------------------
 
     private enum class State {
-        IDLE, ARMED, USER_BOUNDARY, STOPPED
+        IDLE, ARMED, USER_BOUNDARY, STOPPED,
+        GENDER_DROPDOWN_OPENED, MEAL_DROPDOWN_OPENED
     }
 
     private var currentState = State.IDLE
@@ -72,6 +73,11 @@ class VMAXAccessibilityService : AccessibilityService() {
     private lateinit var historyStore: AndroidExecutionHistoryStore
     private lateinit var recorder: ExecutionRecorder
     private lateinit var metrics: MetricsCollector
+
+    // ----------------------------------------------------------------
+    // DUPLICATE ACTION PREVENTION
+    // ----------------------------------------------------------------
+    private var lastSuggestedAction: ScreenAnalyzer.SuggestedAction? = null
 
     // ----------------------------------------------------------------
     // PUBLIC WORKFLOW CONTRACT
@@ -180,16 +186,29 @@ class VMAXAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // Step 2: Only process if ARMED
+            // Step 2: Process dropdown selections first
+            when (currentState) {
+                State.GENDER_DROPDOWN_OPENED -> {
+                    selectGenderOption(root)
+                    return
+                }
+                State.MEAL_DROPDOWN_OPENED -> {
+                    selectMealOption(root)
+                    return
+                }
+                else -> {}
+            }
+
+            // Step 3: Only process if ARMED
             if (currentState != State.ARMED) {
                 Log.d(TAG, "Workflow not armed. Ignoring event.")
                 return
             }
 
-            // Step 3: Get Analysis from ScreenAnalyzer
+            // Step 4: Get Analysis from ScreenAnalyzer
             val analysis = analyzer.analyzeCurrentScreen()
 
-            // Step 4: Security Check via TextClassifier
+            // Step 5: Security Check via TextClassifier
             val ocrResult = OcrResult(
                 screenId = currentSessionId,
                 timestamp = System.currentTimeMillis(),
@@ -218,8 +237,16 @@ class VMAXAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // Step 5: Action Discovery
-            when (val suggestedAction = analysis.suggestedAction) {
+            // Step 6: Duplicate Action Prevention
+            val suggestedAction = analysis.suggestedAction
+            if (suggestedAction == lastSuggestedAction && suggestedAction != ScreenAnalyzer.SuggestedAction.NONE) {
+                Log.d(TAG, "Duplicate action '$suggestedAction' ignored.")
+                return
+            }
+            lastSuggestedAction = suggestedAction
+
+            // Step 7: Action Discovery
+            when (suggestedAction) {
                 ScreenAnalyzer.SuggestedAction.SELECT_TRAIN -> {
                     val targetId = findTargetIdForTrain(analysis)
                     if (targetId != null) {
@@ -234,7 +261,6 @@ class VMAXAccessibilityService : AccessibilityService() {
                 }
 
                 ScreenAnalyzer.SuggestedAction.CHECK_AVAILABILITY -> {
-                    // Attempt to click on the available class or proceed
                     val classId = findTargetIdForClass(analysis)
                     if (classId != null) {
                         executeClick(classId) { success ->
@@ -340,10 +366,17 @@ class VMAXAccessibilityService : AccessibilityService() {
             element.isClickable && element.text.contains(targetTrain, ignoreCase = true)
         }?.id?.let { return it }
 
-        // Priority 3: Buttons labeled SELECT, BOOK, or TRAIN
-        return uiElements.firstOrNull { element ->
+        // Priority 3: Buttons with "SELECT" or "VIEW" (more specific)
+        uiElements.firstOrNull { element ->
             element.isClickable && (
                 element.text.contains("SELECT", ignoreCase = true) ||
+                element.text.contains("VIEW", ignoreCase = true)
+            )
+        }?.id?.let { return it }
+
+        // Priority 4: Broad fallback (BOOK, TRAIN)
+        return uiElements.firstOrNull { element ->
+            element.isClickable && (
                 element.text.contains("BOOK", ignoreCase = true) ||
                 element.text.contains("TRAIN", ignoreCase = true)
             )
@@ -395,31 +428,79 @@ class VMAXAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Gender Dropdown: Click to open, then select option
-        if (genderId != null) {
-            // Step 1: Click on the dropdown to open it
+        // Gender Dropdown: Click to open
+        if (genderId != null && currentState == State.ARMED) {
             executeClick(genderId) { success ->
                 if (success) {
                     metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
-                    // Step 2: The next AccessibilityEvent will handle option selection
-                    // (We'll rely on the fact that after clicking, the dropdown appears)
+                    currentState = State.GENDER_DROPDOWN_OPENED
                     Log.i(TAG, "Gender dropdown opened. Waiting for option selection.")
                 }
             }
         }
 
-        // Meal Dropdown: Click to open, then select option
-        if (mealId != null) {
+        // Meal Dropdown: Click to open (only if not already in dropdown state)
+        if (mealId != null && currentState == State.ARMED) {
+            // We'll open meal dropdown after gender is selected, but for simplicity,
+            // we just open it now and assume the next event will handle selection.
+            // This is a placeholder; actual option selection will be handled in separate states.
             executeClick(mealId) { success ->
                 if (success) {
                     metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                    currentState = State.MEAL_DROPDOWN_OPENED
                     Log.i(TAG, "Meal dropdown opened. Waiting for option selection.")
                 }
             }
         }
+    }
 
-        // TODO: Implement actual option selection (Gender/Meal) in a later state.
-        // This will require state machine transitions or a sub-state.
+    private fun selectGenderOption(root: AccessibilityNodeInfo) {
+        // Find the option corresponding to passengerGender
+        val genderOption = findClickableByText(root, passengerGender)
+        if (genderOption != null) {
+            executeClick(genderOption) { success ->
+                if (success) {
+                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                    currentState = State.ARMED
+                    Log.i(TAG, "Gender option selected.")
+                }
+            }
+        } else {
+            Log.w(TAG, "Gender option not found. Returning to ARMED.")
+            currentState = State.ARMED
+        }
+    }
+
+    private fun selectMealOption(root: AccessibilityNodeInfo) {
+        val mealOption = findClickableByText(root, passengerMeal)
+        if (mealOption != null) {
+            executeClick(mealOption) { success ->
+                if (success) {
+                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                    currentState = State.ARMED
+                    Log.i(TAG, "Meal option selected.")
+                }
+            }
+        } else {
+            Log.w(TAG, "Meal option not found. Returning to ARMED.")
+            currentState = State.ARMED
+        }
+    }
+
+    private fun findClickableByText(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val nodeText = node.text?.toString() ?: ""
+            if (node.isClickable && node.isVisibleToUser && nodeText.equals(text, ignoreCase = true)) {
+                return node
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+        return null
     }
 
     private fun findPassengerFieldId(
@@ -428,10 +509,15 @@ class VMAXAccessibilityService : AccessibilityService() {
         isClickable: Boolean
     ): String? {
         return analysis.evidence?.uiElements?.firstOrNull { element ->
+            val textMatch = element.text.contains(label, ignoreCase = true)
+            val hintMatch = element.hint?.contains(label, ignoreCase = true) == true
+            val descMatch = element.contentDescription?.contains(label, ignoreCase = true) == true
+            val match = textMatch || hintMatch || descMatch
+
             if (isClickable) {
-                element.isClickable && element.text.contains(label, ignoreCase = true)
+                element.isClickable && match
             } else {
-                element.isEditable && element.text.contains(label, ignoreCase = true)
+                element.isEditable && match
             }
         }?.id
     }
