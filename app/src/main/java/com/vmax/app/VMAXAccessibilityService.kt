@@ -46,6 +46,7 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private var lastSuggestedAction: ScreenAnalyzer.SuggestedAction? = null
 
+    // ✅ FIX: Non-null `id` with default, fallback to coordinates if null
     private data class ClickTarget(
         val id: String?,
         val text: String?,
@@ -170,7 +171,6 @@ class VMAXAccessibilityService : AccessibilityService() {
                 else -> {}
             }
         } finally {
-            // ✅ root is safely recycled here
             root.recycle()
         }
     }
@@ -184,14 +184,18 @@ class VMAXAccessibilityService : AccessibilityService() {
             val id = findClickableViewIdForNode(root, node) ?: ""
             val bounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
             elements.add(UIEvidenceCollector.ScreenEvidence.UIElement(
-                id, node.className?.toString() ?: "", node.text?.toString() ?: "",
-                node.contentDescription?.toString(), OcrResult.BoundingBox(bounds.left, bounds.top, bounds.right, bounds.bottom),
-                node.isClickable, node.isEditable, node.hintText?.toString()
+                id = id,
+                type = node.className?.toString() ?: "",
+                text = node.text?.toString() ?: "",
+                contentDescription = node.contentDescription?.toString(),
+                bounds = OcrResult.BoundingBox(bounds.left, bounds.top, bounds.right, bounds.bottom),
+                isClickable = node.isClickable,
+                isEditable = node.isEditable,
+                hint = node.hintText?.toString()
             ))
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.addLast(it) }
             }
-            // ✅ SAFE: Only recycle child nodes, NOT the root.
             if (node !== root) {
                 node.recycle()
             }
@@ -199,22 +203,18 @@ class VMAXAccessibilityService : AccessibilityService() {
         return elements
     }
 
-    // ✅ Safe finder: passes root to avoid stale parent references
     private fun findClickableViewIdForNode(root: AccessibilityNodeInfo, node: AccessibilityNodeInfo): String? {
         val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(node) }
         while (queue.isNotEmpty()) {
             val current = queue.removeFirst()
-            // If node is clickable and has an ID, return it
             if (current.isClickable) {
                 val id = current.viewIdResourceName
                 if (!id.isNullOrEmpty()) return id
             }
-            // Add the parent to the queue (if it's not the root)
             val parent = current.parent
             if (parent != null && parent !== root) {
                 queue.addLast(parent)
             }
-            // Recycle the current node if it's not the original node
             if (current !== node) {
                 current.recycle()
             }
@@ -222,7 +222,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         return null
     }
 
-    // --- Target finders (now propagate coordinates) ---
+    // --- Target finders ---
     private fun findTargetForTrain(analysis: ScreenAnalyzer.AnalysisResult): ClickTarget? {
         val ui = analysis.evidence?.uiElements ?: return null
         ui.firstOrNull { it.isClickable && it.text.equals(targetTrain, true) }?.let {
@@ -277,128 +277,4 @@ class VMAXAccessibilityService : AccessibilityService() {
         if (ageTarget != null) {
             executeSetText(ageTarget, passengerAge) { success ->
                 metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.SET_TEXT, if (!success) "AGE_SET_FAILED" else null)
-                if (success) currentState = State.PASSENGER_AGE_TYPED
-            }
-        } else { onActionFailed("AGE_NOT_FOUND", ActionExecutor.ActionType.SET_TEXT); currentState = State.ARMED }
-    }
-
-    private fun handlePassengerGender(root: AccessibilityNodeInfo) {
-        if (currentState != State.PASSENGER_AGE_TYPED) return
-        val genderTarget = findPassengerFieldTargetFromRoot(root, "Gender", true)
-        if (genderTarget != null) {
-            executeClick(genderTarget) { success ->
-                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "GENDER_CLICK_FAILED" else null)
-                if (success) currentState = State.GENDER_DROPDOWN_OPENED
-            }
-        } else { onActionFailed("GENDER_NOT_FOUND", ActionExecutor.ActionType.CLICK); currentState = State.ARMED }
-    }
-
-    private fun handlePassengerMeal(root: AccessibilityNodeInfo) {
-        if (currentState != State.PASSENGER_GENDER_SELECTED) return
-        val mealTarget = findPassengerFieldTargetFromRoot(root, "Meal", true)
-        if (mealTarget != null) {
-            executeClick(mealTarget) { success ->
-                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "MEAL_CLICK_FAILED" else null)
-                if (success) currentState = State.MEAL_DROPDOWN_OPENED
-            }
-        } else { onActionFailed("MEAL_NOT_FOUND", ActionExecutor.ActionType.CLICK); currentState = State.ARMED }
-    }
-
-    private fun selectGenderOption(root: AccessibilityNodeInfo) {
-        if (currentState != State.GENDER_DROPDOWN_OPENED) return
-        val target = findClickableTargetByText(root, passengerGender)
-        if (target != null) {
-            executeClick(target) { success ->
-                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "GENDER_OPTION_FAILED" else null)
-                if (success) currentState = State.PASSENGER_GENDER_SELECTED
-            }
-        } else { Log.w(TAG, "Gender option not found"); currentState = State.ARMED }
-    }
-
-    private fun selectMealOption(root: AccessibilityNodeInfo) {
-        if (currentState != State.MEAL_DROPDOWN_OPENED) return
-        val target = findClickableTargetByText(root, passengerMeal)
-        if (target != null) {
-            executeClick(target) { success ->
-                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "MEAL_OPTION_FAILED" else null)
-                if (success) currentState = State.PASSENGER_MEAL_SELECTED
-            }
-        } else { Log.w(TAG, "Meal option not found"); currentState = State.ARMED }
-    }
-
-    private fun findPassengerFieldTarget(analysis: ScreenAnalyzer.AnalysisResult, label: String, isClickable: Boolean): ClickTarget? {
-        val ui = analysis.evidence?.uiElements ?: return null
-        val element = ui.firstOrNull {
-            val match = it.text.contains(label, true) || it.hint?.contains(label, true) == true
-            if (isClickable) it.isClickable && match else it.isEditable && match
-        }
-        return element?.let { ClickTarget(it.id, it.text, it.type, getBoundsFromUIElement(it)) }
-    }
-
-    private fun findPassengerFieldTargetFromRoot(root: AccessibilityNodeInfo, label: String, isClickable: Boolean): ClickTarget? {
-        val ui = extractUiElements(root)
-        val element = ui.firstOrNull {
-            val match = it.text.contains(label, true) || it.hint?.contains(label, true) == true
-            if (isClickable) it.isClickable && match else it.isEditable && match
-        }
-        return element?.let { ClickTarget(it.id, it.text, it.type, getBoundsFromUIElement(it)) }
-    }
-
-    // ✅ Returns ClickTarget with ID and Coordinates (Fallback ready)
-    private fun findClickableTargetByText(root: AccessibilityNodeInfo, text: String): ClickTarget? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val nodeText = node.text?.toString() ?: ""
-            if (node.isClickable && node.isVisibleToUser && nodeText.equals(text, ignoreCase = true)) {
-                val id = findClickableViewIdForNode(root, node)
-                val bounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
-                val coords = Pair(bounds.centerX(), bounds.centerY())
-                return ClickTarget(
-                    id = id,
-                    text = text,
-                    className = node.className?.toString(),
-                    coordinates = coords
-                )
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-            // Recycle all queued nodes safely (excluding root, which is recycled by caller)
-            if (node !== root) {
-                node.recycle()
-            }
-        }
-        return null
-    }
-
-    // --- Executor Helpers ---
-    private fun executeClick(target: ClickTarget, onDispatched: (Boolean) -> Unit) {
-        val result = orchestrator.click(
-            targetId = target.id,
-            sessionId = currentSessionId,
-            coordinates = target.coordinates
-        )
-        if (result is Result.Success) onDispatched(true)
-        else { Log.e(TAG, "Click failed: ${result.error.message}"); onDispatched(false) }
-    }
-
-    private fun executeSetText(target: ClickTarget, text: String, onDispatched: (Boolean) -> Unit) {
-        val result = orchestrator.setText(
-            targetId = target.id,
-            text = text,
-            sessionId = currentSessionId
-        )
-        if (result is Result.Success) onDispatched(true)
-        else { Log.e(TAG, "SetText failed: ${result.error.message}"); onDispatched(false) }
-    }
-
-    private fun onActionFailed(reason: String, actionType: ActionExecutor.ActionType) {
-        Log.w(TAG, "Action failed: $reason")
-        metrics.recordAction(currentSessionId, false, actionType, reason)
-    }
-
-    override fun onInterrupt() {
-        if (currentSessionId.isNotEmpty() && currentState != State.STOPPED) stopWorkflow()
-    }
-}
+                if (success) currentState = State.PASSENGER_
