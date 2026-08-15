@@ -51,7 +51,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var isServiceReady: Boolean = false
 
     // ----------------------------------------------------------------
-    // STATE MACHINE (Pure State Holder)
+    // STATE MACHINE
     // ----------------------------------------------------------------
 
     private enum class State {
@@ -64,7 +64,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     private lateinit var tracker: ExecutionTracker
     private lateinit var analyzer: ScreenAnalyzer
     private lateinit var classifier: TextClassifier
-    private lateinit var evidenceCollector: UIEvidenceCollector  // ✅ Now a property
+    private lateinit var evidenceCollector: UIEvidenceCollector
 
     // ----------------------------------------------------------------
     // HISTORY SYSTEM COMPONENTS
@@ -150,7 +150,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         recorder = AndroidExecutionRecorder(historyStore)
         metrics = AndroidMetricsCollector()
 
-        // ✅ Correct initialization of evidenceCollector (property)
         evidenceCollector = UIEvidenceCollector(logger)
         classifier = TextClassifier()
         analyzer = ScreenAnalyzer(evidenceCollector, logger)
@@ -160,7 +159,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // ACCESSIBILITY EVENT (Pure Intelligence-Driven)
+    // ACCESSIBILITY EVENT
     // ----------------------------------------------------------------
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -172,7 +171,7 @@ class VMAXAccessibilityService : AccessibilityService() {
 
         val root = rootInActiveWindow ?: return
 
-        // ✅ Step 0: Update UI Evidence FIRST
+        // Step 1: Always update UI Evidence first
         evidenceCollector.updateUiElements(extractUiElements(root))
 
         try {
@@ -181,16 +180,16 @@ class VMAXAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // ✅ Step 1: State check – only process if ARMED
+            // Step 2: Only process if ARMED
             if (currentState != State.ARMED) {
                 Log.d(TAG, "Workflow not armed. Ignoring event.")
                 return
             }
 
-            // Step 2: Get Analysis from ScreenAnalyzer
+            // Step 3: Get Analysis from ScreenAnalyzer
             val analysis = analyzer.analyzeCurrentScreen()
 
-            // Step 3: Security Check via TextClassifier
+            // Step 4: Security Check via TextClassifier
             val ocrResult = OcrResult(
                 screenId = currentSessionId,
                 timestamp = System.currentTimeMillis(),
@@ -219,46 +218,56 @@ class VMAXAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // Step 4: Action Discovery
+            // Step 5: Action Discovery
             when (val suggestedAction = analysis.suggestedAction) {
                 ScreenAnalyzer.SuggestedAction.SELECT_TRAIN -> {
-                    // Find a clickable element that corresponds to the train selection
-                    val trainNode = findTargetNodeFromAnalysis(analysis, "train_number")
-                    trainNode?.let { node ->
-                        executeClick(node) { success ->
+                    val targetId = findTargetIdForTrain(analysis)
+                    if (targetId != null) {
+                        executeClick(targetId) { success ->
                             if (success) {
                                 metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
                             }
                         }
-                    } ?: onActionFailed("TRAIN_NODE_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+                    } else {
+                        onActionFailed("TRAIN_NODE_ID_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+                    }
                 }
 
                 ScreenAnalyzer.SuggestedAction.CHECK_AVAILABILITY -> {
-                    // Placeholder: will be implemented when ScreenAnalyzer is updated
-                    Log.i(TAG, "CHECK_AVAILABILITY action detected – to be implemented.")
+                    // Attempt to click on the available class or proceed
+                    val classId = findTargetIdForClass(analysis)
+                    if (classId != null) {
+                        executeClick(classId) { success ->
+                            if (success) {
+                                metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                                Log.i(TAG, "Availability check clicked.")
+                            }
+                        }
+                    } else {
+                        onActionFailed("CLASS_NODE_ID_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+                    }
                 }
 
                 ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_DETAILS -> {
-                    // Fill all passenger fields (Name, Age, Gender, Meal)
                     fillPassengerDetails(analysis)
                 }
 
                 ScreenAnalyzer.SuggestedAction.REVIEW_AND_PROCEED -> {
-                    val reviewNode = findTargetNodeFromAnalysis(analysis, "review_button")
-                    reviewNode?.let { node ->
-                        executeClick(node) { success ->
+                    val targetId = findTargetIdForReview(analysis)
+                    if (targetId != null) {
+                        executeClick(targetId) { success ->
                             if (success) {
                                 metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
                                 currentState = State.STOPPED
                                 Log.i(TAG, "Review Journey Details clicked. Automation stopped.")
                             }
                         }
-                    } ?: onActionFailed("REVIEW_NODE_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+                    } else {
+                        onActionFailed("REVIEW_NODE_ID_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+                    }
                 }
 
-                else -> {
-                    // No actionable intelligence, wait for next event
-                }
+                else -> { /* No actionable intelligence, wait for next event */ }
             }
 
         } finally {
@@ -267,7 +276,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // HELPER: Extract UI Elements from root
+    // HELPER: Extract UI Elements
     // ----------------------------------------------------------------
 
     private fun extractUiElements(root: AccessibilityNodeInfo): List<UIEvidenceCollector.ScreenEvidence.UIElement> {
@@ -276,8 +285,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         queue.add(root)
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
-            // Try to find a valid viewId by walking up the hierarchy if needed
-            val id = findViewIdForNode(node) ?: ""
+            val id = findClickableViewIdForNode(node) ?: ""
             val type = node.className?.toString() ?: ""
             val text = node.text?.toString() ?: ""
             val desc = node.contentDescription?.toString()
@@ -302,20 +310,13 @@ class VMAXAccessibilityService : AccessibilityService() {
         return elements
     }
 
-    // Find a viewId by walking up the parent chain to find a clickable ancestor with an ID
-    private fun findViewIdForNode(node: AccessibilityNodeInfo): String? {
+    // Walk up parent chain to find the nearest clickable node with a viewId
+    private fun findClickableViewIdForNode(node: AccessibilityNodeInfo): String? {
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
             val id = current.viewIdResourceName
-            if (!id.isNullOrEmpty()) {
+            if (!id.isNullOrEmpty() && current.isClickable) {
                 return id
-            }
-            // If current is clickable and has no ID, try its parent
-            if (current.isClickable && current.parent != null) {
-                val parentId = current.parent?.viewIdResourceName
-                if (!parentId.isNullOrEmpty()) {
-                    return parentId
-                }
             }
             current = current.parent
         }
@@ -323,135 +324,123 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ----------------------------------------------------------------
-    // HELPER: Find target node from analysis by key
+    // HELPER: Find Target IDs (Prioritized)
     // ----------------------------------------------------------------
 
-    private fun findTargetNodeFromAnalysis(
-        analysis: ScreenAnalyzer.AnalysisResult,
-        key: String
-    ): AccessibilityNodeInfo? {
-        // Look for a UIElement that matches the target key (e.g., "train_number", "review_button")
-        val targetElement = findTargetUIElement(analysis, key)
-        if (targetElement == null) {
-            Log.w(TAG, "No UI element found for key: $key")
-            return null
-        }
-
-        val targetId = targetElement.id
-        if (targetId.isEmpty()) {
-            Log.w(TAG, "UI element for key $key has no valid viewId")
-            return null
-        }
-
-        // Search the current accessibility tree for the exact node
-        val root = rootInActiveWindow ?: return null
-        return findNodeById(root, targetId)
-    }
-
-    private fun findTargetUIElement(
-        analysis: ScreenAnalyzer.AnalysisResult,
-        key: String
-    ): UIEvidenceCollector.ScreenEvidence.UIElement? {
+    private fun findTargetIdForTrain(analysis: ScreenAnalyzer.AnalysisResult): String? {
         val uiElements = analysis.evidence?.uiElements ?: return null
 
-        // Heuristic: for "train_number", look for a clickable element containing the train number
-        // or a button with text "Select" or "Book".
-        return when (key) {
-            "train_number" -> {
-                uiElements.firstOrNull { element ->
-                    element.isClickable &&
-                            (element.text.contains(targetTrain, ignoreCase = true) ||
-                             element.text.contains("SELECT", ignoreCase = true) ||
-                             element.text.contains("BOOK", ignoreCase = true))
-                }
-            }
-            "review_button" -> {
-                uiElements.firstOrNull { element ->
-                    element.isClickable && element.text.contains("REVIEW", ignoreCase = true)
-                }
-            }
-            else -> {
-                // Generic fallback: any clickable element that contains the key as text
-                uiElements.firstOrNull { element ->
-                    element.isClickable && element.text.contains(key, ignoreCase = true)
-                }
-            }
-        }
+        // Priority 1: Exact match with targetTrain
+        uiElements.firstOrNull { element ->
+            element.isClickable && element.text.equals(targetTrain, ignoreCase = true)
+        }?.id?.let { return it }
+
+        // Priority 2: Contains targetTrain
+        uiElements.firstOrNull { element ->
+            element.isClickable && element.text.contains(targetTrain, ignoreCase = true)
+        }?.id?.let { return it }
+
+        // Priority 3: Buttons labeled SELECT, BOOK, or TRAIN
+        return uiElements.firstOrNull { element ->
+            element.isClickable && (
+                element.text.contains("SELECT", ignoreCase = true) ||
+                element.text.contains("BOOK", ignoreCase = true) ||
+                element.text.contains("TRAIN", ignoreCase = true)
+            )
+        }?.id
+    }
+
+    private fun findTargetIdForClass(analysis: ScreenAnalyzer.AnalysisResult): String? {
+        val uiElements = analysis.evidence?.uiElements ?: return null
+        // Look for a clickable element that matches targetClass
+        return uiElements.firstOrNull { element ->
+            element.isClickable && element.text.contains(targetClass, ignoreCase = true)
+        }?.id
+    }
+
+    private fun findTargetIdForReview(analysis: ScreenAnalyzer.AnalysisResult): String? {
+        val uiElements = analysis.evidence?.uiElements ?: return null
+        return uiElements.firstOrNull { element ->
+            element.isClickable && element.text.contains("REVIEW", ignoreCase = true)
+        }?.id
     }
 
     // ----------------------------------------------------------------
-    // HELPER: Find node by viewIdResourceName
-    // ----------------------------------------------------------------
-
-    private fun findNodeById(root: AccessibilityNodeInfo?, targetId: String): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            if (node.viewIdResourceName == targetId) {
-                return node
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
-            }
-        }
-        return null
-    }
-
-    // ----------------------------------------------------------------
-    // HELPER: Fill all passenger fields
+    // HELPER: Fill Passenger Details with Dropdown Support
     // ----------------------------------------------------------------
 
     private fun fillPassengerDetails(analysis: ScreenAnalyzer.AnalysisResult) {
-        // Find editable fields for Name, Age, Gender, Meal
-        val nameField = findEditableField(analysis, "Name")
-        val ageField = findEditableField(analysis, "Age")
-        val genderField = findClickableField(analysis, "Gender")
-        val mealField = findEditableField(analysis, "Meal")
+        // For Name and Age: editable fields
+        val nameId = findPassengerFieldId(analysis, "Name", isClickable = false)
+        val ageId = findPassengerFieldId(analysis, "Age", isClickable = false)
+        // For Gender and Meal: clickable dropdowns
+        val genderId = findPassengerFieldId(analysis, "Gender", isClickable = true)
+        val mealId = findPassengerFieldId(analysis, "Meal", isClickable = true)
 
-        // Execute in sequence (simplified: only Name filled for now)
-        nameField?.let { node ->
-            executeSetText(node, passengerName) { success ->
+        // Fill Name
+        if (nameId != null) {
+            executeSetText(nameId, passengerName) { success ->
                 if (success) {
                     metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
                 }
             }
-        } ?: onActionFailed("NAME_FIELD_NOT_FOUND", ActionExecutor.ActionType.SET_TEXT)
+        }
 
-        // Similarly, we can add Age, Gender, Meal in a more advanced version
-        // For now, we just show the pattern.
+        // Fill Age
+        if (ageId != null) {
+            executeSetText(ageId, passengerAge) { success ->
+                if (success) {
+                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.SET_TEXT)
+                }
+            }
+        }
+
+        // Gender Dropdown: Click to open, then select option
+        if (genderId != null) {
+            // Step 1: Click on the dropdown to open it
+            executeClick(genderId) { success ->
+                if (success) {
+                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                    // Step 2: The next AccessibilityEvent will handle option selection
+                    // (We'll rely on the fact that after clicking, the dropdown appears)
+                    Log.i(TAG, "Gender dropdown opened. Waiting for option selection.")
+                }
+            }
+        }
+
+        // Meal Dropdown: Click to open, then select option
+        if (mealId != null) {
+            executeClick(mealId) { success ->
+                if (success) {
+                    metrics.recordAction(currentSessionId, true, ActionExecutor.ActionType.CLICK)
+                    Log.i(TAG, "Meal dropdown opened. Waiting for option selection.")
+                }
+            }
+        }
+
+        // TODO: Implement actual option selection (Gender/Meal) in a later state.
+        // This will require state machine transitions or a sub-state.
     }
 
-    private fun findEditableField(analysis: ScreenAnalyzer.AnalysisResult, label: String): AccessibilityNodeInfo? {
-        val uiElement = analysis.evidence?.uiElements?.firstOrNull { element ->
-            element.isEditable && element.text.contains(label, ignoreCase = true)
-        }
-        if (uiElement == null) return null
-        val root = rootInActiveWindow ?: return null
-        return findNodeById(root, uiElement.id)
-    }
-
-    private fun findClickableField(analysis: ScreenAnalyzer.AnalysisResult, label: String): AccessibilityNodeInfo? {
-        val uiElement = analysis.evidence?.uiElements?.firstOrNull { element ->
-            element.isClickable && element.text.contains(label, ignoreCase = true)
-        }
-        if (uiElement == null) return null
-        val root = rootInActiveWindow ?: return null
-        return findNodeById(root, uiElement.id)
+    private fun findPassengerFieldId(
+        analysis: ScreenAnalyzer.AnalysisResult,
+        label: String,
+        isClickable: Boolean
+    ): String? {
+        return analysis.evidence?.uiElements?.firstOrNull { element ->
+            if (isClickable) {
+                element.isClickable && element.text.contains(label, ignoreCase = true)
+            } else {
+                element.isEditable && element.text.contains(label, ignoreCase = true)
+            }
+        }?.id
     }
 
     // ----------------------------------------------------------------
-    // EXECUTOR HELPERS (Strict Contract Compliance)
+    // EXECUTOR HELPERS (ID-based)
     // ----------------------------------------------------------------
 
-    private fun executeClick(node: AccessibilityNodeInfo?, onDispatched: (Boolean) -> Unit) {
-        if (node == null) {
-            Log.w(TAG, "Click failed: node is null")
-            onDispatched(false)
-            return
-        }
-        val targetId = node.viewIdResourceName ?: ""
+    private fun executeClick(targetId: String, onDispatched: (Boolean) -> Unit) {
         if (targetId.isEmpty()) {
             Log.w(TAG, "Click failed: targetId is empty")
             onDispatched(false)
@@ -472,13 +461,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun executeSetText(node: AccessibilityNodeInfo?, text: String, onDispatched: (Boolean) -> Unit) {
-        if (node == null) {
-            Log.w(TAG, "SetText failed: node is null")
-            onDispatched(false)
-            return
-        }
-        val targetId = node.viewIdResourceName ?: ""
+    private fun executeSetText(targetId: String, text: String, onDispatched: (Boolean) -> Unit) {
         if (targetId.isEmpty()) {
             Log.w(TAG, "SetText failed: targetId is empty")
             onDispatched(false)
