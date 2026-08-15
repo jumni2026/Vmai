@@ -178,20 +178,22 @@ class AndroidActionExecutor(
 
             node = findNode(searchParams.first, searchParams.second, searchParams.third)
 
-            // SCROLL Fix: बिना targetId के भी scrollable node ढूँढेगा
+            // SCROLL Fix: Find scrollable node
             if (actionType == ActionExecutor.ActionType.SCROLL && node == null) {
                 node = findFirstScrollableNodeSafe()
             }
 
-            // Coordinate Fallback: अगर node नहीं मिला, लेकिन coordinates हैं, तो टैप/क्लिक करें
             val requiresNode = when (actionType) {
                 ActionExecutor.ActionType.SWIPE, ActionExecutor.ActionType.WAIT -> false
                 else -> true
             }
 
+            // ✅ FIX: Smart Cast (store local variable first)
+            val requestCoordinates = request.coordinates
+
             if (requiresNode && node == null) {
-                if (request.coordinates != null && (actionType == ActionExecutor.ActionType.TAP || actionType == ActionExecutor.ActionType.CLICK)) {
-                    val coords = Pair(request.coordinates.first.toFloat(), request.coordinates.second.toFloat())
+                if (requestCoordinates != null && (actionType == ActionExecutor.ActionType.TAP || actionType == ActionExecutor.ActionType.CLICK)) {
+                    val coords = Pair(requestCoordinates.first.toFloat(), requestCoordinates.second.toFloat())
                     if (performTap(coords.first, coords.second)) {
                         return success(actionType, "Coordinate click performed (fallback)")
                     } else {
@@ -303,7 +305,6 @@ class AndroidActionExecutor(
         }
     }
 
-    // ✅ Safe scrollable node finder – ensures no leaked nodes
     private fun findFirstScrollableNodeSafe(): AccessibilityNodeInfo? {
         val root = accessibilityService.rootInActiveWindow ?: return null
         val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
@@ -312,7 +313,6 @@ class AndroidActionExecutor(
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             if (node.isScrollable && node.isVisibleToUser) {
-                // Return a NEW reference (caller owns it)
                 result = AccessibilityNodeInfo.obtain(node)
             }
             for (i in 0 until node.childCount) {
@@ -320,7 +320,6 @@ class AndroidActionExecutor(
             }
         }
 
-        // Recycle all queued nodes (excluding the root, which will be recycled by the caller)
         queue.forEach { if (it !== root) it.recycle() }
         queue.clear()
 
