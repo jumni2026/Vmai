@@ -46,7 +46,6 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private var lastSuggestedAction: ScreenAnalyzer.SuggestedAction? = null
 
-    // ✅ FIX: Non-null `id` with default, fallback to coordinates if null
     private data class ClickTarget(
         val id: String?,
         val text: String?,
@@ -277,4 +276,146 @@ class VMAXAccessibilityService : AccessibilityService() {
         if (ageTarget != null) {
             executeSetText(ageTarget, passengerAge) { success ->
                 metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.SET_TEXT, if (!success) "AGE_SET_FAILED" else null)
-                if (success) currentState = State.PASSENGER_
+                if (success) currentState = State.PASSENGER_AGE_TYPED
+            }
+        } else onActionFailed("AGE_NOT_FOUND", ActionExecutor.ActionType.SET_TEXT)
+    }
+
+    private fun handlePassengerGender(root: AccessibilityNodeInfo) {
+        if (currentState != State.PASSENGER_AGE_TYPED) return
+        val genderTarget = findPassengerFieldTargetFromRoot(root, "Gender", true)
+        if (genderTarget != null) {
+            executeClick(genderTarget) { success ->
+                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "GENDER_CLICK_FAILED" else null)
+                if (success) {
+                    currentState = State.GENDER_DROPDOWN_OPENED
+                    // Dropdown will be handled in onAccessibilityEvent loop
+                }
+            }
+        } else onActionFailed("GENDER_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+    }
+
+    private fun selectGenderOption(root: AccessibilityNodeInfo) {
+        if (currentState != State.GENDER_DROPDOWN_OPENED) return
+        val options = findDropdownOptions(root, passengerGender)
+        if (options.isNotEmpty()) {
+            executeClick(options.first()) { success ->
+                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "GENDER_OPTION_FAILED" else null)
+                if (success) currentState = State.PASSENGER_GENDER_SELECTED
+            }
+        } else onActionFailed("GENDER_OPTION_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+    }
+
+    private fun handlePassengerMeal(root: AccessibilityNodeInfo) {
+        if (currentState != State.PASSENGER_GENDER_SELECTED) return
+        val mealTarget = findPassengerFieldTargetFromRoot(root, "Meal", true)
+        if (mealTarget != null) {
+            executeClick(mealTarget) { success ->
+                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "MEAL_CLICK_FAILED" else null)
+                if (success) currentState = State.MEAL_DROPDOWN_OPENED
+            }
+        } else onActionFailed("MEAL_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+    }
+
+    private fun selectMealOption(root: AccessibilityNodeInfo) {
+        if (currentState != State.MEAL_DROPDOWN_OPENED) return
+        val options = findDropdownOptions(root, passengerMeal)
+        if (options.isNotEmpty()) {
+            executeClick(options.first()) { success ->
+                metrics.recordAction(currentSessionId, success, ActionExecutor.ActionType.CLICK, if (!success) "MEAL_OPTION_FAILED" else null)
+                if (success) currentState = State.PASSENGER_MEAL_SELECTED
+            }
+        } else onActionFailed("MEAL_OPTION_NOT_FOUND", ActionExecutor.ActionType.CLICK)
+    }
+
+    // --- Field Finders ---
+    private fun findPassengerFieldTarget(analysis: ScreenAnalyzer.AnalysisResult, label: String, isClickable: Boolean): ClickTarget? {
+        val ui = analysis.evidence?.uiElements ?: return null
+        return ui.firstOrNull { 
+            (it.isClickable == isClickable || it.isEditable) && 
+            (it.hint?.contains(label, true) == true || it.text.contains(label, true) || it.contentDescription?.contains(label, true) == true)
+        }?.let {
+            ClickTarget(it.id, it.text, it.type, getBoundsFromUIElement(it))
+        }
+    }
+
+    private fun findPassengerFieldTargetFromRoot(root: AccessibilityNodeInfo, label: String, isClickable: Boolean): ClickTarget? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            val hint = node.hintText?.toString() ?: ""
+            val desc = node.contentDescription?.toString() ?: ""
+            if ((node.isClickable == isClickable || node.isEditable) && 
+                (hint.contains(label, true) || text.contains(label, true) || desc.contains(label, true))) {
+                val bounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
+                val id = node.viewIdResourceName
+                val clickTarget = ClickTarget(id, text, node.className?.toString(), 
+                    if (!bounds.isEmpty) Pair((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2) else null)
+                node.recycle()
+                return clickTarget
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+            if (node !== root) node.recycle()
+        }
+        return null
+    }
+
+    private fun findDropdownOptions(root: AccessibilityNodeInfo, targetText: String): List<ClickTarget> {
+        val result = mutableListOf<ClickTarget>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            if (node.isClickable && text.contains(targetText, true)) {
+                val bounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
+                if (!bounds.isEmpty) {
+                    result.add(ClickTarget(node.viewIdResourceName, text, node.className?.toString(),
+                        Pair((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2)))
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+            if (node !== root) node.recycle()
+        }
+        return result
+    }
+
+    // --- Execution Helpers ---
+    private fun executeClick(target: ClickTarget, callback: (Boolean) -> Unit) {
+        val action = if (target.id != null) {
+            ActionExecutor.UIAction.Click(target.id, target.text, target.className)
+        } else if (target.coordinates != null) {
+            ActionExecutor.UIAction.ClickByCoordinates(target.coordinates.first, target.coordinates.second)
+        } else {
+            callback(false)
+            return
+        }
+        orchestrator.executeAction(action, object : ActionExecutor.ExecutionCallback {
+            override fun onSuccess(result: Result.Success<Unit>) { callback(true) }
+            override fun onFailure(error: Result.Error) { callback(false) }
+        })
+    }
+
+    private fun executeSetText(target: ClickTarget, text: String, callback: (Boolean) -> Unit) {
+        if (target.id == null) { callback(false); return }
+        val action = ActionExecutor.UIAction.SetText(target.id, text)
+        orchestrator.executeAction(action, object : ActionExecutor.ExecutionCallback {
+            override fun onSuccess(result: Result.Success<Unit>) { callback(true) }
+            override fun onFailure(error: Result.Error) { callback(false) }
+        })
+    }
+
+    private fun onActionFailed(reason: String, type: ActionExecutor.ActionType) {
+        Log.e(TAG, "Action failed: $reason")
+        metrics.recordAction(currentSessionId, false, type, reason)
+    }
+
+    override fun onInterrupt() {
+        Log.w(TAG, "Service interrupted")
+        stopWorkflow()
+    }
+}
