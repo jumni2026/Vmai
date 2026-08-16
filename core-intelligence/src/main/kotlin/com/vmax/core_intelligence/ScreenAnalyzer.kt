@@ -2,6 +2,11 @@ package com.vmax.core_intelligence
 
 import com.vmax.common.Logger
 
+// Type aliases at package level (outside class)
+private typealias ScreenEvidence = UIEvidenceCollector.ScreenEvidence
+private typealias UIElement = UIEvidenceCollector.ScreenEvidence.UIElement
+private typealias OcrEvidence = UIEvidenceCollector.ScreenEvidence.OcrEvidence
+
 /**
  * VMAX v2.6.1 - IRCTC Screen Analyzer (UPGRADED)
  * 
@@ -15,11 +20,6 @@ class ScreenAnalyzer(
     companion object {
         private const val TAG = "ScreenAnalyzer"
     }
-
-    // Type aliases for cleaner code
-    private typealias ScreenEvidence = UIEvidenceCollector.ScreenEvidence
-    private typealias UIElement = UIEvidenceCollector.ScreenEvidence.UIElement
-    private typealias OcrEvidence = UIEvidenceCollector.ScreenEvidence.OcrEvidence
 
     enum class ScreenState {
         UNKNOWN,
