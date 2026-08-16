@@ -84,80 +84,93 @@ class ScreenAnalyzer(
 
         val uiElements = evidence.uiElements
         val ocrEvidence = evidence.ocrEvidence
-        val fullText = if (ocrEvidence != null) ocrEvidence.fullText.uppercase() else ""
-        val keyValuePairs = if (ocrEvidence != null) ocrEvidence.keyValuePairs else emptyMap()
-
-        return when {
-            isStationConfirmationScreen(fullText, uiElements) -> {
-                AnalysisResult(
-                    screenState = ScreenState.STATION_CONFIRMATION,
-                    confidence = 0.95f,
-                    suggestedAction = SuggestedAction.CONFIRM_STATION,
-                    evidence = evidence,
-                    reason = "Station confirmation popup detected"
-                )
-            }
-            isAddPassengerFormScreen(fullText, uiElements) -> {
-                handleAddPassengerForm(evidence)
-            }
-            isPaymentUPIScreen(fullText, uiElements) -> {
-                handlePaymentUPI(evidence)
-            }
-            isPaymentWalletScreen(fullText, uiElements) -> {
-                handlePaymentWallet(evidence)
-            }
-            isPaymentCategoryScreen(fullText, uiElements) -> {
-                handlePaymentCategory(evidence)
-            }
-            isReviewJourneyScreen(fullText, uiElements, keyValuePairs) -> {
-                handleReviewJourney(evidence)
-            }
-            isPassengerInputScreen(fullText, uiElements, keyValuePairs) -> {
-                handlePassengerInput(evidence)
-            }
-            isAvailabilityScreen(fullText, uiElements) -> {
-                handleAvailability(evidence)
-            }
-            isTrainListScreen(fullText, uiElements, keyValuePairs) -> {
-                handleTrainList(evidence)
-            }
-            isLoadingScreen(fullText, uiElements) -> {
-                AnalysisResult(
-                    screenState = ScreenState.LOADING,
-                    confidence = 0.9f,
-                    suggestedAction = SuggestedAction.WAIT_FOR_LOADING,
-                    evidence = evidence,
-                    reason = "Loading screen detected"
-                )
-            }
-            isErrorScreen(fullText, uiElements) -> {
-                AnalysisResult(
-                    screenState = ScreenState.ERROR_SCREEN,
-                    confidence = 0.9f,
-                    suggestedAction = SuggestedAction.ERROR_RECOVERY,
-                    evidence = evidence,
-                    reason = "Error screen detected"
-                )
-            }
-            isCompletedScreen(fullText, uiElements) -> {
-                AnalysisResult(
-                    screenState = ScreenState.COMPLETED,
-                    confidence = 1.0f,
-                    suggestedAction = SuggestedAction.STOP_AWAIT_USER,
-                    evidence = evidence,
-                    reason = "Booking completed successfully"
-                )
-            }
-            else -> {
-                AnalysisResult(
-                    screenState = ScreenState.UNKNOWN,
-                    confidence = 0f,
-                    suggestedAction = SuggestedAction.NONE,
-                    evidence = evidence,
-                    reason = "Unknown screen"
-                )
-            }
+        
+        var fullText = ""
+        var keyValuePairs: Map<String, String> = emptyMap()
+        if (ocrEvidence != null) {
+            fullText = ocrEvidence.fullText.uppercase()
+            keyValuePairs = ocrEvidence.keyValuePairs
         }
+
+        if (isStationConfirmationScreen(fullText, uiElements)) {
+            return AnalysisResult(
+                screenState = ScreenState.STATION_CONFIRMATION,
+                confidence = 0.95f,
+                suggestedAction = SuggestedAction.CONFIRM_STATION,
+                evidence = evidence,
+                reason = "Station confirmation popup detected"
+            )
+        }
+        
+        if (isAddPassengerFormScreen(fullText, uiElements)) {
+            return handleAddPassengerForm(evidence)
+        }
+        
+        if (isPaymentUPIScreen(fullText, uiElements)) {
+            return handlePaymentUPI(evidence)
+        }
+        
+        if (isPaymentWalletScreen(fullText, uiElements)) {
+            return handlePaymentWallet(evidence)
+        }
+        
+        if (isPaymentCategoryScreen(fullText, uiElements)) {
+            return handlePaymentCategory(evidence)
+        }
+        
+        if (isReviewJourneyScreen(fullText, uiElements, keyValuePairs)) {
+            return handleReviewJourney(evidence)
+        }
+        
+        if (isPassengerInputScreen(fullText, uiElements, keyValuePairs)) {
+            return handlePassengerInput(evidence)
+        }
+        
+        if (isAvailabilityScreen(fullText, uiElements)) {
+            return handleAvailability(evidence)
+        }
+        
+        if (isTrainListScreen(fullText, uiElements, keyValuePairs)) {
+            return handleTrainList(evidence)
+        }
+        
+        if (isLoadingScreen(fullText, uiElements)) {
+            return AnalysisResult(
+                screenState = ScreenState.LOADING,
+                confidence = 0.9f,
+                suggestedAction = SuggestedAction.WAIT_FOR_LOADING,
+                evidence = evidence,
+                reason = "Loading screen detected"
+            )
+        }
+        
+        if (isErrorScreen(fullText, uiElements)) {
+            return AnalysisResult(
+                screenState = ScreenState.ERROR_SCREEN,
+                confidence = 0.9f,
+                suggestedAction = SuggestedAction.ERROR_RECOVERY,
+                evidence = evidence,
+                reason = "Error screen detected"
+            )
+        }
+        
+        if (isCompletedScreen(fullText, uiElements)) {
+            return AnalysisResult(
+                screenState = ScreenState.COMPLETED,
+                confidence = 1.0f,
+                suggestedAction = SuggestedAction.STOP_AWAIT_USER,
+                evidence = evidence,
+                reason = "Booking completed successfully"
+            )
+        }
+
+        return AnalysisResult(
+            screenState = ScreenState.UNKNOWN,
+            confidence = 0f,
+            suggestedAction = SuggestedAction.NONE,
+            evidence = evidence,
+            reason = "Unknown screen"
+        )
     }
 
     // ==================== SCREEN DETECTION FUNCTIONS ====================
@@ -182,16 +195,20 @@ class ScreenAnalyzer(
         
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             val hint = element.hint
             val text = element.text
             
-            if (hint != null && hint.contains("Name", ignoreCase = true) ||
-                text.contains("Name", ignoreCase = true)) {
+            if (hint != null && hint.contains("Name", ignoreCase = true)) {
                 hasNameField = true
             }
-            if (hint != null && hint.contains("Age", ignoreCase = true) ||
-                text.contains("Age", ignoreCase = true)) {
+            if (text.contains("Name", ignoreCase = true)) {
+                hasNameField = true
+            }
+            if (hint != null && hint.contains("Age", ignoreCase = true)) {
+                hasAgeField = true
+            }
+            if (text.contains("Age", ignoreCase = true)) {
                 hasAgeField = true
             }
             if (text.contains("Male", ignoreCase = true) ||
@@ -202,10 +219,16 @@ class ScreenAnalyzer(
             if (element.isClickable && text.contains("Add Passenger", ignoreCase = true)) {
                 hasAddPassengerButton = true
             }
-            i++
+            i = i + 1
         }
         
-        return (hasNameField && hasAgeField && hasGenderOptions) || hasAddPassengerButton
+        if (hasNameField && hasAgeField && hasGenderOptions) {
+            return true
+        }
+        if (hasAddPassengerButton) {
+            return true
+        }
+        return false
     }
 
     private fun isPaymentUPIScreen(
@@ -220,7 +243,7 @@ class ScreenAnalyzer(
         
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("IRCTC iPay", ignoreCase = true) ||
@@ -233,7 +256,7 @@ class ScreenAnalyzer(
                     hasProceedPay = true
                 }
             }
-            i++
+            i = i + 1
         }
         
         return (hasUPITitle || hasPaymentProviders) && hasProceedPay
@@ -249,7 +272,7 @@ class ScreenAnalyzer(
         var hasWalletProviders = false
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("IRCTC", ignoreCase = true) ||
@@ -258,7 +281,7 @@ class ScreenAnalyzer(
                     hasWalletProviders = true
                 }
             }
-            i++
+            i = i + 1
         }
         
         val hasInsufficientBalance = fullText.contains("INSUFFICIENT") &&
@@ -281,17 +304,19 @@ class ScreenAnalyzer(
         var hasCategories = false
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             var j = 0
             while (j < paymentCategories.size) {
-                if (element.text.contains(paymentCategories[j], ignoreCase = true)) {
+                if (element.text.contains(paymentCategories.get(j), ignoreCase = true)) {
                     hasCategories = true
                     break
                 }
-                j++
+                j = j + 1
             }
-            if (hasCategories) break
-            i++
+            if (hasCategories) {
+                break
+            }
+            i = i + 1
         }
         
         val hasTotalAmount = fullText.contains("TOTAL AMOUNT") ||
@@ -315,7 +340,7 @@ class ScreenAnalyzer(
         var hasProceedButton = false
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("Proceed to Pay", ignoreCase = true) ||
@@ -324,7 +349,7 @@ class ScreenAnalyzer(
                     break
                 }
             }
-            i++
+            i = i + 1
         }
         
         return hasReviewTitle || (hasTrainDetails && hasPassengerDetails) || hasProceedButton
@@ -343,7 +368,7 @@ class ScreenAnalyzer(
         
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("Add New", ignoreCase = true)) {
@@ -356,7 +381,7 @@ class ScreenAnalyzer(
             if (element.isEditable) {
                 hasEditableFields = true
             }
-            i++
+            i = i + 1
         }
         
         return (hasPassengerTitle && hasAddNewButton) ||
@@ -372,11 +397,11 @@ class ScreenAnalyzer(
         var hasClassOptions = false
         var i = 0
         while (i < classOptions.size) {
-            if (fullText.contains(classOptions[i])) {
+            if (fullText.contains(classOptions.get(i))) {
                 hasClassOptions = true
                 break
             }
-            i++
+            i = i + 1
         }
         
         val hasAvailabilityText = fullText.contains("AVAILABLE") ||
@@ -387,12 +412,12 @@ class ScreenAnalyzer(
         var hasRefreshButtons = false
         i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable && element.text.contains("Refresh", ignoreCase = true)) {
                 hasRefreshButtons = true
                 break
             }
-            i++
+            i = i + 1
         }
         
         return (hasClassOptions && hasAvailabilityText) || hasRefreshButtons
@@ -411,7 +436,7 @@ class ScreenAnalyzer(
         var hasSelectableTrains = false
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("SELECT", ignoreCase = true) ||
@@ -421,7 +446,7 @@ class ScreenAnalyzer(
                     break
                 }
             }
-            i++
+            i = i + 1
         }
         
         return hasTrainKeywords || hasTrainNames || hasSelectableTrains
@@ -439,7 +464,7 @@ class ScreenAnalyzer(
         var hasProgressElements = false
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             val type = element.type
             if (type.contains("ProgressBar", ignoreCase = true) ||
                 type.contains("Loading", ignoreCase = true) ||
@@ -447,7 +472,7 @@ class ScreenAnalyzer(
                 hasProgressElements = true
                 break
             }
-            i++
+            i = i + 1
         }
         
         return loadingText || hasProgressElements
@@ -485,38 +510,44 @@ class ScreenAnalyzer(
         
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isEditable) {
                 val hint = element.hint
                 val text = element.text
-                if (hint != null && hint.contains("Name", ignoreCase = true) ||
-                    text.contains("Name", ignoreCase = true)) {
+                if (hint != null && hint.contains("Name", ignoreCase = true)) {
                     nameField = element
                 }
-                if (hint != null && hint.contains("Age", ignoreCase = true) ||
-                    text.contains("Age", ignoreCase = true)) {
+                if (text.contains("Name", ignoreCase = true)) {
+                    nameField = element
+                }
+                if (hint != null && hint.contains("Age", ignoreCase = true)) {
+                    ageField = element
+                }
+                if (text.contains("Age", ignoreCase = true)) {
                     ageField = element
                 }
             }
-            i++
+            i = i + 1
         }
         
         var hasAddPassengerButton = false
         i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable && element.text.contains("Add Passenger", ignoreCase = true)) {
                 hasAddPassengerButton = true
                 break
             }
-            i++
+            i = i + 1
         }
         
-        val action = when {
-            nameField != null && nameField.text.isBlank() -> SuggestedAction.FILL_PASSENGER_NAME
-            ageField != null && ageField.text.isBlank() -> SuggestedAction.FILL_PASSENGER_AGE
-            hasAddPassengerButton -> SuggestedAction.ADD_PASSENGER_CONFIRM
-            else -> SuggestedAction.STOP_AWAIT_USER
+        var action = SuggestedAction.STOP_AWAIT_USER
+        if (nameField != null && nameField.text.isBlank()) {
+            action = SuggestedAction.FILL_PASSENGER_NAME
+        } else if (ageField != null && ageField.text.isBlank()) {
+            action = SuggestedAction.FILL_PASSENGER_AGE
+        } else if (hasAddPassengerButton) {
+            action = SuggestedAction.ADD_PASSENGER_CONFIRM
         }
         
         return AnalysisResult(
@@ -536,7 +567,7 @@ class ScreenAnalyzer(
         var provider: UIEvidenceCollector.ScreenEvidence.UIElement? = null
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("IRCTC iPay", ignoreCase = true) ||
@@ -547,20 +578,21 @@ class ScreenAnalyzer(
                     break
                 }
             }
-            i++
+            i = i + 1
         }
         
-        return if (provider != null) {
-            AnalysisResult(
+        if (provider != null) {
+            val data = mapOf("provider" to provider.text)
+            return AnalysisResult(
                 screenState = ScreenState.PAYMENT_UPI,
                 confidence = 0.9f,
                 suggestedAction = SuggestedAction.SELECT_PAYMENT_PROVIDER,
-                extractedData = mapOf("provider" to provider.text),
+                extractedData = data,
                 evidence = evidence,
                 reason = "UPI payment provider selection"
             )
         } else {
-            AnalysisResult(
+            return AnalysisResult(
                 screenState = ScreenState.PAYMENT_UPI,
                 confidence = 0.7f,
                 suggestedAction = SuggestedAction.PROCEED_TO_PAY,
@@ -575,7 +607,10 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         val ocrEvidence = evidence.ocrEvidence
-        val fullText = if (ocrEvidence != null) ocrEvidence.fullText.uppercase() else ""
+        var fullText = ""
+        if (ocrEvidence != null) {
+            fullText = ocrEvidence.fullText.uppercase()
+        }
         
         if (fullText.contains("INSUFFICIENT") && fullText.contains("BALANCE")) {
             return AnalysisResult(
@@ -590,7 +625,7 @@ class ScreenAnalyzer(
         var provider: UIEvidenceCollector.ScreenEvidence.UIElement? = null
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("IRCTC", ignoreCase = true) ||
@@ -600,20 +635,21 @@ class ScreenAnalyzer(
                     break
                 }
             }
-            i++
+            i = i + 1
         }
         
-        return if (provider != null) {
-            AnalysisResult(
+        if (provider != null) {
+            val data = mapOf("provider" to provider.text)
+            return AnalysisResult(
                 screenState = ScreenState.PAYMENT_WALLET,
                 confidence = 0.9f,
                 suggestedAction = SuggestedAction.SELECT_PAYMENT_PROVIDER,
-                extractedData = mapOf("provider" to provider.text),
+                extractedData = data,
                 evidence = evidence,
                 reason = "Wallet payment provider selection"
             )
         } else {
-            AnalysisResult(
+            return AnalysisResult(
                 screenState = ScreenState.PAYMENT_WALLET,
                 confidence = 0.6f,
                 suggestedAction = SuggestedAction.PROCEED_TO_PAY,
@@ -630,41 +666,40 @@ class ScreenAnalyzer(
         
         var target: UIEvidenceCollector.ScreenEvidence.UIElement? = null
         
-        // Try to find UPI option first
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable && element.text.contains("UPI", ignoreCase = true)) {
                 target = element
                 break
             }
-            i++
+            i = i + 1
         }
         
-        // If no UPI, try wallet
         if (target == null) {
             i = 0
             while (i < uiElements.size) {
-                val element = uiElements[i]
+                val element = uiElements.get(i)
                 if (element.isClickable && element.text.contains("Wallet", ignoreCase = true)) {
                     target = element
                     break
                 }
-                i++
+                i = i + 1
             }
         }
         
-        return if (target != null) {
-            AnalysisResult(
+        if (target != null) {
+            val data = mapOf("category" to target.text)
+            return AnalysisResult(
                 screenState = ScreenState.PAYMENT_CATEGORY,
                 confidence = 0.85f,
                 suggestedAction = SuggestedAction.SELECT_PAYMENT_CATEGORY,
-                extractedData = mapOf("category" to target.text),
+                extractedData = data,
                 evidence = evidence,
                 reason = "Payment category selection: ${target.text}"
             )
         } else {
-            AnalysisResult(
+            return AnalysisResult(
                 screenState = ScreenState.PAYMENT_CATEGORY,
                 confidence = 0.5f,
                 suggestedAction = SuggestedAction.NONE,
@@ -682,7 +717,7 @@ class ScreenAnalyzer(
         var proceedButton: UIEvidenceCollector.ScreenEvidence.UIElement? = null
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("Proceed to Pay", ignoreCase = true) ||
@@ -691,14 +726,17 @@ class ScreenAnalyzer(
                     break
                 }
             }
-            i++
+            i = i + 1
         }
         
         val ocrEvidence = evidence.ocrEvidence
-        val hasPaymentAmount = if (ocrEvidence != null) ocrEvidence.fullText.contains("₹") else false
+        var hasPaymentAmount = false
+        if (ocrEvidence != null) {
+            hasPaymentAmount = ocrEvidence.fullText.contains("₹")
+        }
         
-        return if (proceedButton != null && hasPaymentAmount) {
-            AnalysisResult(
+        if (proceedButton != null && hasPaymentAmount) {
+            return AnalysisResult(
                 screenState = ScreenState.REVIEW_JOURNEY,
                 confidence = 0.95f,
                 suggestedAction = SuggestedAction.PROCEED_TO_PAY,
@@ -706,7 +744,7 @@ class ScreenAnalyzer(
                 reason = "Review journey - proceed to payment"
             )
         } else {
-            AnalysisResult(
+            return AnalysisResult(
                 screenState = ScreenState.REVIEW_JOURNEY,
                 confidence = 0.7f,
                 suggestedAction = SuggestedAction.STOP_AWAIT_USER,
@@ -726,7 +764,7 @@ class ScreenAnalyzer(
         
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("Add New", ignoreCase = true)) {
@@ -736,7 +774,7 @@ class ScreenAnalyzer(
                     reviewButton = element
                 }
             }
-            i++
+            i = i + 1
         }
         
         val ocrEvidence = evidence.ocrEvidence
@@ -746,43 +784,39 @@ class ScreenAnalyzer(
         } else {
             i = 0
             while (i < uiElements.size) {
-                val element = uiElements[i]
+                val element = uiElements.get(i)
                 if (element.text.contains("TCCF", ignoreCase = true)) {
                     hasPassengers = true
                     break
                 }
-                i++
+                i = i + 1
             }
         }
         
-        return when {
-            addNewButton != null && !hasPassengers -> {
-                AnalysisResult(
-                    screenState = ScreenState.PASSENGER_INPUT,
-                    confidence = 0.9f,
-                    suggestedAction = SuggestedAction.ADD_PASSENGER,
-                    evidence = evidence,
-                    reason = "No passengers added - click Add New"
-                )
-            }
-            reviewButton != null && hasPassengers -> {
-                AnalysisResult(
-                    screenState = ScreenState.PASSENGER_INPUT,
-                    confidence = 0.85f,
-                    suggestedAction = SuggestedAction.REVIEW_JOURNEY,
-                    evidence = evidence,
-                    reason = "Passengers added - review journey"
-                )
-            }
-            else -> {
-                AnalysisResult(
-                    screenState = ScreenState.PASSENGER_INPUT,
-                    confidence = 0.5f,
-                    suggestedAction = SuggestedAction.STOP_AWAIT_USER,
-                    evidence = evidence,
-                    reason = "Passenger screen - need user input"
-                )
-            }
+        if (addNewButton != null && !hasPassengers) {
+            return AnalysisResult(
+                screenState = ScreenState.PASSENGER_INPUT,
+                confidence = 0.9f,
+                suggestedAction = SuggestedAction.ADD_PASSENGER,
+                evidence = evidence,
+                reason = "No passengers added - click Add New"
+            )
+        } else if (reviewButton != null && hasPassengers) {
+            return AnalysisResult(
+                screenState = ScreenState.PASSENGER_INPUT,
+                confidence = 0.85f,
+                suggestedAction = SuggestedAction.REVIEW_JOURNEY,
+                evidence = evidence,
+                reason = "Passengers added - review journey"
+            )
+        } else {
+            return AnalysisResult(
+                screenState = ScreenState.PASSENGER_INPUT,
+                confidence = 0.5f,
+                suggestedAction = SuggestedAction.STOP_AWAIT_USER,
+                evidence = evidence,
+                reason = "Passenger screen - need user input"
+            )
         }
     }
 
@@ -796,32 +830,33 @@ class ScreenAnalyzer(
         
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text.uppercase()
                 var j = 0
                 while (j < classCodes.size) {
-                    if (text.contains(classCodes[j])) {
+                    if (text.contains(classCodes.get(j))) {
                         availableClasses.add(element.text)
                         break
                     }
-                    j++
+                    j = j + 1
                 }
             }
-            i++
+            i = i + 1
         }
         
-        return if (availableClasses.isNotEmpty()) {
-            AnalysisResult(
+        if (availableClasses.isNotEmpty()) {
+            val data = mapOf("available_classes" to availableClasses.joinToString())
+            return AnalysisResult(
                 screenState = ScreenState.AVAILABILITY,
                 confidence = 0.85f,
                 suggestedAction = SuggestedAction.SELECT_CLASS,
-                extractedData = mapOf("available_classes" to availableClasses.joinToString()),
+                extractedData = data,
                 evidence = evidence,
                 reason = "Class availability - select class"
             )
         } else {
-            AnalysisResult(
+            return AnalysisResult(
                 screenState = ScreenState.AVAILABILITY,
                 confidence = 0.5f,
                 suggestedAction = SuggestedAction.STOP_AWAIT_USER,
@@ -839,7 +874,7 @@ class ScreenAnalyzer(
         var hasSelectableTrains = false
         var i = 0
         while (i < uiElements.size) {
-            val element = uiElements[i]
+            val element = uiElements.get(i)
             if (element.isClickable) {
                 val text = element.text
                 if (text.contains("SELECT", ignoreCase = true) ||
@@ -848,11 +883,11 @@ class ScreenAnalyzer(
                     break
                 }
             }
-            i++
+            i = i + 1
         }
         
-        return if (hasSelectableTrains) {
-            AnalysisResult(
+        if (hasSelectableTrains) {
+            return AnalysisResult(
                 screenState = ScreenState.TRAIN_LIST,
                 confidence = 0.85f,
                 suggestedAction = SuggestedAction.SELECT_TRAIN,
@@ -860,7 +895,7 @@ class ScreenAnalyzer(
                 reason = "Train list - select train"
             )
         } else {
-            AnalysisResult(
+            return AnalysisResult(
                 screenState = ScreenState.TRAIN_LIST,
                 confidence = 0.5f,
                 suggestedAction = SuggestedAction.STOP_AWAIT_USER,
@@ -872,74 +907,76 @@ class ScreenAnalyzer(
 
     // ==================== PUBLIC HELPER FUNCTIONS ====================
 
-    fun getCurrentUIElements(): List<UIEvidenceCollector.ScreenEvidence.UIElement> {
+    fun getCurrentUIElements(): List<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement> {
         val evidence = evidenceCollector.getCurrentEvidence()
-        return if (evidence != null) {
-            evidence.uiElements
-        } else {
-            emptyList()
+        if (evidence != null) {
+            return evidence.uiElements
         }
+        return emptyList()
     }
 
-    fun findUIElementByText(text: String): UIEvidenceCollector.ScreenEvidence.UIElement? {
+    fun findUIElementByText(text: String): com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement? {
         val elements = getCurrentUIElements()
         var i = 0
         while (i < elements.size) {
-            val element = elements[i]
-            if (element.text.equals(text, ignoreCase = true) ||
-                element.text.contains(text, ignoreCase = true)) {
+            val element = elements.get(i)
+            val elementText = element.text
+            if (elementText.equals(text, ignoreCase = true) ||
+                elementText.contains(text, ignoreCase = true)) {
                 return element
             }
-            i++
+            i = i + 1
         }
         return null
     }
 
-    fun findClickableUIElements(): List<UIEvidenceCollector.ScreenEvidence.UIElement> {
-        val result = mutableListOf<UIEvidenceCollector.ScreenEvidence.UIElement>()
+    fun findClickableUIElements(): List<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement> {
+        val result = mutableListOf<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement>()
         val elements = getCurrentUIElements()
         var i = 0
         while (i < elements.size) {
-            val element = elements[i]
+            val element = elements.get(i)
             if (element.isClickable) {
                 result.add(element)
             }
-            i++
+            i = i + 1
         }
         return result
     }
 
-    fun findEditableUIElements(): List<UIEvidenceCollector.ScreenEvidence.UIElement> {
-        val result = mutableListOf<UIEvidenceCollector.ScreenEvidence.UIElement>()
+    fun findEditableUIElements(): List<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement> {
+        val result = mutableListOf<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement>()
         val elements = getCurrentUIElements()
         var i = 0
         while (i < elements.size) {
-            val element = elements[i]
+            val element = elements.get(i)
             if (element.isEditable) {
                 result.add(element)
             }
-            i++
+            i = i + 1
         }
         return result
     }
 
     fun getTextFromScreen(): String {
         val evidence = evidenceCollector.getCurrentEvidence()
-        return if (evidence != null) {
+        if (evidence != null) {
             val ocrEvidence = evidence.ocrEvidence
-            if (ocrEvidence != null) ocrEvidence.fullText else ""
-        } else {
-            ""
+            if (ocrEvidence != null) {
+                return ocrEvidence.fullText
+            }
         }
+        return ""
     }
 
     fun getExtractedData(): Map<String, String> {
         val evidence = evidenceCollector.getCurrentEvidence()
-        return if (evidence != null) {
+        if (evidence != null) {
             val ocrEvidence = evidence.ocrEvidence
-            if (ocrEvidence != null) ocrEvidence.keyValuePairs else emptyMap()
-        } else {
-            emptyMap()
+            if (ocrEvidence != null) {
+                return ocrEvidence.keyValuePairs
+            }
         }
+        return emptyMap()
     }
 }
