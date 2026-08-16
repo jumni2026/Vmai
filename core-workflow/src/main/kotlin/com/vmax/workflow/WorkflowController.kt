@@ -4,6 +4,7 @@ import com.vmax.core_intelligence.ScreenAnalyzer
 import com.vmax.core_intelligence.TextClassifier
 import com.vmax.core_intelligence.OcrResult
 import com.vmax.core_intelligence.UIEvidenceCollector
+import com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement
 import com.vmax.common.MetricsCollector
 import com.vmax.common.ExecutionRecorder
 import com.vmax.action.ExecutionEvent
@@ -182,12 +183,11 @@ class WorkflowController(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
         val details = passengerDetails ?: return null
-        val uiElements = analysis.evidence?.uiElements ?: return null
-        
-        val elements = convertUiElements(uiElements)
+        val elements = analysis.evidence?.uiElements ?: return null
 
         var i = 0
         var target: UIElement? = null
+
         while (i < elements.size) {
             val element = elements.get(i)
             if (element.isClickable) {
@@ -224,10 +224,7 @@ class WorkflowController(
 
         if (target != null) {
             lastSuggestedAction = ScreenAnalyzer.SuggestedAction.SELECT_TRAIN
-            var targetId: String? = null
-            if (target.id.isNotEmpty()) {
-                targetId = target.id
-            }
+            val targetId = if (target.id.isNotEmpty()) target.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(target)
@@ -240,12 +237,11 @@ class WorkflowController(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
         val details = passengerDetails ?: return null
-        val uiElements = analysis.evidence?.uiElements ?: return null
-        
-        val elements = convertUiElements(uiElements)
+        val elements = analysis.evidence?.uiElements ?: return null
 
         var i = 0
         var target: UIElement? = null
+
         while (i < elements.size) {
             val element = elements.get(i)
             if (element.isClickable && element.text.contains(details.trainClass, ignoreCase = true)) {
@@ -257,10 +253,7 @@ class WorkflowController(
 
         if (target != null) {
             lastSuggestedAction = ScreenAnalyzer.SuggestedAction.SELECT_CLASS
-            var targetId: String? = null
-            if (target.id.isNotEmpty()) {
-                targetId = target.id
-            }
+            val targetId = if (target.id.isNotEmpty()) target.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(target)
@@ -273,12 +266,11 @@ class WorkflowController(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
         val details = passengerDetails ?: return null
-        val uiElements = analysis.evidence?.uiElements ?: return null
-        
-        val elements = convertUiElements(uiElements)
+        val elements = analysis.evidence?.uiElements ?: return null
 
         var i = 0
         var nameTarget: UIElement? = null
+
         while (i < elements.size) {
             val element = elements.get(i)
             if (element.isEditable) {
@@ -304,10 +296,7 @@ class WorkflowController(
         if (nameTarget != null) {
             lastSuggestedAction = ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_NAME
             currentState = WorkflowState.PASSENGER_NAME_TYPED
-            var targetId: String? = null
-            if (nameTarget.id.isNotEmpty()) {
-                targetId = nameTarget.id
-            }
+            val targetId = if (nameTarget.id.isNotEmpty()) nameTarget.id else null
             return WorkflowAction.SetText(
                 targetId = targetId,
                 text = details.name
@@ -320,12 +309,11 @@ class WorkflowController(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
         val details = passengerDetails ?: return null
-        val uiElements = analysis.evidence?.uiElements ?: return null
-        
-        val elements = convertUiElements(uiElements)
+        val elements = analysis.evidence?.uiElements ?: return null
 
         var i = 0
         var ageTarget: UIElement? = null
+
         while (i < elements.size) {
             val element = elements.get(i)
             if (element.isEditable) {
@@ -350,10 +338,7 @@ class WorkflowController(
 
         if (ageTarget != null) {
             currentState = WorkflowState.PASSENGER_AGE_TYPED
-            var targetId: String? = null
-            if (ageTarget.id.isNotEmpty()) {
-                targetId = ageTarget.id
-            }
+            val targetId = if (ageTarget.id.isNotEmpty()) ageTarget.id else null
             return WorkflowAction.SetText(
                 targetId = targetId,
                 text = details.age
@@ -369,6 +354,7 @@ class WorkflowController(
 
         var i = 0
         var ageTarget: UIElement? = null
+
         while (i < uiElements.size) {
             val element = uiElements.get(i)
             if (element.isEditable) {
@@ -393,10 +379,7 @@ class WorkflowController(
 
         if (ageTarget != null) {
             currentState = WorkflowState.PASSENGER_AGE_TYPED
-            var targetId: String? = null
-            if (ageTarget.id.isNotEmpty()) {
-                targetId = ageTarget.id
-            }
+            val targetId = if (ageTarget.id.isNotEmpty()) ageTarget.id else null
             return WorkflowAction.SetText(
                 targetId = targetId,
                 text = details.age
@@ -410,6 +393,7 @@ class WorkflowController(
     ): WorkflowAction? {
         var i = 0
         var genderTarget: UIElement? = null
+
         while (i < uiElements.size) {
             val element = uiElements.get(i)
             if (element.isClickable) {
@@ -434,10 +418,7 @@ class WorkflowController(
 
         if (genderTarget != null) {
             currentState = WorkflowState.GENDER_DROPDOWN_OPENED
-            var targetId: String? = null
-            if (genderTarget.id.isNotEmpty()) {
-                targetId = genderTarget.id
-            }
+            val targetId = if (genderTarget.id.isNotEmpty()) genderTarget.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(genderTarget)
@@ -451,6 +432,7 @@ class WorkflowController(
     ): WorkflowAction? {
         var i = 0
         var mealTarget: UIElement? = null
+
         while (i < uiElements.size) {
             val element = uiElements.get(i)
             if (element.isClickable) {
@@ -475,10 +457,7 @@ class WorkflowController(
 
         if (mealTarget != null) {
             currentState = WorkflowState.MEAL_DROPDOWN_OPENED
-            var targetId: String? = null
-            if (mealTarget.id.isNotEmpty()) {
-                targetId = mealTarget.id
-            }
+            val targetId = if (mealTarget.id.isNotEmpty()) mealTarget.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(mealTarget)
@@ -493,6 +472,7 @@ class WorkflowController(
     ): WorkflowAction? {
         var i = 0
         var target: UIElement? = null
+
         while (i < uiElements.size) {
             val element = uiElements.get(i)
             if (element.isClickable && element.text.contains(targetText, ignoreCase = true)) {
@@ -508,10 +488,7 @@ class WorkflowController(
                 WorkflowState.MEAL_DROPDOWN_OPENED -> WorkflowState.PASSENGER_MEAL_SELECTED
                 else -> currentState
             }
-            var targetId: String? = null
-            if (target.id.isNotEmpty()) {
-                targetId = target.id
-            }
+            val targetId = if (target.id.isNotEmpty()) target.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(target)
@@ -523,11 +500,11 @@ class WorkflowController(
     private fun handleAddPassenger(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val uiElements = analysis.evidence?.uiElements ?: return null
-        val elements = convertUiElements(uiElements)
+        val elements = analysis.evidence?.uiElements ?: return null
 
         var i = 0
         var addNewButton: UIElement? = null
+
         while (i < elements.size) {
             val element = elements.get(i)
             if (element.isClickable && element.text.contains("Add New", ignoreCase = true)) {
@@ -538,10 +515,7 @@ class WorkflowController(
         }
 
         if (addNewButton != null) {
-            var targetId: String? = null
-            if (addNewButton.id.isNotEmpty()) {
-                targetId = addNewButton.id
-            }
+            val targetId = if (addNewButton.id.isNotEmpty()) addNewButton.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(addNewButton)
@@ -553,11 +527,11 @@ class WorkflowController(
     private fun handleReviewAndProceed(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val uiElements = analysis.evidence?.uiElements ?: return null
-        val elements = convertUiElements(uiElements)
+        val elements = analysis.evidence?.uiElements ?: return null
 
         var i = 0
         var target: UIElement? = null
+
         while (i < elements.size) {
             val element = elements.get(i)
             if (element.isClickable) {
@@ -575,10 +549,7 @@ class WorkflowController(
         if (target != null) {
             lastSuggestedAction = ScreenAnalyzer.SuggestedAction.REVIEW_JOURNEY
             currentState = WorkflowState.STOPPED
-            var targetId: String? = null
-            if (target.id.isNotEmpty()) {
-                targetId = target.id
-            }
+            val targetId = if (target.id.isNotEmpty()) target.id else null
             return WorkflowAction.Click(
                 targetId = targetId,
                 coordinates = getCoordinates(target)
@@ -601,40 +572,6 @@ class WorkflowController(
             return Pair((left + right) / 2, (top + bottom) / 2)
         }
         return null
-    }
-
-    private fun convertUiElements(
-        original: List<UIEvidenceCollector.ScreenEvidence.UIElement>
-    ): List<UIElement> {
-        val result = mutableListOf<UIElement>()
-        var i = 0
-        while (i < original.size) {
-            val element = original.get(i)
-            var bounds: BoundingBox? = null
-            val originalBounds = element.bounds
-            if (originalBounds != null) {
-                bounds = BoundingBox(
-                    left = originalBounds.left,
-                    top = originalBounds.top,
-                    right = originalBounds.right,
-                    bottom = originalBounds.bottom
-                )
-            }
-            result.add(
-                UIElement(
-                    id = element.id,
-                    type = element.type,
-                    text = element.text,
-                    contentDescription = element.contentDescription,
-                    bounds = bounds,
-                    isClickable = element.isClickable,
-                    isEditable = element.isEditable,
-                    hint = element.hint
-                )
-            )
-            i = i + 1
-        }
-        return result
     }
 }
 
