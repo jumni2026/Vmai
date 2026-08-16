@@ -110,7 +110,13 @@ data class OcrResult(
      */
     fun getAverageConfidence(): Float {
         if (textBlocks.isEmpty()) return 0f
-        return textBlocks.map { it.confidence }.average().toFloat()
+        var total = 0f
+        var count = 0
+        for (block in textBlocks) {
+            total += block.confidence
+            count++
+        }
+        return total / count
     }
 
     /**
@@ -122,9 +128,14 @@ data class OcrResult(
      * Filters text blocks residing within or intersecting a specified rectangular region
      */
     fun getTextInRegion(region: BoundingBox): List<TextBlock> {
-        return textBlocks.filter { block ->
-            block.boundingBox?.let { region.intersects(it) } ?: false
+        val result = mutableListOf<TextBlock>()
+        for (block in textBlocks) {
+            val box = block.boundingBox
+            if (box != null && region.intersects(box)) {
+                result.add(block)
+            }
         }
+        return result
     }
 
     companion object {
