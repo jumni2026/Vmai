@@ -83,9 +83,8 @@ class ScreenAnalyzer(
         val fullText = ocrEvidence?.fullText?.uppercase() ?: ""
         val keyValuePairs = ocrEvidence?.keyValuePairs ?: emptyMap()
 
-        logger.debug(TAG, "Analyzing screen with ${uiElements.size} UI elements, OCR text length: ${fullText.length}")
+        logger.debug(TAG, "Analyzing screen with ${uiElements.size} UI elements")
 
-        // Check screens in priority order
         return when {
             isStationConfirmationScreen(fullText, uiElements) -> {
                 handleStationConfirmation(evidence)
@@ -360,19 +359,16 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Check if Name field is present
         val nameField = uiElements.firstOrNull {
             it.isEditable && (it.hint?.contains("Name", ignoreCase = true) == true ||
                               it.text.contains("Name", ignoreCase = true))
         }
         
-        // Check if Age field is present
         val ageField = uiElements.firstOrNull {
             it.isEditable && (it.hint?.contains("Age", ignoreCase = true) == true ||
                               it.text.contains("Age", ignoreCase = true))
         }
         
-        // Determine what to do next
         val action = when {
             nameField != null && nameField.text.isBlank() -> SuggestedAction.FILL_PASSENGER_NAME
             ageField != null && ageField.text.isBlank() -> SuggestedAction.FILL_PASSENGER_AGE
@@ -396,7 +392,6 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Check for payment providers
         val provider = uiElements.firstOrNull {
             it.isClickable && (
                 it.text.contains("IRCTC iPay", ignoreCase = true) ||
@@ -433,7 +428,6 @@ class ScreenAnalyzer(
         val uiElements = evidence.uiElements
         val fullText = evidence.ocrEvidence?.fullText?.uppercase() ?: ""
         
-        // Check if insufficient balance
         if (fullText.contains("INSUFFICIENT") && fullText.contains("BALANCE")) {
             return AnalysisResult(
                 screenState = ScreenState.PAYMENT_WALLET,
@@ -444,7 +438,6 @@ class ScreenAnalyzer(
             )
         }
         
-        // Check for wallet providers
         val provider = uiElements.firstOrNull {
             it.isClickable && (
                 it.text.contains("IRCTC", ignoreCase = true) ||
@@ -479,12 +472,10 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Try to find UPI option first (preferred)
         val upiOption = uiElements.firstOrNull {
             it.isClickable && it.text.contains("UPI", ignoreCase = true)
         }
         
-        // Then wallet option
         val walletOption = uiElements.firstOrNull {
             it.isClickable && it.text.contains("Wallet", ignoreCase = true)
         }
@@ -517,7 +508,6 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Check if we need to proceed to payment
         val proceedButton = uiElements.firstOrNull {
             it.isClickable && (
                 it.text.contains("Proceed to Pay", ignoreCase = true) ||
@@ -525,7 +515,6 @@ class ScreenAnalyzer(
             )
         }
         
-        // Check if this is the final review before payment
         val hasPaymentAmount = keyValuePairs.containsKey("fare") ||
                                evidence.ocrEvidence?.fullText?.contains("₹") == true
         
@@ -556,7 +545,6 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Check if we need to add a passenger
         val addNewButton = uiElements.firstOrNull {
             it.isClickable && it.text.contains("Add New", ignoreCase = true)
         }
@@ -565,7 +553,6 @@ class ScreenAnalyzer(
             it.isClickable && it.text.contains("REVIEW JOURNEY DETAILS", ignoreCase = true)
         }
         
-        // Check if there are existing passengers
         val hasPassengers = evidence.ocrEvidence?.fullText?.contains("PASSENGER") == true ||
                             uiElements.any { it.text.contains("TCCF", ignoreCase = true) }
         
@@ -606,7 +593,6 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Find class selection elements
         val classElements = uiElements.filter {
             it.isClickable && listOf("SL", "3A", "2A", "1A", "CC", "EC", "3E", "2S", "FC")
                 .any { classCode -> it.text.uppercase().contains(classCode) }
@@ -638,7 +624,6 @@ class ScreenAnalyzer(
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        // Find selectable trains
         val trainElements = uiElements.filter {
             it.isClickable && (
                 it.text.contains("SELECT", ignoreCase = true) ||
@@ -715,13 +700,18 @@ class ScreenAnalyzer(
 
     fun getCurrentUIElements(): List<UIEvidenceCollector.ScreenEvidence.UIElement> {
         val evidence = evidenceCollector.getCurrentEvidence()
-        return evidence?.uiElements ?: emptyList()
+        return if (evidence != null) {
+            evidence.uiElements
+        } else {
+            emptyList()
+        }
     }
 
     fun findUIElementByText(text: String): UIEvidenceCollector.ScreenEvidence.UIElement? {
-        return getCurrentUIElements().firstOrNull { 
-            it.text.equals(text, ignoreCase = true) ||
-            it.text.contains(text, ignoreCase = true)
+        val elements = getCurrentUIElements()
+        return elements.firstOrNull { element ->
+            element.text.equals(text, ignoreCase = true) ||
+            element.text.contains(text, ignoreCase = true)
         }
     }
 
