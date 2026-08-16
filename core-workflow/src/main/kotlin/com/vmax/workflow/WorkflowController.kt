@@ -1,294 +1,372 @@
 package com.vmax.workflow
 
-import com.vmax.model.BookingRequest
-import com.vmax.model.PassengerProfile
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import com.vmax.core_intelligence.ScreenAnalyzer
+import com.vmax.core_intelligence.TextClassifier
+import com.vmax.core_intelligence.OcrResult
+import com.vmax.runtime.MetricsCollector
+import com.vmax.runtime.ExecutionRecorder
+import com.vmax.action.ActionExecutor
+import com.vmax.action.ExecutionEvent
 
 /**
- * VMAX Enterprise v2.6.1
- *
- * File — WorkflowController.kt
- *
- * Platform-independent workflow state controller.
- *
- * Responsibilities:
- * - Validate workflow configuration.
- * - Store the active booking request/profile.
- * - Manage workflow lifecycle state.
- * - Provide thread-safe state transitions.
- * - Support cancellation/reset.
- *
- * Architecture rule:
- * - No Android dependency.
- * - No runtime-module dependency.
- * - No ActionExecutor dependency.
- * - No ExecutionTracker dependency.
- * - No execution implementation/business automation logic.
- *
- * Actual runtime execution is owned by the runtime layer.
+ * IRCTC-specific workflow controller.
+ * Platform-agnostic - No Android dependencies.
  */
-class WorkflowController private constructor() {
-
-    private val scope =
-        CoroutineScope(
-            Dispatchers.Default + SupervisorJob()
-        )
-
-    private var executionJob: Job? = null
-
-    private val _state =
-        MutableStateFlow<WorkflowState>(
-            WorkflowState.IDLE
-        )
-
-    val state: StateFlow<WorkflowState> =
-        _state.asStateFlow()
-
-    private var activeBookingRequest: BookingRequest? = null
-    private var activePassengerProfile: PassengerProfile? = null
-
-    private val mutex = Mutex()
-
+class WorkflowController(
+    private val orchestrator: ActionOrchestrator,
+    private val analyzer: ScreenAnalyzer,
+    private val classifier: TextClassifier,
+    private val metrics: MetricsCollector,
+    private val recorder: ExecutionRecorder
+) {
     companion object {
-
-        @Volatile
-        private var INSTANCE: WorkflowController? = null
-
-        fun getInstance(): WorkflowController {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE
-                    ?: WorkflowController().also {
-                        INSTANCE = it
-                    }
-            }
-        }
+        private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
     }
 
-    /**
-     * Validates and configures a new workflow.
-     *
-     * This method intentionally does not start platform execution.
-     * Runtime execution is triggered by the runtime layer.
-     */
-    suspend fun start(
-        bookingRequest: BookingRequest,
-        passengerProfile: PassengerProfile
-    ) {
-        mutex.withLock {
+    data class PassengerDetails(
+        val from: String,
+        val to: String,
+        val date: String,
+        val train: String,
+        val trainClass: String,
+        val name: String,
+        val age: String,
+        val gender: String,
+        val meal: String
+    )
 
-            if (_state.value != WorkflowState.IDLE) {
-                return
-            }
+    enum class WorkflowState {
+        IDLE, ARMED, USER_BOUNDARY, STOPPED,
+        GENDER_DROPDOWN_OPENED, MEAL_DROPDOWN_OPENED,
+        PASSENGER_NAME_TYPED, PASSENGER_AGE_TYPED,
+        PASSENGER_GENDER_SELECTED, PASSENGER_MEAL_SELECTED
+    }
 
-            // --------------------------------------------------------
-            // VALIDATION GATE 1
-            // --------------------------------------------------------
+    private var currentState = WorkflowState.IDLE
+    private var currentSessionId = ""
+    private var passengerDetails: PassengerDetails? = null
+    private var lastSuggestedAction: ScreenAnalyzer.SuggestedAction? = null
 
-            if (passengerProfile.passengers.isEmpty()) {
-                _state.value =
-                    WorkflowState.ERROR(
-                        "Passenger profile list is empty."
+    fun startWorkflow(
+        details: PassengerDetails,
+        sessionId: String
+    ): Boolean {
+        if (currentState != WorkflowState.IDLE) {
+            return false
+        }
+
+        if (details.from.isBlank() || details.to.isBlank() || details.train.isBlank() ||
+            details.trainClass.isBlank() || details.name.isBlank() || 
+            details.age.isBlank() || details.gender.isBlank()
+        ) {
+            return false
+        }
+
+        passengerDetails = details
+        currentSessionId = sessionId
+        currentState = WorkflowState.ARMED
+        return true
+    }
+
+    fun stopWorkflow() {
+        if (currentState == WorkflowState.STOPPED || currentState == WorkflowState.IDLE) return
+        currentState = WorkflowState.STOPPED
+    }
+
+    fun handleScreenAnalysis(
+        analysis: ScreenAnalyzer.AnalysisResult,
+        ocrText: String,
+        ocrBlocks: List<OcrResult.BoundingBox>
+    ): WorkflowAction? {
+        if (currentState != WorkflowState.ARMED) {
+            return null
+        }
+
+        // Check for sensitive screens
+        val ocrResult = OcrResult(
+            currentSessionId,
+            System.currentTimeMillis(),
+            ocrText,
+            ocrBlocks
+        )
+
+        if (classifier.isSensitiveScreen(ocrResult)) {
+            if (currentState != WorkflowState.USER_BOUNDARY) {
+                recorder.recordEvent(
+                    ExecutionEvent.SessionError(
+                        currentSessionId,
+                        "SECURITY_BOUNDARY",
+                        "Sensitive screen detected"
                     )
-                return
+                )
+                metrics.stopMetrics(currentSessionId, "USER_BOUNDARY")
+                currentState = WorkflowState.USER_BOUNDARY
             }
+            return null
+        }
 
-            // --------------------------------------------------------
-            // VALIDATION GATE 2
-            // --------------------------------------------------------
+        if (currentState == WorkflowState.USER_BOUNDARY || 
+            currentState == WorkflowState.STOPPED) {
+            return null
+        }
 
-            val hasInvalidPassenger =
-                passengerProfile.passengers.any { passenger ->
+        val suggestedAction = analysis.suggestedAction
+        if (suggestedAction == lastSuggestedAction &&
+            suggestedAction != ScreenAnalyzer.SuggestedAction.NONE
+        ) {
+            return null
+        }
 
-                    passenger.name.isBlank() ||
-                        passenger.age <= 0 ||
-                        passenger.age > 120
-                }
-
-            if (hasInvalidPassenger) {
-                _state.value =
-                    WorkflowState.ERROR(
-                        "Invalid passenger data detected."
-                    )
-                return
+        return when (suggestedAction) {
+            ScreenAnalyzer.SuggestedAction.SELECT_TRAIN -> {
+                handleTrainSelection(analysis)
             }
-
-            // --------------------------------------------------------
-            // VALIDATION GATE 3
-            // --------------------------------------------------------
-
-            if (
-                bookingRequest.train.number.isBlank() ||
-                bookingRequest.train.classType.isBlank()
-            ) {
-                _state.value =
-                    WorkflowState.ERROR(
-                        "Target settings incomplete."
-                    )
-                return
+            ScreenAnalyzer.SuggestedAction.CHECK_AVAILABILITY -> {
+                handleClassSelection(analysis)
             }
-
-            // --------------------------------------------------------
-            // STORE ACTIVE WORKFLOW DATA
-            // --------------------------------------------------------
-
-            activeBookingRequest = bookingRequest
-            activePassengerProfile = passengerProfile
-
-            // Cancel any previous local job.
-            executionJob?.cancel()
-            executionJob = null
-
-            // --------------------------------------------------------
-            // CONFIGURED
-            // --------------------------------------------------------
-
-            _state.value =
-                WorkflowState.CONFIGURED
+            ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_DETAILS -> {
+                handlePassengerDetails(analysis)
+            }
+            ScreenAnalyzer.SuggestedAction.REVIEW_AND_PROCEED -> {
+                handleReviewAndProceed(analysis)
+            }
+            else -> null
         }
     }
 
-    /**
-     * Marks the workflow as running.
-     *
-     * Runtime execution itself is intentionally outside this class.
-     */
-    suspend fun markRunning(): Boolean {
-        return mutex.withLock {
-
-            if (_state.value != WorkflowState.CONFIGURED) {
-                return@withLock false
+    fun handleStateAction(
+        state: WorkflowState,
+        uiElements: List<ScreenAnalyzer.UIElement>
+    ): WorkflowAction? {
+        return when (state) {
+            WorkflowState.GENDER_DROPDOWN_OPENED -> {
+                selectDropdownOption(uiElements, passengerDetails?.gender ?: "")
             }
-
-            _state.value =
-                WorkflowState.RUNNING
-
-            true
-        }
-    }
-
-    /**
-     * Marks the workflow as completed.
-     */
-    suspend fun markCompleted(): Boolean {
-        return mutex.withLock {
-
-            if (_state.value != WorkflowState.RUNNING) {
-                return@withLock false
+            WorkflowState.MEAL_DROPDOWN_OPENED -> {
+                selectDropdownOption(uiElements, passengerDetails?.meal ?: "")
             }
-
-            _state.value =
-                WorkflowState.COMPLETED
-
-            true
+            WorkflowState.PASSENGER_NAME_TYPED -> {
+                handlePassengerAge(uiElements)
+            }
+            WorkflowState.PASSENGER_AGE_TYPED -> {
+                handlePassengerGender(uiElements)
+            }
+            WorkflowState.PASSENGER_GENDER_SELECTED -> {
+                handlePassengerMeal(uiElements)
+            }
+            WorkflowState.PASSENGER_MEAL_SELECTED -> {
+                lastSuggestedAction = null
+                currentState = WorkflowState.ARMED
+                null
+            }
+            else -> null
         }
     }
 
-    /**
-     * Stops the current workflow and clears active data.
-     */
-    suspend fun stop() {
-        mutex.withLock {
+    fun updateState(newState: WorkflowState) {
+        currentState = newState
+    }
 
-            executionJob?.cancel()
-            executionJob = null
+    fun getCurrentState(): WorkflowState = currentState
+    fun getSessionId(): String = currentSessionId
 
-            activeBookingRequest = null
-            activePassengerProfile = null
+    // --- Private Handler Methods ---
 
-            _state.value =
-                WorkflowState.IDLE
+    private fun handleTrainSelection(
+        analysis: ScreenAnalyzer.AnalysisResult
+    ): WorkflowAction? {
+        val details = passengerDetails ?: return null
+        val uiElements = analysis.evidence?.uiElements ?: return null
+
+        val target = findClickableElement(uiElements) { element ->
+            element.text.equals(details.train, ignoreCase = true) ||
+            element.text.contains(details.train, ignoreCase = true)
+        } ?: findClickableElement(uiElements) { element ->
+            val keywords = listOf("SELECT", "VIEW", "BOOK", "SEARCH", "FIND TRAINS", "CHECK")
+            keywords.any { element.text.contains(it, ignoreCase = true) }
+        }
+
+        return target?.let {
+            lastSuggestedAction = ScreenAnalyzer.SuggestedAction.SELECT_TRAIN
+            WorkflowAction.Click(
+                targetId = it.id,
+                coordinates = getCoordinates(it)
+            )
         }
     }
 
-    /**
-     * Moves the workflow into an error state.
-     */
-    suspend fun notifyConfigurationError(
-        reason: String
-    ) {
-        mutex.withLock {
+    private fun handleClassSelection(
+        analysis: ScreenAnalyzer.AnalysisResult
+    ): WorkflowAction? {
+        val details = passengerDetails ?: return null
+        val uiElements = analysis.evidence?.uiElements ?: return null
 
-            executionJob?.cancel()
-            executionJob = null
+        val target = findClickableElement(uiElements) { element ->
+            element.text.contains(details.trainClass, ignoreCase = true)
+        }
 
-            _state.value =
-                WorkflowState.ERROR(reason)
+        return target?.let {
+            lastSuggestedAction = ScreenAnalyzer.SuggestedAction.CHECK_AVAILABILITY
+            WorkflowAction.Click(
+                targetId = it.id,
+                coordinates = getCoordinates(it)
+            )
         }
     }
 
-    /**
-     * Returns the active booking request.
-     */
-    fun getActiveBookingRequest(): BookingRequest? =
-        activeBookingRequest
+    private fun handlePassengerDetails(
+        analysis: ScreenAnalyzer.AnalysisResult
+    ): WorkflowAction? {
+        val details = passengerDetails ?: return null
+        val uiElements = analysis.evidence?.uiElements ?: return null
 
-    /**
-     * Returns the active passenger profile.
-     */
-    fun getActivePassengerProfile(): PassengerProfile? =
-        activePassengerProfile
+        val nameTarget = findEditableElement(uiElements) { element ->
+            element.hint?.contains("Name", ignoreCase = true) == true ||
+            element.text.contains("Name", ignoreCase = true) ||
+            element.contentDescription?.contains("Name", ignoreCase = true) == true
+        }
 
-    /**
-     * Returns true when workflow execution is running.
-     */
-    fun isRunning(): Boolean =
-        _state.value == WorkflowState.RUNNING
+        return nameTarget?.let {
+            lastSuggestedAction = ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_DETAILS
+            currentState = WorkflowState.PASSENGER_NAME_TYPED
+            WorkflowAction.SetText(
+                targetId = it.id,
+                text = details.name
+            )
+        }
+    }
 
-    /**
-     * Returns true when workflow is configured.
-     */
-    fun isConfigured(): Boolean =
-        _state.value == WorkflowState.CONFIGURED
+    private fun handlePassengerAge(
+        uiElements: List<ScreenAnalyzer.UIElement>
+    ): WorkflowAction? {
+        val details = passengerDetails ?: return null
 
-    /**
-     * Returns true when workflow completed successfully.
-     */
-    fun isCompleted(): Boolean =
-        _state.value == WorkflowState.COMPLETED
+        val ageTarget = findEditableElement(uiElements) { element ->
+            element.hint?.contains("Age", ignoreCase = true) == true ||
+            element.text.contains("Age", ignoreCase = true) ||
+            element.contentDescription?.contains("Age", ignoreCase = true) == true
+        }
 
-    /**
-     * Returns true when workflow is in an error state.
-     */
-    fun isError(): Boolean =
-        _state.value is WorkflowState.ERROR
+        return ageTarget?.let {
+            currentState = WorkflowState.PASSENGER_AGE_TYPED
+            WorkflowAction.SetText(
+                targetId = it.id,
+                text = details.age
+            )
+        }
+    }
 
-    /**
-     * Returns the current workflow state.
-     */
-    fun getCurrentState(): WorkflowState =
-        _state.value
+    private fun handlePassengerGender(
+        uiElements: List<ScreenAnalyzer.UIElement>
+    ): WorkflowAction? {
+        val genderTarget = findClickableElement(uiElements) { element ->
+            element.hint?.contains("Gender", ignoreCase = true) == true ||
+            element.text.contains("Gender", ignoreCase = true) ||
+            element.contentDescription?.contains("Gender", ignoreCase = true) == true
+        }
+
+        return genderTarget?.let {
+            currentState = WorkflowState.GENDER_DROPDOWN_OPENED
+            WorkflowAction.Click(
+                targetId = it.id,
+                coordinates = getCoordinates(it)
+            )
+        }
+    }
+
+    private fun handlePassengerMeal(
+        uiElements: List<ScreenAnalyzer.UIElement>
+    ): WorkflowAction? {
+        val mealTarget = findClickableElement(uiElements) { element ->
+            element.hint?.contains("Meal", ignoreCase = true) == true ||
+            element.text.contains("Meal", ignoreCase = true) ||
+            element.contentDescription?.contains("Meal", ignoreCase = true) == true
+        }
+
+        return mealTarget?.let {
+            currentState = WorkflowState.MEAL_DROPDOWN_OPENED
+            WorkflowAction.Click(
+                targetId = it.id,
+                coordinates = getCoordinates(it)
+            )
+        }
+    }
+
+    private fun selectDropdownOption(
+        uiElements: List<ScreenAnalyzer.UIElement>,
+        targetText: String
+    ): WorkflowAction? {
+        val target = findClickableElement(uiElements) { element ->
+            element.text.contains(targetText, ignoreCase = true)
+        }
+
+        return target?.let {
+            currentState = when (currentState) {
+                WorkflowState.GENDER_DROPDOWN_OPENED -> WorkflowState.PASSENGER_GENDER_SELECTED
+                WorkflowState.MEAL_DROPDOWN_OPENED -> WorkflowState.PASSENGER_MEAL_SELECTED
+                else -> currentState
+            }
+            WorkflowAction.Click(
+                targetId = it.id,
+                coordinates = getCoordinates(it)
+            )
+        }
+    }
+
+    private fun handleReviewAndProceed(
+        analysis: ScreenAnalyzer.AnalysisResult
+    ): WorkflowAction? {
+        val uiElements = analysis.evidence?.uiElements ?: return null
+
+        val target = findClickableElement(uiElements) { element ->
+            element.text.contains("REVIEW", ignoreCase = true)
+        }
+
+        return target?.let {
+            lastSuggestedAction = ScreenAnalyzer.SuggestedAction.REVIEW_AND_PROCEED
+            currentState = WorkflowState.STOPPED
+            WorkflowAction.Click(
+                targetId = it.id,
+                coordinates = getCoordinates(it)
+            )
+        }
+    }
+
+    // --- Helper Functions ---
+
+    private fun findClickableElement(
+        elements: List<ScreenAnalyzer.UIElement>,
+        predicate: (ScreenAnalyzer.UIElement) -> Boolean
+    ): ScreenAnalyzer.UIElement? {
+        return elements.firstOrNull { it.isClickable && predicate(it) }
+    }
+
+    private fun findEditableElement(
+        elements: List<ScreenAnalyzer.UIElement>,
+        predicate: (ScreenAnalyzer.UIElement) -> Boolean
+    ): ScreenAnalyzer.UIElement? {
+        return elements.firstOrNull { it.isEditable && predicate(it) }
+    }
+
+    private fun getCoordinates(
+        element: ScreenAnalyzer.UIElement
+    ): Pair<Int, Int>? {
+        return element.bounds?.let {
+            Pair((it.left + it.right) / 2, (it.top + it.bottom) / 2)
+        }
+    }
 }
 
-/**
- * VMAX Enterprise v2.6.1
- *
- * Workflow lifecycle states.
- */
-sealed class WorkflowState(
-    val name: String
-) {
+// --- Workflow Action Types ---
 
-    object IDLE :
-        WorkflowState("IDLE")
+sealed class WorkflowAction {
+    data class Click(
+        val targetId: String? = null,
+        val coordinates: Pair<Int, Int>? = null
+    ) : WorkflowAction()
 
-    object CONFIGURED :
-        WorkflowState("CONFIGURED")
-
-    object RUNNING :
-        WorkflowState("RUNNING")
-
-    object COMPLETED :
-        WorkflowState("COMPLETED")
-
-    data class ERROR(
-        val reason: String
-    ) : WorkflowState("ERROR")
+    data class SetText(
+        val targetId: String? = null,
+        val text: String
+    ) : WorkflowAction()
 }
