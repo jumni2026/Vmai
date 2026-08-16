@@ -56,25 +56,16 @@ data class OcrResult(
         val right: Int,
         val bottom: Int
     ) {
-        /**
-         * Checks if this bounding box intersects with another bounding box
-         */
         fun intersects(other: BoundingBox): Boolean {
             return !(other.left > right || other.right < left ||
                      other.top > bottom || other.bottom < top)
         }
 
-        /**
-         * Checks if a specific point (x, y) resides inside this bounding box
-         */
         fun contains(x: Int, y: Int): Boolean {
             return x in left..right && y in top..bottom
         }
     }
 
-    /**
-     * Returns cleaned, non-blank text lines joined by newlines
-     */
     fun getCleanedText(): String {
         return textBlocks
             .map { it.text.trim() }
@@ -82,32 +73,20 @@ data class OcrResult(
             .joinToString("\n")
     }
 
-    /**
-     * Sorts text blocks vertically from top to bottom based on top coordinate
-     */
     fun getBlocksByReadingOrder(): List<TextBlock> {
         return textBlocks.sortedBy { it.boundingBox?.top ?: 0 }
     }
 
-    /**
-     * Case-insensitive keyword lookup against full extracted text
-     */
     fun containsKeyword(keyword: String): Boolean {
         return fullText.contains(keyword, ignoreCase = true)
     }
 
-    /**
-     * Finds text blocks matching a given string pattern
-     */
     fun findBlocksContaining(pattern: String): List<TextBlock> {
         return textBlocks.filter { 
             it.text.contains(pattern, ignoreCase = true) 
         }
     }
 
-    /**
-     * Calculates average confidence across all detected text blocks
-     */
     fun getAverageConfidence(): Float {
         if (textBlocks.isEmpty()) return 0f
         var total = 0f
@@ -119,14 +98,8 @@ data class OcrResult(
         return total / count
     }
 
-    /**
-     * Returns true if no text blocks exist or full text is blank
-     */
     fun isEmpty(): Boolean = textBlocks.isEmpty() || fullText.isBlank()
 
-    /**
-     * Filters text blocks residing within or intersecting a specified rectangular region
-     */
     fun getTextInRegion(region: BoundingBox): List<TextBlock> {
         val result = mutableListOf<TextBlock>()
         for (block in textBlocks) {
@@ -139,9 +112,6 @@ data class OcrResult(
     }
 
     companion object {
-        /**
-         * Fallback empty instance for error or uninitialized states
-         */
         fun empty(screenId: String = ""): OcrResult {
             return OcrResult(
                 screenId = screenId,
