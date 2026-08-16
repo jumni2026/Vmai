@@ -1,6 +1,9 @@
 package com.vmax.core_intelligence
 
 import com.vmax.common.Logger
+import com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence
+import com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement
+import com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.OcrEvidence
 
 /**
  * VMAX v2.6.1 - IRCTC Screen Analyzer (UPGRADED)
@@ -18,48 +21,48 @@ class ScreenAnalyzer(
 
     enum class ScreenState {
         UNKNOWN,
-        STATION_CONFIRMATION,      // Station mismatch popup
-        TRAIN_LIST,                // Train selection screen
-        AVAILABILITY,              // Class availability selection
-        PASSENGER_INPUT,           // Passenger details form
-        ADD_PASSENGER_FORM,        // Add new passenger form
-        REVIEW_JOURNEY,            // Review journey screen
-        PAYMENT_CATEGORY,          // Make Payment - category selection
-        PAYMENT_WALLET,            // Wallet payment options
-        PAYMENT_UPI,               // UPI payment providers
-        PAYMENT_CONFIRMATION,      // Payment processing/confirmation
-        LOADING,                   // Loading/processing screen
-        ERROR_SCREEN,              // Error screen
-        COMPLETED                  // Booking completed
+        STATION_CONFIRMATION,
+        TRAIN_LIST,
+        AVAILABILITY,
+        PASSENGER_INPUT,
+        ADD_PASSENGER_FORM,
+        REVIEW_JOURNEY,
+        PAYMENT_CATEGORY,
+        PAYMENT_WALLET,
+        PAYMENT_UPI,
+        PAYMENT_CONFIRMATION,
+        LOADING,
+        ERROR_SCREEN,
+        COMPLETED
     }
 
     enum class SuggestedAction {
         NONE,
-        CONFIRM_STATION,           // Click "Yes" on station confirmation
-        SELECT_TRAIN,              // Select a train from list
-        SELECT_CLASS,              // Select class (SL, 3A, 2A, etc.)
-        ADD_PASSENGER,             // Click + Add New passenger
-        FILL_PASSENGER_NAME,       // Enter passenger name
-        FILL_PASSENGER_AGE,        // Enter passenger age
-        SELECT_GENDER,             // Select gender
-        SELECT_BERTH_PREFERENCE,   // Select berth preference
-        SELECT_MEAL_PREFERENCE,    // Select meal preference
-        SELECT_LOYALTY_POINTS,     // Select loyalty points option
-        SKIP_LOYALTY_POINTS,       // Skip loyalty points
-        SELECT_NO_FOOD,            // Check "I don't want Food"
-        SELECT_AUTO_UPGRADE,       // Check auto upgradation
-        SELECT_CONFIRM_BOOKING,    // Check "Book only if confirm"
-        SELECT_TRAVEL_INSURANCE,   // Select travel insurance
-        SELECT_NO_INSURANCE,       // Select no travel insurance
-        ENTER_COACH_NUMBER,        // Enter preferred coach number
-        REVIEW_JOURNEY,            // Click "REVIEW JOURNEY DETAILS"
-        ADD_PASSENGER_CONFIRM,     // Click "Add Passenger" button
-        PROCEED_TO_PAY,            // Click "Proceed to Pay"
-        SELECT_PAYMENT_CATEGORY,   // Select payment category (UPI, Wallet, etc.)
-        SELECT_PAYMENT_PROVIDER,   // Select payment provider (PayU, Paytm, etc.)
-        WAIT_FOR_LOADING,          // Wait for loading to complete
-        ERROR_RECOVERY,            // Handle error screen
-        STOP_AWAIT_USER            // Stop and wait for user
+        CONFIRM_STATION,
+        SELECT_TRAIN,
+        SELECT_CLASS,
+        ADD_PASSENGER,
+        FILL_PASSENGER_NAME,
+        FILL_PASSENGER_AGE,
+        SELECT_GENDER,
+        SELECT_BERTH_PREFERENCE,
+        SELECT_MEAL_PREFERENCE,
+        SELECT_LOYALTY_POINTS,
+        SKIP_LOYALTY_POINTS,
+        SELECT_NO_FOOD,
+        SELECT_AUTO_UPGRADE,
+        SELECT_CONFIRM_BOOKING,
+        SELECT_TRAVEL_INSURANCE,
+        SELECT_NO_INSURANCE,
+        ENTER_COACH_NUMBER,
+        REVIEW_JOURNEY,
+        ADD_PASSENGER_CONFIRM,
+        PROCEED_TO_PAY,
+        SELECT_PAYMENT_CATEGORY,
+        SELECT_PAYMENT_PROVIDER,
+        WAIT_FOR_LOADING,
+        ERROR_RECOVERY,
+        STOP_AWAIT_USER
     }
 
     data class AnalysisResult(
@@ -67,17 +70,8 @@ class ScreenAnalyzer(
         val confidence: Float,
         val suggestedAction: SuggestedAction,
         val extractedData: Map<String, String> = emptyMap(),
-        val evidence: UIEvidenceCollector.ScreenEvidence? = null,
+        val evidence: ScreenEvidence? = null,
         val reason: String = ""
-    )
-
-    data class PassengerData(
-        val name: String = "",
-        val age: String = "",
-        val gender: String = "",
-        val berthPreference: String = "",
-        val mealPreference: String = "",
-        val nationality: String = "India"
     )
 
     fun analyzeCurrentScreen(): AnalysisResult {
@@ -143,7 +137,7 @@ class ScreenAnalyzer(
 
     private fun isStationConfirmationScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         return fullText.contains("YOU SEARCHED TRAINS FROM") &&
                fullText.contains("BUT BOOKING FROM") &&
@@ -152,7 +146,7 @@ class ScreenAnalyzer(
 
     private fun isAddPassengerFormScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasNameField = uiElements.any { 
             it.hint?.contains("Name", ignoreCase = true) == true ||
@@ -176,7 +170,7 @@ class ScreenAnalyzer(
 
     private fun isPaymentUPIScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasUPITitle = fullText.contains("PAY USING UPI") ||
                           fullText.contains("UPI (CREDIT CARD/ CREDIT LINE)")
@@ -197,7 +191,7 @@ class ScreenAnalyzer(
 
     private fun isPaymentWalletScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasWalletTitle = fullText.contains("PAY USING WALLET") ||
                              fullText.contains("WALLET (INSTANT PAYMENT)")
@@ -216,7 +210,7 @@ class ScreenAnalyzer(
 
     private fun isPaymentCategoryScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasMakePaymentTitle = fullText.contains("MAKE PAYMENT") ||
                                   fullText.contains("PAYMENT")
@@ -234,7 +228,7 @@ class ScreenAnalyzer(
 
     private fun isReviewJourneyScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasReviewTitle = fullText.contains("REVIEW JOURNEY")
@@ -255,7 +249,7 @@ class ScreenAnalyzer(
 
     private fun isPassengerInputScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasPassengerTitle = fullText.contains("PASSENGER DETAILS")
@@ -277,7 +271,7 @@ class ScreenAnalyzer(
 
     private fun isAvailabilityScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasClassOptions = listOf("SL", "3A", "2A", "1A", "CC", "EC", "3E", "2S", "FC")
@@ -295,7 +289,7 @@ class ScreenAnalyzer(
 
     private fun isTrainListScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasTrainKeywords = fullText.contains("TRAINS") ||
@@ -315,7 +309,7 @@ class ScreenAnalyzer(
 
     private fun isLoadingScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val loadingText = fullText.contains("LOADING") ||
                           fullText.contains("PLEASE WAIT") ||
@@ -332,7 +326,7 @@ class ScreenAnalyzer(
 
     private fun isErrorScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         return fullText.contains("ERROR") ||
                fullText.contains("FAILED") ||
@@ -342,7 +336,7 @@ class ScreenAnalyzer(
 
     private fun isCompletedScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         return fullText.contains("BOOKING CONFIRMED") ||
                fullText.contains("TICKET CONFIRMED") ||
@@ -353,7 +347,7 @@ class ScreenAnalyzer(
     // ==================== HANDLER FUNCTIONS ====================
 
     private fun handleStationConfirmation(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         return AnalysisResult(
             screenState = ScreenState.STATION_CONFIRMATION,
@@ -365,7 +359,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleAddPassengerForm(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
@@ -400,7 +394,7 @@ class ScreenAnalyzer(
     }
 
     private fun handlePaymentUPI(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -436,7 +430,7 @@ class ScreenAnalyzer(
     }
 
     private fun handlePaymentWallet(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -483,7 +477,7 @@ class ScreenAnalyzer(
     }
 
     private fun handlePaymentCategory(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -521,7 +515,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleReviewJourney(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -560,7 +554,7 @@ class ScreenAnalyzer(
     }
 
     private fun handlePassengerInput(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -610,7 +604,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleAvailability(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -642,7 +636,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleTrainList(
-        evidence: UIEvidenceCollector.ScreenEvidence,
+        evidence: ScreenEvidence,
         keyValuePairs: Map<String, String>
     ): AnalysisResult {
         val uiElements = evidence.uiElements
@@ -676,7 +670,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleLoadingScreen(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         return AnalysisResult(
             screenState = ScreenState.LOADING,
@@ -688,7 +682,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleErrorScreen(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         return AnalysisResult(
             screenState = ScreenState.ERROR_SCREEN,
@@ -700,7 +694,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleCompletedScreen(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         return AnalysisResult(
             screenState = ScreenState.COMPLETED,
@@ -724,18 +718,7 @@ class ScreenAnalyzer(
 
     fun getCurrentUIElements(): List<UIElement> {
         val evidence = evidenceCollector.getCurrentEvidence()
-        return evidence?.uiElements?.map { element ->
-            UIElement(
-                id = element.id,
-                type = element.type,
-                text = element.text,
-                contentDescription = element.contentDescription,
-                bounds = element.bounds,
-                isClickable = element.isClickable,
-                isEditable = element.isEditable,
-                hint = element.hint
-            )
-        } ?: emptyList()
+        return evidence?.uiElements ?: emptyList()
     }
 
     fun findUIElementByText(text: String): UIElement? {
@@ -761,15 +744,3 @@ class ScreenAnalyzer(
         return evidenceCollector.getCurrentEvidence()?.ocrEvidence?.keyValuePairs ?: emptyMap()
     }
 }
-
-// Public UI Element data class
-data class UIElement(
-    val id: String = "",
-    val type: String = "",
-    val text: String = "",
-    val contentDescription: String? = null,
-    val bounds: OcrResult.BoundingBox? = null,
-    val isClickable: Boolean = false,
-    val isEditable: Boolean = false,
-    val hint: String? = null
-)
