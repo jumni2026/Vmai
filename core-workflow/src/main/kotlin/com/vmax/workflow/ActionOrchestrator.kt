@@ -1,211 +1,259 @@
-package com.vmax.workflow
+package com.vmax.app
 
-import com.vmax.action.ActionError
+import android.accessibilityservice.AccessibilityService
+import android.util.Log
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.action.ActionExecutor
+import com.vmax.action.ExecutionEvent
+import com.vmax.workflow.ExecutionTracker
+import com.vmax.workflow.ActionOrchestrator
+import com.vmax.workflow.WorkflowController
 import com.vmax.common.Result
+import com.vmax.runtime.MetricsCollector
+import com.vmax.runtime.ExecutionRecorder
+import com.vmax.app.AndroidLogger
+import com.vmax.app.AndroidExecutionHistoryStore
+import com.vmax.app.AndroidExecutionRecorder
+import com.vmax.app.AndroidMetricsCollector
+import com.vmax.core_intelligence.ScreenAnalyzer
+import com.vmax.core_intelligence.UIEvidenceCollector
+import com.vmax.core_intelligence.TextClassifier
+import com.vmax.core_intelligence.OcrResult
 
-/**
- * VMAX Enterprise v2.6.1
- *
- * File — ActionOrchestrator.kt
- *
- * Bridge between WorkflowController and ActionExecutor.
- *
- * Responsibilities:
- * - Receives high-level action commands.
- * - Creates platform-independent ActionRequest objects.
- * - Dispatches requests to ActionExecutor.
- * - Records dispatch/success/failure in ExecutionTracker.
- *
- * Architecture:
- *
- * WorkflowController
- *        ↓
- * ActionOrchestrator
- *        ↓
- * ActionExecutor
- *        ↓
- * AndroidActionExecutor
- *
- * Rules:
- * - No Android dependencies.
- * - No IRCTC-specific logic.
- * - No UI-node discovery.
- * - No business logic.
- * - SCROLL targetText represents direction.
- */
-class ActionOrchestrator(
-    private val actionExecutor: ActionExecutor,
-    private val executionTracker: ExecutionTracker
-) {
-
-    /**
-     * Executes a CLICK action.
-     */
-    fun click(
-        targetId: String? = null,
-        sessionId: String,
-        coordinates: Pair<Int, Int>? = null
-    ): Result<ActionExecutor.ActionResult, ActionError> {
-
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.CLICK,
-            targetId = targetId,
-            coordinates = coordinates
-        )
-
-        return dispatchAndTrack(
-            request = request,
-            sessionId = sessionId
-        )
+class VMAXAccessibilityService : AccessibilityService() {
+    companion object {
+        private const val TAG = "VMAX_EXECUTION_SERVICE"
+        private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
     }
 
-    /**
-     * Executes a TAP action.
-     */
-    fun tap(
-        targetId: String? = null,
-        sessionId: String,
-        coordinates: Pair<Int, Int>? = null
-    ): Result<ActionExecutor.ActionResult, ActionError> {
+    private var isServiceReady = false
+    private var currentSessionId = ""
 
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.TAP,
-            targetId = targetId,
-            coordinates = coordinates
-        )
+    private lateinit var orchestrator: ActionOrchestrator
+    private lateinit var tracker: ExecutionTracker
+    private lateinit var analyzer: ScreenAnalyzer
+    private lateinit var classifier: TextClassifier
+    private lateinit var evidenceCollector: UIEvidenceCollector
+    private lateinit var historyStore: AndroidExecutionHistoryStore
+    private lateinit var recorder: ExecutionRecorder
+    private lateinit var metrics: MetricsCollector
+    private lateinit var executor: ActionExecutor
+    private lateinit var workflowController: WorkflowController
 
-        return dispatchAndTrack(
-            request = request,
-            sessionId = sessionId
-        )
-    }
-
-    /**
-     * Executes a SET_TEXT action.
-     */
-    fun setText(
-        targetId: String? = null,
-        text: String,
-        sessionId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> {
-
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.SET_TEXT,
-            targetId = targetId,
-            text = text
-        )
-
-        return dispatchAndTrack(
-            request = request,
-            sessionId = sessionId
-        )
-    }
-
-    /**
-     * Executes a CLEAR_TEXT action.
-     */
-    fun clearText(
-        targetId: String? = null,
-        sessionId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> {
-
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.CLEAR_TEXT,
-            targetId = targetId
-        )
-
-        return dispatchAndTrack(
-            request = request,
-            sessionId = sessionId
-        )
-    }
-
-    /**
-     * Executes a SCROLL action.
-     *
-     * Contract:
-     * targetText = direction
-     *
-     * The direction is NOT treated as a UI-node text selector.
-     */
-    fun scroll(
-        direction: String,
-        sessionId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> {
-
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.SCROLL,
-            targetText = direction
-        )
-
-        return dispatchAndTrack(
-            request = request,
-            sessionId = sessionId
-        )
-    }
-
-    /**
-     * Executes a WAIT action.
-     */
-    fun wait(
-        durationMs: Long,
-        sessionId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> {
-
-        val request = ActionExecutor.ActionRequest(
-            type = ActionExecutor.ActionType.WAIT,
-            durationMs = durationMs
-        )
-
-        return dispatchAndTrack(
-            request = request,
-            sessionId = sessionId
-        )
-    }
-
-    /**
-     * Central dispatch and tracking path.
-     *
-     * 1. Records action dispatch.
-     * 2. Executes the ActionRequest.
-     * 3. Records success or failure.
-     * 4. Returns the original execution result unchanged.
-     */
-    private fun dispatchAndTrack(
-        request: ActionExecutor.ActionRequest,
-        sessionId: String
-    ): Result<ActionExecutor.ActionResult, ActionError> {
-
-        executionTracker.recordActionDispatched(
-            sessionId = sessionId,
-            actionType = request.type,
-            targetId = request.targetId,
-            targetText = request.targetText
-        )
-
-        val result = actionExecutor.executeAction(request)
-
-        when (result) {
-
-            is Result.Success -> {
-                executionTracker.recordActionSucceeded(
-                    sessionId = sessionId,
-                    actionType = request.type,
-                    resultMessage = result.data.message
-                )
-            }
-
-            is Result.Error -> {
-                executionTracker.recordActionFailed(
-                    sessionId = sessionId,
-                    actionType = request.type,
-                    errorCode = result.error.code,
-                    errorMessage = result.error.message
-                )
-            }
+    // --- Public Contract ---
+    fun startWorkflow(
+        from: String, to: String, date: String, train: String,
+        trainClass: String, name: String, age: String, gender: String, meal: String
+    ) {
+        if (!isServiceReady) {
+            Log.e(TAG, "Service not ready")
+            return
         }
 
-        return result
+        currentSessionId = "SESSION_${System.currentTimeMillis()}"
+        tracker.startSession(currentSessionId)
+        metrics.startMetrics(currentSessionId)
+        recorder.recordEvent(ExecutionEvent.SessionStarted(currentSessionId))
+
+        val details = WorkflowController.PassengerDetails(
+            from, to, date, train, trainClass, name, age, gender, meal
+        )
+
+        if (workflowController.startWorkflow(details, currentSessionId)) {
+            Log.i(TAG, "Workflow armed")
+        } else {
+            Log.e(TAG, "Failed to start workflow")
+            stopWorkflow()
+        }
+    }
+
+    fun stopWorkflow() {
+        if (workflowController.getCurrentState() in listOf(
+            WorkflowController.WorkflowState.STOPPED,
+            WorkflowController.WorkflowState.IDLE
+        )) return
+
+        val sessionId = workflowController.getSessionId()
+        if (sessionId.isNotEmpty()) {
+            tracker.stopSession(sessionId)
+            recorder.recordEvent(ExecutionEvent.SessionStopped(sessionId))
+            metrics.stopMetrics(sessionId, "STOPPED")
+        }
+        workflowController.stopWorkflow()
+        currentSessionId = ""
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        val logger = AndroidLogger()
+        
+        executor = AndroidActionExecutor(this)
+        tracker = ExecutionTracker(logger)
+        orchestrator = ActionOrchestrator(executor, tracker)
+        historyStore = AndroidExecutionHistoryStore(this)
+        recorder = AndroidExecutionRecorder(historyStore)
+        metrics = AndroidMetricsCollector()
+        evidenceCollector = UIEvidenceCollector(logger)
+        classifier = TextClassifier()
+        analyzer = ScreenAnalyzer(evidenceCollector, logger)
+        
+        workflowController = WorkflowController(
+            orchestrator, analyzer, classifier, metrics, recorder
+        )
+        
+        isServiceReady = true
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null || !isServiceReady) return
+        if (event.packageName?.toString() != IRCTC_PACKAGE) return
+        
+        val root = rootInActiveWindow ?: return
+        val uiElements = extractUiElements(root)
+
+        try {
+            evidenceCollector.updateUiElements(uiElements)
+
+            // Handle state-specific actions first
+            val currentState = workflowController.getCurrentState()
+            val stateAction = workflowController.handleStateAction(
+                currentState,
+                uiElements.map { convertToScreenAnalyzerUIElement(it) }
+            )
+
+            if (stateAction != null) {
+                executeWorkflowAction(stateAction)
+                return
+            }
+
+            // Handle screen analysis
+            val analysis = analyzer.analyzeCurrentScreen()
+            val ocrText = analysis.evidence?.ocrEvidence?.fullText ?: ""
+            val ocrBlocks = analysis.evidence?.ocrEvidence?.rawBlocks ?: emptyList()
+
+            val action = workflowController.handleScreenAnalysis(
+                analysis,
+                ocrText,
+                ocrBlocks
+            )
+
+            if (action != null) {
+                executeWorkflowAction(action)
+            }
+
+        } finally {
+            root.recycle()
+        }
+    }
+
+    // --- UI Extraction ---
+    private fun extractUiElements(root: AccessibilityNodeInfo): List<UIEvidenceCollector.ScreenEvidence.UIElement> {
+        val elements = mutableListOf<UIEvidenceCollector.ScreenEvidence.UIElement>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+        
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val bounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
+            
+            elements.add(
+                UIEvidenceCollector.ScreenEvidence.UIElement(
+                    id = node.viewIdResourceName ?: "",
+                    type = node.className?.toString() ?: "",
+                    text = node.text?.toString() ?: "",
+                    contentDescription = node.contentDescription?.toString(),
+                    bounds = OcrResult.BoundingBox(
+                        bounds.left, bounds.top, bounds.right, bounds.bottom
+                    ),
+                    isClickable = node.isClickable,
+                    isEditable = node.isEditable,
+                    hint = node.hintText?.toString()
+                )
+            )
+            
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+            if (node !== root) node.recycle()
+        }
+        return elements
+    }
+
+    private fun convertToScreenAnalyzerUIElement(
+        element: UIEvidenceCollector.ScreenEvidence.UIElement
+    ): ScreenAnalyzer.UIElement {
+        return ScreenAnalyzer.UIElement(
+            id = element.id,
+            type = element.type,
+            text = element.text,
+            contentDescription = element.contentDescription,
+            bounds = element.bounds,
+            isClickable = element.isClickable,
+            isEditable = element.isEditable,
+            hint = element.hint
+        )
+    }
+
+    // --- Action Execution ---
+    private fun executeWorkflowAction(action: WorkflowAction) {
+        val sessionId = workflowController.getSessionId()
+        
+        when (action) {
+            is WorkflowAction.Click -> {
+                val result = if (action.targetId != null) {
+                    orchestrator.click(
+                        targetId = action.targetId,
+                        sessionId = sessionId
+                    )
+                } else if (action.coordinates != null) {
+                    orchestrator.click(
+                        coordinates = action.coordinates,
+                        sessionId = sessionId
+                    )
+                } else {
+                    return
+                }
+                
+                if (result is Result.Success) {
+                    Log.d(TAG, "Click action succeeded")
+                } else {
+                    Log.e(TAG, "Click action failed: ${(result as Result.Error).error.message}")
+                }
+            }
+            
+            is WorkflowAction.SetText -> {
+                if (action.targetId != null) {
+                    val result = orchestrator.setText(
+                        targetId = action.targetId,
+                        text = action.text,
+                        sessionId = sessionId
+                    )
+                    
+                    if (result is Result.Success) {
+                        Log.d(TAG, "SetText action succeeded")
+                        // Update state after successful text input
+                        when {
+                            action.text == passengerName -> {
+                                workflowController.updateState(
+                                    WorkflowController.WorkflowState.PASSENGER_NAME_TYPED
+                                )
+                            }
+                            action.text == passengerAge -> {
+                                workflowController.updateState(
+                                    WorkflowController.WorkflowState.PASSENGER_AGE_TYPED
+                                )
+                            }
+                        }
+                    } else {
+                        Log.e(TAG, "SetText action failed: ${(result as Result.Error).error.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onInterrupt() {
+        Log.w(TAG, "Service interrupted")
+        stopWorkflow()
     }
 }
