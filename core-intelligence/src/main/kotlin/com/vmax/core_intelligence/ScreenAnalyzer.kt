@@ -587,7 +587,8 @@ class ScreenAnalyzer(
         }
         
         if (provider != null) {
-            val data = mapOf("provider" to provider.text)
+            val data: MutableMap<String, String> = mutableMapOf()
+            data.put("provider", provider.text)
             return AnalysisResult(
                 screenState = ScreenState.PAYMENT_UPI,
                 confidence = 0.9f,
@@ -644,7 +645,8 @@ class ScreenAnalyzer(
         }
         
         if (provider != null) {
-            val data = mapOf("provider" to provider.text)
+            val data: MutableMap<String, String> = mutableMapOf()
+            data.put("provider", provider.text)
             return AnalysisResult(
                 screenState = ScreenState.PAYMENT_WALLET,
                 confidence = 0.9f,
@@ -694,14 +696,15 @@ class ScreenAnalyzer(
         }
         
         if (target != null) {
-            val data = mapOf("category" to target.text)
+            val data: MutableMap<String, String> = mutableMapOf()
+            data.put("category", target.text)
             return AnalysisResult(
                 screenState = ScreenState.PAYMENT_CATEGORY,
                 confidence = 0.85f,
                 suggestedAction = SuggestedAction.SELECT_PAYMENT_CATEGORY,
                 extractedData = data,
                 evidence = evidence,
-                reason = "Payment category selection: ${target.text}"
+                reason = "Payment category selection"
             )
         } else {
             return AnalysisResult(
@@ -850,8 +853,18 @@ class ScreenAnalyzer(
             i = i + 1
         }
         
-        if (availableClasses.isNotEmpty()) {
-            val data = mapOf("available_classes" to availableClasses.joinToString())
+        if (availableClasses.size > 0) {
+            val data: MutableMap<String, String> = mutableMapOf()
+            var classesStr = ""
+            var k = 0
+            while (k < availableClasses.size) {
+                if (k > 0) {
+                    classesStr = classesStr + ","
+                }
+                classesStr = classesStr + availableClasses.get(k)
+                k = k + 1
+            }
+            data.put("available_classes", classesStr)
             return AnalysisResult(
                 screenState = ScreenState.AVAILABILITY,
                 confidence = 0.85f,
