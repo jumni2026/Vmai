@@ -1,14 +1,14 @@
 plugins {
+    kotlin("jvm")
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "com.vmax.runtime"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 24
     }
 
     compileOptions {
@@ -22,21 +22,15 @@ android {
 }
 
 dependencies {
-    // Internal Modules
     implementation(project(":common"))
     implementation(project(":core-model"))
     implementation(project(":core-validation"))
     implementation(project(":core-intelligence"))
-    implementation(project(":core-workflow"))
     implementation(project(":core-action"))
-    implementation(project(":core-security"))
+    implementation(project(":core-workflow"))
 
-    // AndroidX
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
-    // Google ML Kit — Text Recognition
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-
-    // Tests
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(kotlin("test"))
 }
