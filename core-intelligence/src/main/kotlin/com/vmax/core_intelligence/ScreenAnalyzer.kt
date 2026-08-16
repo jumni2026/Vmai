@@ -16,6 +16,11 @@ class ScreenAnalyzer(
         private const val TAG = "ScreenAnalyzer"
     }
 
+    // Type aliases for cleaner code
+    private typealias ScreenEvidence = UIEvidenceCollector.ScreenEvidence
+    private typealias UIElement = UIEvidenceCollector.ScreenEvidence.UIElement
+    private typealias OcrEvidence = UIEvidenceCollector.ScreenEvidence.OcrEvidence
+
     enum class ScreenState {
         UNKNOWN,
         STATION_CONFIRMATION,
@@ -67,7 +72,7 @@ class ScreenAnalyzer(
         val confidence: Float,
         val suggestedAction: SuggestedAction,
         val extractedData: Map<String, String> = emptyMap(),
-        val evidence: UIEvidenceCollector.ScreenEvidence? = null,
+        val evidence: ScreenEvidence? = null,
         val reason: String = ""
     )
 
@@ -177,7 +182,7 @@ class ScreenAnalyzer(
 
     private fun isStationConfirmationScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         return fullText.contains("YOU SEARCHED TRAINS FROM") &&
                fullText.contains("BUT BOOKING FROM") &&
@@ -186,7 +191,7 @@ class ScreenAnalyzer(
 
     private fun isAddPassengerFormScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         var hasNameField = false
         var hasAgeField = false
@@ -233,7 +238,7 @@ class ScreenAnalyzer(
 
     private fun isPaymentUPIScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasUPITitle = fullText.contains("PAY USING UPI") ||
                           fullText.contains("UPI (CREDIT CARD/ CREDIT LINE)")
@@ -264,7 +269,7 @@ class ScreenAnalyzer(
 
     private fun isPaymentWalletScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasWalletTitle = fullText.contains("PAY USING WALLET") ||
                              fullText.contains("WALLET (INSTANT PAYMENT)")
@@ -292,7 +297,7 @@ class ScreenAnalyzer(
 
     private fun isPaymentCategoryScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val hasMakePaymentTitle = fullText.contains("MAKE PAYMENT") ||
                                   fullText.contains("PAYMENT")
@@ -327,7 +332,7 @@ class ScreenAnalyzer(
 
     private fun isReviewJourneyScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasReviewTitle = fullText.contains("REVIEW JOURNEY")
@@ -357,7 +362,7 @@ class ScreenAnalyzer(
 
     private fun isPassengerInputScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasPassengerTitle = fullText.contains("PASSENGER DETAILS")
@@ -391,7 +396,7 @@ class ScreenAnalyzer(
 
     private fun isAvailabilityScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val classOptions = arrayOf("SL", "3A", "2A", "1A", "CC", "EC", "3E", "2S", "FC")
         var hasClassOptions = false
@@ -425,7 +430,7 @@ class ScreenAnalyzer(
 
     private fun isTrainListScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>,
+        uiElements: List<UIElement>,
         keyValuePairs: Map<String, String>
     ): Boolean {
         val hasTrainKeywords = fullText.contains("TRAINS") ||
@@ -454,7 +459,7 @@ class ScreenAnalyzer(
 
     private fun isLoadingScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         val loadingText = fullText.contains("LOADING") ||
                           fullText.contains("PLEASE WAIT") ||
@@ -480,7 +485,7 @@ class ScreenAnalyzer(
 
     private fun isErrorScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         return fullText.contains("ERROR") ||
                fullText.contains("FAILED") ||
@@ -490,7 +495,7 @@ class ScreenAnalyzer(
 
     private fun isCompletedScreen(
         fullText: String,
-        uiElements: List<UIEvidenceCollector.ScreenEvidence.UIElement>
+        uiElements: List<UIElement>
     ): Boolean {
         return fullText.contains("BOOKING CONFIRMED") ||
                fullText.contains("TICKET CONFIRMED") ||
@@ -501,12 +506,12 @@ class ScreenAnalyzer(
     // ==================== HANDLER FUNCTIONS ====================
 
     private fun handleAddPassengerForm(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        var nameField: UIEvidenceCollector.ScreenEvidence.UIElement? = null
-        var ageField: UIEvidenceCollector.ScreenEvidence.UIElement? = null
+        var nameField: UIElement? = null
+        var ageField: UIElement? = null
         
         var i = 0
         while (i < uiElements.size) {
@@ -560,11 +565,11 @@ class ScreenAnalyzer(
     }
 
     private fun handlePaymentUPI(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        var provider: UIEvidenceCollector.ScreenEvidence.UIElement? = null
+        var provider: UIElement? = null
         var i = 0
         while (i < uiElements.size) {
             val element = uiElements.get(i)
@@ -603,7 +608,7 @@ class ScreenAnalyzer(
     }
 
     private fun handlePaymentWallet(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         val ocrEvidence = evidence.ocrEvidence
@@ -622,7 +627,7 @@ class ScreenAnalyzer(
             )
         }
         
-        var provider: UIEvidenceCollector.ScreenEvidence.UIElement? = null
+        var provider: UIElement? = null
         var i = 0
         while (i < uiElements.size) {
             val element = uiElements.get(i)
@@ -660,11 +665,11 @@ class ScreenAnalyzer(
     }
 
     private fun handlePaymentCategory(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        var target: UIEvidenceCollector.ScreenEvidence.UIElement? = null
+        var target: UIElement? = null
         
         var i = 0
         while (i < uiElements.size) {
@@ -710,11 +715,11 @@ class ScreenAnalyzer(
     }
 
     private fun handleReviewJourney(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        var proceedButton: UIEvidenceCollector.ScreenEvidence.UIElement? = null
+        var proceedButton: UIElement? = null
         var i = 0
         while (i < uiElements.size) {
             val element = uiElements.get(i)
@@ -755,12 +760,12 @@ class ScreenAnalyzer(
     }
 
     private fun handlePassengerInput(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
-        var addNewButton: UIEvidenceCollector.ScreenEvidence.UIElement? = null
-        var reviewButton: UIEvidenceCollector.ScreenEvidence.UIElement? = null
+        var addNewButton: UIElement? = null
+        var reviewButton: UIElement? = null
         
         var i = 0
         while (i < uiElements.size) {
@@ -821,7 +826,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleAvailability(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
@@ -867,7 +872,7 @@ class ScreenAnalyzer(
     }
 
     private fun handleTrainList(
-        evidence: UIEvidenceCollector.ScreenEvidence
+        evidence: ScreenEvidence
     ): AnalysisResult {
         val uiElements = evidence.uiElements
         
@@ -907,7 +912,7 @@ class ScreenAnalyzer(
 
     // ==================== PUBLIC HELPER FUNCTIONS ====================
 
-    fun getCurrentUIElements(): List<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement> {
+    fun getCurrentUIElements(): List<UIElement> {
         val evidence = evidenceCollector.getCurrentEvidence()
         if (evidence != null) {
             return evidence.uiElements
@@ -915,7 +920,7 @@ class ScreenAnalyzer(
         return emptyList()
     }
 
-    fun findUIElementByText(text: String): com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement? {
+    fun findUIElementByText(text: String): UIElement? {
         val elements = getCurrentUIElements()
         var i = 0
         while (i < elements.size) {
@@ -930,8 +935,8 @@ class ScreenAnalyzer(
         return null
     }
 
-    fun findClickableUIElements(): List<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement> {
-        val result = mutableListOf<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement>()
+    fun findClickableUIElements(): List<UIElement> {
+        val result = mutableListOf<UIElement>()
         val elements = getCurrentUIElements()
         var i = 0
         while (i < elements.size) {
@@ -944,8 +949,8 @@ class ScreenAnalyzer(
         return result
     }
 
-    fun findEditableUIElements(): List<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement> {
-        val result = mutableListOf<com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement>()
+    fun findEditableUIElements(): List<UIElement> {
+        val result = mutableListOf<UIElement>()
         val elements = getCurrentUIElements()
         var i = 0
         while (i < elements.size) {
