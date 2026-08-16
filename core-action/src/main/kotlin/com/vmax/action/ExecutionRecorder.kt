@@ -1,6 +1,4 @@
-package com.vmax.runtime
-
-import com.vmax.action.ExecutionEvent
+package com.vmax.action
 
 /**
  * VMAX Enterprise v2.6.1
@@ -10,7 +8,9 @@ import com.vmax.action.ExecutionEvent
  * Platform-independent contract for recording and retrieving
  * execution histories.
  *
- * ExecutionEvent is owned by the core-action module.
+ * Ownership:
+ * - Contract belongs to core-action.
+ * - Platform-specific implementations may live in runtime/app.
  */
 interface ExecutionRecorder {
 
