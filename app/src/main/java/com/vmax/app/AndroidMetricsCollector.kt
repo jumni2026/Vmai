@@ -1,7 +1,7 @@
 package com.vmax.app
 
 import com.vmax.action.ActionExecutor
-import com.vmax.runtime.MetricsCollector
+import com.vmax.action.MetricsCollector
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -9,31 +9,42 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * File — AndroidMetricsCollector.kt
  *
- * Android implementation of the MetricsCollector interface.
- * Stores session metrics in a thread-safe in-memory map.
+ * Android implementation of the platform-independent
+ * MetricsCollector contract.
  *
  * Responsibilities:
  * - Track session start and end times.
- * - Count total, successful, and failed actions per session.
- * - Aggregate error codes to identify failure patterns.
- * - Provide an overview of all session metrics.
+ * - Count total, successful, and failed actions.
+ * - Aggregate error codes.
+ * - Provide session metrics.
+ *
+ * Architecture:
+ * - Contract: core-action
+ * - Implementation: app
  */
 class AndroidMetricsCollector : MetricsCollector {
 
-    // Thread-safe map to store metrics for each session
-    private val sessionMetricsMap = ConcurrentHashMap<String, MetricsCollector.SessionMetrics>()
+    private val sessionMetricsMap =
+        ConcurrentHashMap<String, MetricsCollector.SessionMetrics>()
 
     override fun startMetrics(sessionId: String) {
-        val now = System.currentTimeMillis()
+        if (sessionId.isBlank()) return
+
         val metrics = MetricsCollector.SessionMetrics(
             sessionId = sessionId,
-            startTime = now,
+            startTime = System.currentTimeMillis(),
             status = "RUNNING"
         )
+
         sessionMetricsMap[sessionId] = metrics
     }
 
-    override fun stopMetrics(sessionId: String, status: String) {
+    override fun stopMetrics(
+        sessionId: String,
+        status: String
+    ) {
+        if (sessionId.isBlank()) return
+
         sessionMetricsMap.computeIfPresent(sessionId) { _, oldMetrics ->
             oldMetrics.copy(
                 endTime = System.currentTimeMillis(),
@@ -48,31 +59,54 @@ class AndroidMetricsCollector : MetricsCollector {
         actionType: ActionExecutor.ActionType,
         errorCode: String?
     ) {
-        sessionMetricsMap.computeIfPresent(sessionId) { _, oldMetrics ->
-            val newTotal = oldMetrics.totalActions + 1
-            val newSuccess = if (isSuccess) oldMetrics.successActions + 1 else oldMetrics.successActions
-            val newFailed = if (!isSuccess) oldMetrics.failedActions + 1 else oldMetrics.failedActions
+        if (sessionId.isBlank()) return
 
-            // Update error distribution if action failed
-            val newErrorDist = oldMetrics.errorDistribution.toMutableMap()
-            if (!isSuccess && errorCode != null) {
-                newErrorDist[errorCode] = newErrorDist.getOrDefault(errorCode, 0) + 1
+        sessionMetricsMap.computeIfPresent(sessionId) { _, oldMetrics ->
+
+            val newTotalActions =
+                oldMetrics.totalActions + 1
+
+            val newSuccessActions =
+                if (isSuccess) {
+                    oldMetrics.successActions + 1
+                } else {
+                    oldMetrics.successActions
+                }
+
+            val newFailedActions =
+                if (!isSuccess) {
+                    oldMetrics.failedActions + 1
+                } else {
+                    oldMetrics.failedActions
+                }
+
+            val newErrorDistribution =
+                oldMetrics.errorDistribution.toMutableMap()
+
+            if (!isSuccess && !errorCode.isNullOrBlank()) {
+                newErrorDistribution[errorCode] =
+                    (newErrorDistribution[errorCode] ?: 0) + 1
             }
 
             oldMetrics.copy(
-                totalActions = newTotal,
-                successActions = newSuccess,
-                failedActions = newFailed,
-                errorDistribution = newErrorDist
+                totalActions = newTotalActions,
+                successActions = newSuccessActions,
+                failedActions = newFailedActions,
+                errorDistribution = newErrorDistribution
             )
         }
     }
 
-    override fun getSessionMetrics(sessionId: String): MetricsCollector.SessionMetrics? {
+    override fun getSessionMetrics(
+        sessionId: String
+    ): MetricsCollector.SessionMetrics? {
+        if (sessionId.isBlank()) return null
+
         return sessionMetricsMap[sessionId]
     }
 
-    override fun getAllSessionsMetrics(): List<MetricsCollector.SessionMetrics> {
+    override fun getAllSessionsMetrics():
+        List<MetricsCollector.SessionMetrics> {
         return sessionMetricsMap.values.toList()
     }
 
