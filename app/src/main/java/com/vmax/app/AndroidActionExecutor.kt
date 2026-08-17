@@ -1,16 +1,27 @@
 package com.vmax.app
 
 import android.accessibilityservice.AccessibilityService
-import android.os.Handler
-import android.os.Looper
+import android.graphics.Rect
+import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
+import com.vmax.action.ActionError
 import com.vmax.action.ActionExecutor
 import com.vmax.common.Result
 
 /**
- * Android-specific implementation of ActionExecutor
- * Uses AccessibilityService to perform UI actions
+ * VMAX Enterprise v2.6.1
+ *
+ * Android implementation of ActionExecutor.
+ *
+ * Responsibility:
+ * - Translate platform-independent ActionRequest objects
+ *   into Android Accessibility actions.
+ *
+ * Architecture rule:
+ * - No workflow/business decisions here.
+ * - No IRCTC-specific logic here.
+ * - Only Android accessibility execution.
  */
 class AndroidActionExecutor(
     private val service: AccessibilityService
@@ -18,303 +29,726 @@ class AndroidActionExecutor(
 
     companion object {
         private const val TAG = "AndroidActionExecutor"
+
         private const val CLICK_RETRY_DELAY_MS = 300L
         private const val MAX_RETRIES = 3
+
+        private const val DIRECTION_FORWARD = "FORWARD"
+        private const val DIRECTION_BACKWARD = "BACKWARD"
+        private const val DIRECTION_UP = "UP"
+        private const val DIRECTION_DOWN = "DOWN"
+        private const val DIRECTION_LEFT = "LEFT"
+        private const val DIRECTION_RIGHT = "RIGHT"
     }
 
-    private val handler = Handler(Looper.getMainLooper())
+    @Volatile
+    private var lastActionResult: ActionExecutor.ActionResult? = null
 
-    override fun executeAction(request: ActionExecutor.ActionRequest): Result<Unit> {
-        Log.d(TAG, "Executing action: ${request.type} on target: ${request.targetId}")
+    override fun executeAction(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        Log.d(
+            TAG,
+            "Executing action=${request.type}, targetId=${request.targetId}"
+        )
 
         return try {
             when (request.type) {
-                ActionExecutor.ActionType.CLICK -> executeClick(request)
-                ActionExecutor.ActionType.SET_TEXT -> executeSetText(request)
-                ActionExecutor.ActionType.SCROLL -> executeScroll(request)
-                ActionExecutor.ActionType.WAIT -> executeWait(request)
-                ActionExecutor.ActionType.BACK -> executeBack(request)
-                ActionExecutor.ActionType.HOME -> executeHome(request)
-                ActionExecutor.ActionType.RECENT_APPS -> executeRecentApps(request)
+
+                ActionExecutor.ActionType.TAP ->
+                    executeTapInternal(request)
+
+                ActionExecutor.ActionType.CLICK ->
+                    executeClickInternal(request)
+
+                ActionExecutor.ActionType.LONG_CLICK ->
+                    executeLongClick(request)
+
+                ActionExecutor.ActionType.DOUBLE_TAP ->
+                    executeDoubleTap(request)
+
+                ActionExecutor.ActionType.SWIPE ->
+                    executeSwipe(request)
+
+                ActionExecutor.ActionType.SCROLL ->
+                    executeScrollInternal(request)
+
+                ActionExecutor.ActionType.SET_TEXT ->
+                    executeSetTextInternal(request)
+
+                ActionExecutor.ActionType.CLEAR_TEXT ->
+                    executeClearTextInternal(request)
+
+                ActionExecutor.ActionType.WAIT ->
+                    executeWaitInternal(request)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Action execution failed", e)
-            Result.Error(e)
+            failure(
+                code = "ACTION_EXECUTION_EXCEPTION",
+                message = e.message ?: "Action execution failed",
+                request = request,
+                cause = e
+            )
         }
     }
 
-    private fun executeClick(request: ActionExecutor.ActionRequest): Result<Unit> {
-        // ✅ FIX: Smart-cast issue resolved by using local variable
-        val coordinates = request.coordinates
-        
-        return if (request.targetId != null) {
-            executeClickById(request.targetId, request.sessionId)
-        } else if (coordinates != null) {
-            // ✅ FIXED: Using local variable 'coordinates' instead of request.coordinates
-            val x = coordinates.first
-            val y = coordinates.second
-            executeClickByCoordinates(x, y, request.sessionId)
-        } else {
-            Result.Error(IllegalArgumentException("Either targetId or coordinates must be provided for CLICK action"))
-        }
+    // -------------------------------------------------------------------------
+    // Public convenience APIs
+    // -------------------------------------------------------------------------
+
+    override fun executeTap(
+        targetId: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.TAP,
+                targetId = targetId
+            )
+        )
     }
 
-    private fun executeClickById(
+    override fun executeClick(
+        targetId: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.CLICK,
+                targetId = targetId
+            )
+        )
+    }
+
+    override fun executeSetText(
         targetId: String,
-        sessionId: String
-    ): Result<Unit> {
-        Log.d(TAG, "Click by ID: $targetId")
+        text: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SET_TEXT,
+                targetId = targetId,
+                text = text
+            )
+        )
+    }
+
+    override fun executeClearText(
+        targetId: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.CLEAR_TEXT,
+                targetId = targetId
+            )
+        )
+    }
+
+    override fun executeScroll(
+        direction: String,
+        amount: Int
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SCROLL,
+                targetText = direction,
+                durationMs = amount.toLong()
+            )
+        )
+    }
+
+    override fun executeWait(
+        durationMs: Long
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeAction(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.WAIT,
+                durationMs = durationMs
+            )
+        )
+    }
+
+    override fun isActionAvailable(
+        actionType: ActionExecutor.ActionType
+    ): Boolean {
+        return when (actionType) {
+            ActionExecutor.ActionType.TAP,
+            ActionExecutor.ActionType.CLICK,
+            ActionExecutor.ActionType.LONG_CLICK,
+            ActionExecutor.ActionType.DOUBLE_TAP,
+            ActionExecutor.ActionType.SCROLL,
+            ActionExecutor.ActionType.SET_TEXT,
+            ActionExecutor.ActionType.CLEAR_TEXT,
+            ActionExecutor.ActionType.WAIT -> true
+
+            ActionExecutor.ActionType.SWIPE ->
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N
+        }
+    }
+
+    override fun getLastActionResult(): ActionExecutor.ActionResult? {
+        return lastActionResult
+    }
+
+    // -------------------------------------------------------------------------
+    // TAP / CLICK
+    // -------------------------------------------------------------------------
+
+    private fun executeTapInternal(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return executeClickInternal(request)
+    }
+
+    private fun executeClickInternal(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val targetId = request.targetId
+        val coordinates = request.coordinates
+
+        if (targetId != null) {
+            return clickById(targetId, request)
+        }
+
+        if (coordinates != null) {
+            return clickByCoordinates(
+                x = coordinates.first,
+                y = coordinates.second,
+                request = request
+            )
+        }
+
+        return failure(
+            code = "CLICK_TARGET_MISSING",
+            message = "Either targetId or coordinates are required for CLICK",
+            request = request
+        )
+    }
+
+    private fun clickById(
+        targetId: String,
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
 
         var retries = 0
-        var lastError: Exception? = null
+        var lastError: Throwable? = null
 
         while (retries < MAX_RETRIES) {
+
             try {
                 val root = service.rootInActiveWindow
+
                 if (root == null) {
-                    lastError = IllegalStateException("No active window found")
-                    Thread.sleep(CLICK_RETRY_DELAY_MS)
+                    lastError =
+                        IllegalStateException("No active accessibility window")
                     retries++
+                    Thread.sleep(CLICK_RETRY_DELAY_MS)
                     continue
                 }
 
                 val node = findNodeById(root, targetId)
+
                 if (node == null) {
-                    lastError = IllegalStateException("Node not found: $targetId")
                     root.recycle()
-                    Thread.sleep(CLICK_RETRY_DELAY_MS)
+
+                    lastError =
+                        IllegalStateException("Node not found: $targetId")
+
                     retries++
+                    Thread.sleep(CLICK_RETRY_DELAY_MS)
                     continue
                 }
 
-                // Try to click
                 val success = performClick(node)
+
                 node.recycle()
                 root.recycle()
 
                 if (success) {
-                    return Result.Success(Unit)
-                } else {
-                    lastError = IllegalStateException("Click failed for: $targetId")
-                    Thread.sleep(CLICK_RETRY_DELAY_MS)
-                    retries++
+                    return success(
+                        actionType = request.type,
+                        message = "Action executed successfully"
+                    )
                 }
+
+                lastError =
+                    IllegalStateException("Accessibility click failed")
+
             } catch (e: Exception) {
                 lastError = e
+            }
+
+            retries++
+
+            if (retries < MAX_RETRIES) {
                 Thread.sleep(CLICK_RETRY_DELAY_MS)
-                retries++
             }
         }
 
-        return Result.Error(lastError ?: IllegalStateException("Click failed after $MAX_RETRIES retries"))
+        return failure(
+            code = "CLICK_FAILED",
+            message = lastError?.message
+                ?: "Click failed after $MAX_RETRIES retries",
+            request = request,
+            cause = lastError
+        )
     }
 
-    private fun executeClickByCoordinates(
+    private fun clickByCoordinates(
         x: Int,
         y: Int,
-        sessionId: String
-    ): Result<Unit> {
-        Log.d(TAG, "Click by coordinates: ($x, $y)")
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
 
-        try {
+        return try {
             val root = service.rootInActiveWindow
-            if (root == null) {
-                return Result.Error(IllegalStateException("No active window found"))
-            }
+                ?: return failure(
+                    code = "NO_ACTIVE_WINDOW",
+                    message = "No active accessibility window",
+                    request = request
+                )
 
             val node = findNodeAtCoordinates(root, x, y)
+
             if (node == null) {
                 root.recycle()
-                return Result.Error(IllegalStateException("No clickable node found at coordinates ($x, $y)"))
+
+                return failure(
+                    code = "NODE_NOT_FOUND",
+                    message = "No clickable node at ($x,$y)",
+                    request = request
+                )
             }
 
             val success = performClick(node)
+
             node.recycle()
             root.recycle()
 
-            return if (success) {
-                Result.Success(Unit)
+            if (success) {
+                success(
+                    actionType = request.type,
+                    message = "Coordinate click executed"
+                )
             } else {
-                Result.Error(IllegalStateException("Click at coordinates failed"))
+                failure(
+                    code = "CLICK_FAILED",
+                    message = "Coordinate click failed",
+                    request = request
+                )
             }
+
         } catch (e: Exception) {
-            return Result.Error(e)
+            failure(
+                code = "CLICK_EXCEPTION",
+                message = e.message ?: "Coordinate click failed",
+                request = request,
+                cause = e
+            )
         }
     }
 
-    private fun executeSetText(request: ActionExecutor.ActionRequest): Result<Unit> {
+    // -------------------------------------------------------------------------
+    // LONG CLICK
+    // -------------------------------------------------------------------------
+
+    private fun executeLongClick(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val targetId = request.targetId
+
+        if (targetId == null) {
+            return failure(
+                code = "LONG_CLICK_TARGET_MISSING",
+                message = "targetId is required for LONG_CLICK",
+                request = request
+            )
+        }
+
+        return try {
+            val root = service.rootInActiveWindow
+                ?: return failure(
+                    code = "NO_ACTIVE_WINDOW",
+                    message = "No active accessibility window",
+                    request = request
+                )
+
+            val node = findNodeById(root, targetId)
+
+            if (node == null) {
+                root.recycle()
+
+                return failure(
+                    code = "NODE_NOT_FOUND",
+                    message = "Node not found: $targetId",
+                    request = request
+                )
+            }
+
+            val success =
+                node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+
+            node.recycle()
+            root.recycle()
+
+            if (success) {
+                success(
+                    actionType = request.type,
+                    message = "Long click executed"
+                )
+            } else {
+                failure(
+                    code = "LONG_CLICK_FAILED",
+                    message = "Long click failed",
+                    request = request
+                )
+            }
+
+        } catch (e: Exception) {
+            failure(
+                code = "LONG_CLICK_EXCEPTION",
+                message = e.message ?: "Long click failed",
+                request = request,
+                cause = e
+            )
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // DOUBLE TAP
+    // -------------------------------------------------------------------------
+
+    private fun executeDoubleTap(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val first = executeClickInternal(
+            request.copy(type = ActionExecutor.ActionType.CLICK)
+        )
+
+        if (first is Result.Error) {
+            return first
+        }
+
+        Thread.sleep(100L)
+
+        return executeClickInternal(
+            request.copy(type = ActionExecutor.ActionType.CLICK)
+        ).mapSuccess(
+            actionType = request.type,
+            message = "Double tap executed"
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // SWIPE
+    // -------------------------------------------------------------------------
+
+    private fun executeSwipe(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        /*
+         * AccessibilityService gesture dispatch is intentionally kept
+         * conservative here. The platform-independent contract currently
+         * carries coordinates but does not define a start/end coordinate pair.
+         *
+         * Therefore a SWIPE request without a richer gesture contract
+         * cannot be executed safely.
+         */
+        return failure(
+            code = "SWIPE_CONTRACT_INCOMPLETE",
+            message = "SWIPE requires start/end coordinates in ActionRequest",
+            request = request
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // SCROLL
+    // -------------------------------------------------------------------------
+
+    private fun executeScrollInternal(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val direction =
+            request.targetText
+                ?.trim()
+                ?.uppercase()
+                ?: DIRECTION_FORWARD
+
+        return try {
+            val root = service.rootInActiveWindow
+                ?: return failure(
+                    code = "NO_ACTIVE_WINDOW",
+                    message = "No active accessibility window",
+                    request = request
+                )
+
+            val scrollable = findScrollableNode(root)
+
+            if (scrollable == null) {
+                root.recycle()
+
+                return failure(
+                    code = "SCROLLABLE_NODE_NOT_FOUND",
+                    message = "No scrollable node found",
+                    request = request
+                )
+            }
+
+            val action = when (direction) {
+                DIRECTION_FORWARD ->
+                    AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+
+                DIRECTION_BACKWARD ->
+                    AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+
+                DIRECTION_UP ->
+                    AccessibilityNodeInfo.ACTION_SCROLL_UP
+
+                DIRECTION_DOWN ->
+                    AccessibilityNodeInfo.ACTION_SCROLL_DOWN
+
+                DIRECTION_LEFT ->
+                    AccessibilityNodeInfo.ACTION_SCROLL_LEFT
+
+                DIRECTION_RIGHT ->
+                    AccessibilityNodeInfo.ACTION_SCROLL_RIGHT
+
+                else -> {
+                    scrollable.recycle()
+                    root.recycle()
+
+                    return failure(
+                        code = "INVALID_SCROLL_DIRECTION",
+                        message = "Unsupported scroll direction: $direction",
+                        request = request
+                    )
+                }
+            }
+
+            val success = scrollable.performAction(action)
+
+            scrollable.recycle()
+            root.recycle()
+
+            if (success) {
+                success(
+                    actionType = request.type,
+                    message = "Scroll executed: $direction"
+                )
+            } else {
+                failure(
+                    code = "SCROLL_FAILED",
+                    message = "Scroll action failed",
+                    request = request
+                )
+            }
+
+        } catch (e: Exception) {
+            failure(
+                code = "SCROLL_EXCEPTION",
+                message = e.message ?: "Scroll failed",
+                request = request,
+                cause = e
+            )
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SET TEXT
+    // -------------------------------------------------------------------------
+
+    private fun executeSetTextInternal(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
         val targetId = request.targetId
         val text = request.text
 
         if (targetId == null) {
-            return Result.Error(IllegalArgumentException("targetId is required for SET_TEXT action"))
+            return failure(
+                code = "SET_TEXT_TARGET_MISSING",
+                message = "targetId is required for SET_TEXT",
+                request = request
+            )
         }
 
         if (text == null) {
-            return Result.Error(IllegalArgumentException("text is required for SET_TEXT action"))
+            return failure(
+                code = "SET_TEXT_VALUE_MISSING",
+                message = "text is required for SET_TEXT",
+                request = request
+            )
         }
 
-        Log.d(TAG, "SetText: $targetId = '$text'")
-
-        try {
+        return try {
             val root = service.rootInActiveWindow
-            if (root == null) {
-                return Result.Error(IllegalStateException("No active window found"))
-            }
+                ?: return failure(
+                    code = "NO_ACTIVE_WINDOW",
+                    message = "No active accessibility window",
+                    request = request
+                )
 
             val node = findNodeById(root, targetId)
+
             if (node == null) {
                 root.recycle()
-                return Result.Error(IllegalStateException("Node not found: $targetId"))
+
+                return failure(
+                    code = "NODE_NOT_FOUND",
+                    message = "Node not found: $targetId",
+                    request = request
+                )
             }
 
-            // Ensure the node is editable
             if (!node.isEditable) {
                 node.recycle()
                 root.recycle()
-                return Result.Error(IllegalStateException("Node is not editable: $targetId"))
+
+                return failure(
+                    code = "NODE_NOT_EDITABLE",
+                    message = "Node is not editable: $targetId",
+                    request = request
+                )
             }
 
-            // Focus the node first
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
 
-            // Set text - use ACTION_SET_TEXT or perform action
-            val success = performSetText(node, text)
+            val arguments = Bundle().apply {
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    text
+                )
+            }
+
+            val success = node.performAction(
+                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                arguments
+            )
+
             node.recycle()
             root.recycle()
 
-            return if (success) {
-                Result.Success(Unit)
+            if (success) {
+                success(
+                    actionType = request.type,
+                    message = "Text set successfully"
+                )
             } else {
-                Result.Error(IllegalStateException("SetText failed for: $targetId"))
+                failure(
+                    code = "SET_TEXT_FAILED",
+                    message = "ACTION_SET_TEXT failed",
+                    request = request
+                )
             }
+
         } catch (e: Exception) {
-            return Result.Error(e)
+            failure(
+                code = "SET_TEXT_EXCEPTION",
+                message = e.message ?: "Set text failed",
+                request = request,
+                cause = e
+            )
         }
     }
 
-    private fun executeScroll(request: ActionExecutor.ActionRequest): Result<Unit> {
-        Log.d(TAG, "Scroll action requested")
+    // -------------------------------------------------------------------------
+    // CLEAR TEXT
+    // -------------------------------------------------------------------------
 
-        try {
-            val root = service.rootInActiveWindow
-            if (root == null) {
-                return Result.Error(IllegalStateException("No active window found"))
-            }
+    private fun executeClearTextInternal(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
 
-            // Find a scrollable node
-            val scrollable = findScrollableNode(root)
-            if (scrollable == null) {
-                root.recycle()
-                return Result.Error(IllegalStateException("No scrollable node found"))
-            }
+        val targetId = request.targetId
 
-            // Determine scroll direction from request params
-            val direction = request.direction ?: ActionExecutor.ScrollDirection.FORWARD
-            val action = when (direction) {
-                ActionExecutor.ScrollDirection.FORWARD -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-                ActionExecutor.ScrollDirection.BACKWARD -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-                ActionExecutor.ScrollDirection.UP -> AccessibilityNodeInfo.ACTION_SCROLL_UP
-                ActionExecutor.ScrollDirection.DOWN -> AccessibilityNodeInfo.ACTION_SCROLL_DOWN
-                ActionExecutor.ScrollDirection.LEFT -> AccessibilityNodeInfo.ACTION_SCROLL_LEFT
-                ActionExecutor.ScrollDirection.RIGHT -> AccessibilityNodeInfo.ACTION_SCROLL_RIGHT
-            }
-
-            val success = scrollable.performAction(action)
-            scrollable.recycle()
-            root.recycle()
-
-            return if (success) {
-                Result.Success(Unit)
-            } else {
-                Result.Error(IllegalStateException("Scroll action failed"))
-            }
-        } catch (e: Exception) {
-            return Result.Error(e)
+        if (targetId == null) {
+            return failure(
+                code = "CLEAR_TEXT_TARGET_MISSING",
+                message = "targetId is required for CLEAR_TEXT",
+                request = request
+            )
         }
+
+        return executeSetTextInternal(
+            request.copy(
+                type = ActionExecutor.ActionType.SET_TEXT,
+                text = ""
+            )
+        ).mapSuccess(
+            actionType = ActionExecutor.ActionType.CLEAR_TEXT,
+            message = "Text cleared successfully"
+        )
     }
 
-    private fun executeWait(request: ActionExecutor.ActionRequest): Result<Unit> {
-        val waitMs = request.waitMs ?: 1000L
-        Log.d(TAG, "Wait: ${waitMs}ms")
+    // -------------------------------------------------------------------------
+    // WAIT
+    // -------------------------------------------------------------------------
 
-        try {
-            Thread.sleep(waitMs)
-            return Result.Success(Unit)
+    private fun executeWaitInternal(
+        request: ActionExecutor.ActionRequest
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val duration =
+            request.durationMs.coerceAtLeast(0L)
+
+        return try {
+            if (duration > 0L) {
+                Thread.sleep(duration)
+            }
+
+            success(
+                actionType = request.type,
+                message = "Wait completed: ${duration}ms"
+            )
+
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            return Result.Error(e)
+
+            failure(
+                code = "WAIT_INTERRUPTED",
+                message = "Wait interrupted",
+                request = request,
+                cause = e
+            )
         }
     }
 
-    private fun executeBack(request: ActionExecutor.ActionRequest): Result<Unit> {
-        Log.d(TAG, "Back action")
+    // -------------------------------------------------------------------------
+    // Accessibility helpers
+    // -------------------------------------------------------------------------
 
-        try {
-            val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            return if (success) {
-                Result.Success(Unit)
-            } else {
-                Result.Error(IllegalStateException("Back action failed"))
-            }
-        } catch (e: Exception) {
-            return Result.Error(e)
-        }
-    }
+    private fun findNodeById(
+        root: AccessibilityNodeInfo,
+        id: String
+    ): AccessibilityNodeInfo? {
 
-    private fun executeHome(request: ActionExecutor.ActionRequest): Result<Unit> {
-        Log.d(TAG, "Home action")
-
-        try {
-            val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            return if (success) {
-                Result.Success(Unit)
-            } else {
-                Result.Error(IllegalStateException("Home action failed"))
-            }
-        } catch (e: Exception) {
-            return Result.Error(e)
-        }
-    }
-
-    private fun executeRecentApps(request: ActionExecutor.ActionRequest): Result<Unit> {
-        Log.d(TAG, "Recent apps action")
-
-        try {
-            val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
-            return if (success) {
-                Result.Success(Unit)
-            } else {
-                Result.Error(IllegalStateException("Recent apps action failed"))
-            }
-        } catch (e: Exception) {
-            return Result.Error(e)
-        }
-    }
-
-    // --- Helper Methods ---
-
-    private fun findNodeById(root: AccessibilityNodeInfo, id: String): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(AccessibilityNodeInfo.obtain(root))
 
         while (queue.isNotEmpty()) {
+
             val node = queue.removeFirst()
 
-            // Check if this node has the target ID
-            val viewId = node.viewIdResourceName
-            if (viewId != null && viewId == id) {
-                // We need to return a new instance
-                return AccessibilityNodeInfo.obtain(node)
+            if (node.viewIdResourceName == id) {
+                while (queue.isNotEmpty()) {
+                    queue.removeFirst().recycle()
+                }
+
+                return node
             }
 
-            // Add children to queue
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
+            for (index in 0 until node.childCount) {
+                val child = node.getChild(index)
+                if (child != null) {
+                    queue.addLast(child)
+                }
             }
 
-            if (node !== root) {
-                node.recycle()
-            }
+            node.recycle()
         }
 
         return null
@@ -325,95 +759,150 @@ class AndroidActionExecutor(
         x: Int,
         y: Int
     ): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(AccessibilityNodeInfo.obtain(root))
 
         while (queue.isNotEmpty()) {
+
             val node = queue.removeFirst()
 
-            // Check if node contains the coordinates and is clickable
-            val bounds = android.graphics.Rect()
+            val bounds = Rect()
             node.getBoundsInScreen(bounds)
 
             if (bounds.contains(x, y) && node.isClickable) {
-                return AccessibilityNodeInfo.obtain(node)
+
+                while (queue.isNotEmpty()) {
+                    queue.removeFirst().recycle()
+                }
+
+                return node
             }
 
-            // Add children to queue (they might be more specific)
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
+            for (index in 0 until node.childCount) {
+                val child = node.getChild(index)
+                if (child != null) {
+                    queue.addLast(child)
+                }
             }
 
-            if (node !== root) {
-                node.recycle()
-            }
+            node.recycle()
         }
 
         return null
     }
 
-    private fun findScrollableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+    private fun findScrollableNode(
+        root: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo? {
+
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(AccessibilityNodeInfo.obtain(root))
 
         while (queue.isNotEmpty()) {
+
             val node = queue.removeFirst()
 
-            // Check if node is scrollable
             if (node.isScrollable) {
-                return AccessibilityNodeInfo.obtain(node)
+
+                while (queue.isNotEmpty()) {
+                    queue.removeFirst().recycle()
+                }
+
+                return node
             }
 
-            // Add children to queue
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.addLast(it) }
+            for (index in 0 until node.childCount) {
+                val child = node.getChild(index)
+                if (child != null) {
+                    queue.addLast(child)
+                }
             }
 
-            if (node !== root) {
-                node.recycle()
-            }
+            node.recycle()
         }
 
         return null
     }
 
-    private fun performClick(node: AccessibilityNodeInfo): Boolean {
-        // Try ACTION_CLICK first
-        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+    private fun performClick(
+        node: AccessibilityNodeInfo
+    ): Boolean {
+
+        if (node.isClickable &&
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        ) {
             return true
         }
 
-        // Try ACTION_SELECT if click fails
-        if (node.performAction(AccessibilityNodeInfo.ACTION_SELECT)) {
-            return true
-        }
-
-        // Try ACTION_SET_SELECTION if available
-        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION)) {
-            return true
-        }
-
-        return false
+        return node.performAction(
+            AccessibilityNodeInfo.ACTION_SELECT
+        )
     }
 
-    private fun performSetText(node: AccessibilityNodeInfo, text: String): Boolean {
-        // Try ACTION_SET_TEXT
-        val arguments = android.os.Bundle()
-        arguments.putCharSequence(
-            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-            text
+    // -------------------------------------------------------------------------
+    // Result helpers
+    // -------------------------------------------------------------------------
+
+    private fun success(
+        actionType: ActionExecutor.ActionType,
+        message: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        val result = ActionExecutor.ActionResult(
+            success = true,
+            actionType = actionType,
+            message = message
         )
 
-        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)) {
-            return true
+        lastActionResult = result
+
+        return Result.Success(result)
+    }
+
+    private fun failure(
+        code: String,
+        message: String,
+        request: ActionExecutor.ActionRequest,
+        cause: Throwable? = null
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        if (cause != null) {
+            Log.e(TAG, message, cause)
+        } else {
+            Log.e(TAG, message)
         }
 
-        // Fallback: Try ACTION_PASTE if available
-        // Some apps might need this for input fields
-        if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
-            // Then we'd need to clear and set text differently
-            // This is a simplified fallback
-            return false
-        }
+        val error = ActionError(
+            code = code,
+            message = message,
+            actionType = request.type,
+            targetId = request.targetId
+        )
 
-        return false
+        val result = ActionExecutor.ActionResult(
+            success = false,
+            actionType = request.type,
+            message = message
+        )
+
+        lastActionResult = result
+
+        return Result.Error(error)
+    }
+
+    private fun Result<ActionExecutor.ActionResult, ActionError>.mapSuccess(
+        actionType: ActionExecutor.ActionType,
+        message: String
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+
+        return when (this) {
+            is Result.Success -> success(
+                actionType = actionType,
+                message = message
+            )
+
+            is Result.Error -> this
+        }
     }
 }
