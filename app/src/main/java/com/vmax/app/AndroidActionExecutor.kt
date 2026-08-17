@@ -35,10 +35,6 @@ class AndroidActionExecutor(
 
         private const val DIRECTION_FORWARD = "FORWARD"
         private const val DIRECTION_BACKWARD = "BACKWARD"
-        private const val DIRECTION_UP = "UP"
-        private const val DIRECTION_DOWN = "DOWN"
-        private const val DIRECTION_LEFT = "LEFT"
-        private const val DIRECTION_RIGHT = "RIGHT"
     }
 
     @Volatile
@@ -171,6 +167,7 @@ class AndroidActionExecutor(
         actionType: ActionExecutor.ActionType
     ): Boolean {
         return when (actionType) {
+
             ActionExecutor.ActionType.TAP,
             ActionExecutor.ActionType.CLICK,
             ActionExecutor.ActionType.LONG_CLICK,
@@ -181,11 +178,13 @@ class AndroidActionExecutor(
             ActionExecutor.ActionType.WAIT -> true
 
             ActionExecutor.ActionType.SWIPE ->
-                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N
+                android.os.Build.VERSION.SDK_INT >=
+                    android.os.Build.VERSION_CODES.N
         }
     }
 
-    override fun getLastActionResult(): ActionExecutor.ActionResult? {
+    override fun getLastActionResult():
+        ActionExecutor.ActionResult? {
         return lastActionResult
     }
 
@@ -240,19 +239,27 @@ class AndroidActionExecutor(
 
                 if (root == null) {
                     lastError =
-                        IllegalStateException("No active accessibility window")
+                        IllegalStateException(
+                            "No active accessibility window"
+                        )
+
                     retries++
                     Thread.sleep(CLICK_RETRY_DELAY_MS)
                     continue
                 }
 
-                val node = findNodeById(root, targetId)
+                val node = findNodeById(
+                    root = root,
+                    id = targetId
+                )
 
                 if (node == null) {
                     root.recycle()
 
                     lastError =
-                        IllegalStateException("Node not found: $targetId")
+                        IllegalStateException(
+                            "Node not found: $targetId"
+                        )
 
                     retries++
                     Thread.sleep(CLICK_RETRY_DELAY_MS)
@@ -272,7 +279,9 @@ class AndroidActionExecutor(
                 }
 
                 lastError =
-                    IllegalStateException("Accessibility click failed")
+                    IllegalStateException(
+                        "Accessibility click failed"
+                    )
 
             } catch (e: Exception) {
                 lastError = e
@@ -301,6 +310,7 @@ class AndroidActionExecutor(
     ): Result<ActionExecutor.ActionResult, ActionError> {
 
         return try {
+
             val root = service.rootInActiveWindow
                 ?: return failure(
                     code = "NO_ACTIVE_WINDOW",
@@ -308,7 +318,11 @@ class AndroidActionExecutor(
                     request = request
                 )
 
-            val node = findNodeAtCoordinates(root, x, y)
+            val node = findNodeAtCoordinates(
+                root = root,
+                x = x,
+                y = y
+            )
 
             if (node == null) {
                 root.recycle()
@@ -367,6 +381,7 @@ class AndroidActionExecutor(
         }
 
         return try {
+
             val root = service.rootInActiveWindow
                 ?: return failure(
                     code = "NO_ACTIVE_WINDOW",
@@ -374,7 +389,10 @@ class AndroidActionExecutor(
                     request = request
                 )
 
-            val node = findNodeById(root, targetId)
+            val node = findNodeById(
+                root = root,
+                id = targetId
+            )
 
             if (node == null) {
                 root.recycle()
@@ -387,7 +405,9 @@ class AndroidActionExecutor(
             }
 
             val success =
-                node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                node.performAction(
+                    AccessibilityNodeInfo.ACTION_LONG_CLICK
+                )
 
             node.recycle()
             root.recycle()
@@ -424,7 +444,9 @@ class AndroidActionExecutor(
     ): Result<ActionExecutor.ActionResult, ActionError> {
 
         val first = executeClickInternal(
-            request.copy(type = ActionExecutor.ActionType.CLICK)
+            request.copy(
+                type = ActionExecutor.ActionType.CLICK
+            )
         )
 
         if (first is Result.Error) {
@@ -434,7 +456,9 @@ class AndroidActionExecutor(
         Thread.sleep(100L)
 
         return executeClickInternal(
-            request.copy(type = ActionExecutor.ActionType.CLICK)
+            request.copy(
+                type = ActionExecutor.ActionType.CLICK
+            )
         ).mapSuccess(
             actionType = request.type,
             message = "Double tap executed"
@@ -451,11 +475,13 @@ class AndroidActionExecutor(
 
         /*
          * AccessibilityService gesture dispatch is intentionally kept
-         * conservative here. The platform-independent contract currently
-         * carries coordinates but does not define a start/end coordinate pair.
+         * conservative here.
          *
-         * Therefore a SWIPE request without a richer gesture contract
-         * cannot be executed safely.
+         * The current platform-independent ActionRequest contract
+         * carries only a single coordinate pair and does not define
+         * start/end coordinates for a swipe.
+         *
+         * Therefore a SWIPE request cannot be safely executed yet.
          */
         return failure(
             code = "SWIPE_CONTRACT_INCOMPLETE",
@@ -479,6 +505,7 @@ class AndroidActionExecutor(
                 ?: DIRECTION_FORWARD
 
         return try {
+
             val root = service.rootInActiveWindow
                 ?: return failure(
                     code = "NO_ACTIVE_WINDOW",
@@ -498,24 +525,25 @@ class AndroidActionExecutor(
                 )
             }
 
+            /*
+             * Android AccessibilityNodeInfo provides the generic
+             * forward/backward scroll actions used here.
+             *
+             * Direction-specific constants such as:
+             * ACTION_SCROLL_UP
+             * ACTION_SCROLL_DOWN
+             * ACTION_SCROLL_LEFT
+             * ACTION_SCROLL_RIGHT
+             *
+             * are not available in the SDK contract used by this project.
+             */
             val action = when (direction) {
+
                 DIRECTION_FORWARD ->
                     AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
 
                 DIRECTION_BACKWARD ->
                     AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-
-                DIRECTION_UP ->
-                    AccessibilityNodeInfo.ACTION_SCROLL_UP
-
-                DIRECTION_DOWN ->
-                    AccessibilityNodeInfo.ACTION_SCROLL_DOWN
-
-                DIRECTION_LEFT ->
-                    AccessibilityNodeInfo.ACTION_SCROLL_LEFT
-
-                DIRECTION_RIGHT ->
-                    AccessibilityNodeInfo.ACTION_SCROLL_RIGHT
 
                 else -> {
                     scrollable.recycle()
@@ -523,7 +551,9 @@ class AndroidActionExecutor(
 
                     return failure(
                         code = "INVALID_SCROLL_DIRECTION",
-                        message = "Unsupported scroll direction: $direction",
+                        message =
+                            "Unsupported scroll direction: $direction. " +
+                                "Use FORWARD or BACKWARD.",
                         request = request
                     )
                 }
@@ -535,11 +565,14 @@ class AndroidActionExecutor(
             root.recycle()
 
             if (success) {
+
                 success(
                     actionType = request.type,
                     message = "Scroll executed: $direction"
                 )
+
             } else {
+
                 failure(
                     code = "SCROLL_FAILED",
                     message = "Scroll action failed",
@@ -548,6 +581,7 @@ class AndroidActionExecutor(
             }
 
         } catch (e: Exception) {
+
             failure(
                 code = "SCROLL_EXCEPTION",
                 message = e.message ?: "Scroll failed",
@@ -585,6 +619,7 @@ class AndroidActionExecutor(
         }
 
         return try {
+
             val root = service.rootInActiveWindow
                 ?: return failure(
                     code = "NO_ACTIVE_WINDOW",
@@ -592,7 +627,10 @@ class AndroidActionExecutor(
                     request = request
                 )
 
-            val node = findNodeById(root, targetId)
+            val node = findNodeById(
+                root = root,
+                id = targetId
+            )
 
             if (node == null) {
                 root.recycle()
@@ -605,6 +643,7 @@ class AndroidActionExecutor(
             }
 
             if (!node.isEditable) {
+
                 node.recycle()
                 root.recycle()
 
@@ -615,11 +654,14 @@ class AndroidActionExecutor(
                 )
             }
 
-            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            node.performAction(
+                AccessibilityNodeInfo.ACTION_FOCUS
+            )
 
             val arguments = Bundle().apply {
                 putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    AccessibilityNodeInfo
+                        .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                     text
                 )
             }
@@ -633,11 +675,14 @@ class AndroidActionExecutor(
             root.recycle()
 
             if (success) {
+
                 success(
                     actionType = request.type,
                     message = "Text set successfully"
                 )
+
             } else {
+
                 failure(
                     code = "SET_TEXT_FAILED",
                     message = "ACTION_SET_TEXT failed",
@@ -646,6 +691,7 @@ class AndroidActionExecutor(
             }
 
         } catch (e: Exception) {
+
             failure(
                 code = "SET_TEXT_EXCEPTION",
                 message = e.message ?: "Set text failed",
@@ -696,6 +742,7 @@ class AndroidActionExecutor(
             request.durationMs.coerceAtLeast(0L)
 
         return try {
+
             if (duration > 0L) {
                 Thread.sleep(duration)
             }
@@ -706,6 +753,7 @@ class AndroidActionExecutor(
             )
 
         } catch (e: InterruptedException) {
+
             Thread.currentThread().interrupt()
 
             failure(
@@ -727,13 +775,17 @@ class AndroidActionExecutor(
     ): AccessibilityNodeInfo? {
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(AccessibilityNodeInfo.obtain(root))
+
+        queue.add(
+            AccessibilityNodeInfo.obtain(root)
+        )
 
         while (queue.isNotEmpty()) {
 
             val node = queue.removeFirst()
 
             if (node.viewIdResourceName == id) {
+
                 while (queue.isNotEmpty()) {
                     queue.removeFirst().recycle()
                 }
@@ -742,7 +794,9 @@ class AndroidActionExecutor(
             }
 
             for (index in 0 until node.childCount) {
+
                 val child = node.getChild(index)
+
                 if (child != null) {
                     queue.addLast(child)
                 }
@@ -761,13 +815,17 @@ class AndroidActionExecutor(
     ): AccessibilityNodeInfo? {
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(AccessibilityNodeInfo.obtain(root))
+
+        queue.add(
+            AccessibilityNodeInfo.obtain(root)
+        )
 
         while (queue.isNotEmpty()) {
 
             val node = queue.removeFirst()
 
             val bounds = Rect()
+
             node.getBoundsInScreen(bounds)
 
             if (bounds.contains(x, y) && node.isClickable) {
@@ -780,7 +838,9 @@ class AndroidActionExecutor(
             }
 
             for (index in 0 until node.childCount) {
+
                 val child = node.getChild(index)
+
                 if (child != null) {
                     queue.addLast(child)
                 }
@@ -797,7 +857,10 @@ class AndroidActionExecutor(
     ): AccessibilityNodeInfo? {
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(AccessibilityNodeInfo.obtain(root))
+
+        queue.add(
+            AccessibilityNodeInfo.obtain(root)
+        )
 
         while (queue.isNotEmpty()) {
 
@@ -813,7 +876,9 @@ class AndroidActionExecutor(
             }
 
             for (index in 0 until node.childCount) {
+
                 val child = node.getChild(index)
+
                 if (child != null) {
                     queue.addLast(child)
                 }
@@ -829,8 +894,11 @@ class AndroidActionExecutor(
         node: AccessibilityNodeInfo
     ): Boolean {
 
-        if (node.isClickable &&
-            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        if (
+            node.isClickable &&
+            node.performAction(
+                AccessibilityNodeInfo.ACTION_CLICK
+            )
         ) {
             return true
         }
@@ -897,12 +965,15 @@ class AndroidActionExecutor(
     ): Result<ActionExecutor.ActionResult, ActionError> {
 
         return when (this) {
-            is Result.Success -> success(
-                actionType = actionType,
-                message = message
-            )
 
-            is Result.Error -> this
+            is Result.Success ->
+                success(
+                    actionType = actionType,
+                    message = message
+                )
+
+            is Result.Error ->
+                this
         }
     }
 }
