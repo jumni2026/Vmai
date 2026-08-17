@@ -7,43 +7,99 @@ package com.vmax.workflow
  *
  * Canonical workflow state contract.
  *
- * This file contains the single shared state model used by:
+ * IMPORTANT:
+ * This is the SINGLE source of truth for workflow states.
+ *
+ * Used by:
  * - WorkflowController
  * - MainViewModel
  * - MainActivity
+ * - Workflow execution/orchestration layer
  *
- * Platform-independent:
+ * Platform independent:
  * - No Android imports
  * - No Compose imports
  * - No AccessibilityService imports
  *
- * The state machine describes the lifecycle of the VMAX workflow
- * without performing any action itself.
+ * This enum only describes workflow state.
+ * It does not execute any action.
  */
 enum class WorkflowState {
 
     /**
-     * Workflow is not configured or not running.
+     * Initial state.
+     *
+     * No workflow is configured or running.
      */
     IDLE,
 
     /**
-     * Workflow configuration has been accepted
-     * and is waiting for the execution engine.
+     * Workflow configuration has been accepted.
+     *
+     * The workflow is ready to be handed to the execution layer.
      */
     CONFIGURED,
 
     /**
-     * Workflow execution is currently active.
+     * Workflow is actively executing.
      */
     RUNNING,
 
     /**
-     * Workflow has reached a security/user-controlled boundary.
+     * Workflow is armed and waiting for a valid screen/action.
      *
-     * Automation must not continue automatically from this state.
+     * This state is useful for the accessibility/screen-driven
+     * execution pipeline.
+     */
+    ARMED,
+
+    /**
+     * Workflow has reached a security-sensitive or
+     * user-controlled boundary.
+     *
+     * Automation MUST NOT continue automatically.
+     *
+     * Examples:
+     * - CAPTCHA
+     * - OTP
+     * - Payment authentication
+     * - Other sensitive screens
      */
     USER_BOUNDARY,
+
+    /**
+     * Gender dropdown has been opened.
+     *
+     * Workflow is waiting for the gender option.
+     */
+    GENDER_DROPDOWN_OPENED,
+
+    /**
+     * Meal dropdown has been opened.
+     *
+     * Workflow is waiting for the meal option.
+     */
+    MEAL_DROPDOWN_OPENED,
+
+    /**
+     * Passenger name has been successfully entered.
+     */
+    PASSENGER_NAME_TYPED,
+
+    /**
+     * Passenger age has been successfully entered.
+     */
+    PASSENGER_AGE_TYPED,
+
+    /**
+     * Passenger gender has been successfully selected.
+     */
+    PASSENGER_GENDER_SELECTED,
+
+    /**
+     * Passenger meal preference has been successfully selected.
+     */
+    PASSENGER_MEAL_SELECTED,
 
     /**
      * Workflow has been explicitly stopped.
@@ -51,42 +107,10 @@ enum class WorkflowState {
     STOPPED,
 
     /**
-     * Workflow failed because of an execution or configuration error.
+     * Workflow terminated because of an error.
      *
-     * The actual error message is carried by WorkflowController's
-     * error handling mechanism rather than being stored in this enum.
+     * Detailed error information should be handled by
+     * the controller/error-reporting layer, not this enum.
      */
-    ERROR,
-
-    /**
-     * Gender dropdown is currently open and the workflow
-     * is waiting for the gender option to be selected.
-     */
-    GENDER_DROPDOWN_OPENED,
-
-    /**
-     * Meal dropdown is currently open and the workflow
-     * is waiting for the meal option to be selected.
-     */
-    MEAL_DROPDOWN_OPENED,
-
-    /**
-     * Passenger name has been entered successfully.
-     */
-    PASSENGER_NAME_TYPED,
-
-    /**
-     * Passenger age has been entered successfully.
-     */
-    PASSENGER_AGE_TYPED,
-
-    /**
-     * Passenger gender has been selected successfully.
-     */
-    PASSENGER_GENDER_SELECTED,
-
-    /**
-     * Passenger meal preference has been selected successfully.
-     */
-    PASSENGER_MEAL_SELECTED
+    ERROR
 }
