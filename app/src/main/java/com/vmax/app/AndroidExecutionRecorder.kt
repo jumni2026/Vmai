@@ -1,7 +1,7 @@
 package com.vmax.app
 
 import com.vmax.action.ExecutionEvent
-import com.vmax.runtime.ExecutionRecorder
+import com.vmax.action.ExecutionRecorder
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -9,21 +9,24 @@ import kotlinx.coroutines.runBlocking
  *
  * File — AndroidExecutionRecorder.kt
  *
- * Android implementation of the ExecutionRecorder interface.
- * Uses AndroidExecutionHistoryStore for persistent storage.
+ * Android implementation of the platform-independent
+ * ExecutionRecorder contract.
+ *
+ * Storage:
+ * AndroidExecutionHistoryStore
  *
  * Responsibilities:
- * - Record a single ExecutionEvent to storage (append to session).
- * - Retrieve all events for a given session ID.
- * - List all available session IDs.
- * - Clear all history.
+ * - Record execution events.
+ * - Retrieve session events.
+ * - Retrieve all session IDs.
+ * - Clear execution history.
  */
 class AndroidExecutionRecorder(
     private val historyStore: AndroidExecutionHistoryStore
 ) : ExecutionRecorder {
 
     override fun recordEvent(event: ExecutionEvent) {
-        // Extract sessionId from the sealed class event
+
         val sessionId = when (event) {
             is ExecutionEvent.SessionStarted -> event.sessionId
             is ExecutionEvent.SessionStopped -> event.sessionId
@@ -34,15 +37,23 @@ class AndroidExecutionRecorder(
             is ExecutionEvent.ActionFailed -> event.sessionId
         }
 
-        // Append event to the session's event list
         runBlocking {
-            val existingEvents = historyStore.getSessionEvents(sessionId)
-            val updatedEvents = existingEvents + event
-            historyStore.saveSessionEvents(sessionId, updatedEvents)
+            val existingEvents =
+                historyStore.getSessionEvents(sessionId)
+
+            val updatedEvents =
+                existingEvents + event
+
+            historyStore.saveSessionEvents(
+                sessionId,
+                updatedEvents
+            )
         }
     }
 
-    override fun getSessionEvents(sessionId: String): List<ExecutionEvent> {
+    override fun getSessionEvents(
+        sessionId: String
+    ): List<ExecutionEvent> {
         return runBlocking {
             historyStore.getSessionEvents(sessionId)
         }
