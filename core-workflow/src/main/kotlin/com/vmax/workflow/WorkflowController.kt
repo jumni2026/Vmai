@@ -1,17 +1,38 @@
 package com.vmax.workflow
 
+import com.vmax.action.ExecutionEvent
+import com.vmax.action.ExecutionRecorder
+import com.vmax.action.MetricsCollector
+import com.vmax.core_intelligence.OcrResult
 import com.vmax.core_intelligence.ScreenAnalyzer
 import com.vmax.core_intelligence.TextClassifier
-import com.vmax.core_intelligence.OcrResult
-import com.vmax.core_intelligence.UIEvidenceCollector
 import com.vmax.core_intelligence.UIEvidenceCollector.ScreenEvidence.UIElement
-import com.vmax.action.MetricsCollector
-import com.vmax.action.ExecutionRecorder
-import com.vmax.action.ExecutionEvent
+import com.vmax.model.BookingRequest
+import com.vmax.model.PassengerProfile
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.UUID
 
 /**
- * IRCTC-specific workflow controller.
- * Platform-agnostic - No Android dependencies.
+ * VMAX Enterprise v2.6.1
+ *
+ * File: WorkflowController.kt
+ *
+ * Platform-independent workflow controller.
+ *
+ * Responsibilities:
+ * - Maintain workflow lifecycle state.
+ * - Convert screen analysis into WorkflowAction.
+ * - Enforce user/security boundaries.
+ * - Maintain workflow session identity.
+ * - Coordinate MetricsCollector and ExecutionRecorder.
+ *
+ * Architecture:
+ * - No Android imports.
+ * - No AccessibilityService imports.
+ * - No Compose imports.
+ * - Uses canonical WorkflowState from WorkflowState.kt.
  */
 class WorkflowController(
     private val orchestrator: ActionOrchestrator,
@@ -20,10 +41,57 @@ class WorkflowController(
     private val metrics: MetricsCollector,
     private val recorder: ExecutionRecorder
 ) {
+
     companion object {
+
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
+
+        @Volatile
+        private var instance: WorkflowController? = null
+
+        /**
+         * Returns the globally configured WorkflowController.
+         *
+         * The actual controller must be initialized by the application
+         * composition/wiring layer before use.
+         */
+        @JvmStatic
+        fun getInstance(): WorkflowController {
+            return instance
+                ?: throw IllegalStateException(
+                    "WorkflowController has not been initialized. " +
+                        "Initialize it from the application wiring layer first."
+                )
+        }
+
+        /**
+         * Registers the canonical WorkflowController instance.
+         *
+         * This keeps construction/dependency wiring outside this class.
+         */
+        @JvmStatic
+        fun initialize(controller: WorkflowController) {
+            synchronized(this) {
+                instance = controller
+            }
+        }
+
+        /**
+         * Clears the singleton reference.
+         *
+         * Intended for application/test teardown.
+         */
+        @JvmStatic
+        fun clearInstance() {
+            synchronized(this) {
+                instance = null
+            }
+        }
     }
 
+    /**
+     * Passenger data required by the workflow engine.
+     */
     data class PassengerDetails(
         val from: String,
         val to: String,
@@ -36,150 +104,302 @@ class WorkflowController(
         val meal: String
     )
 
-    enum class WorkflowState {
-        IDLE, ARMED, USER_BOUNDARY, STOPPED,
-        GENDER_DROPDOWN_OPENED, MEAL_DROPDOWN_OPENED,
-        PASSENGER_NAME_TYPED, PASSENGER_AGE_TYPED,
-        PASSENGER_GENDER_SELECTED, PASSENGER_MEAL_SELECTED
+    // -------------------------------------------------------------------------
+    // Canonical workflow state
+    // -------------------------------------------------------------------------
+
+    private val _state =
+        MutableStateFlow(WorkflowState.IDLE)
+
+    /**
+     * Public read-only workflow state.
+     */
+    val state: StateFlow<WorkflowState> =
+        _state.asStateFlow()
+
+    /**
+     * Internal state accessor.
+     */
+    private var currentState: WorkflowState
+        get() = _state.value
+        set(value) {
+            _state.value = value
+        }
+
+    // -------------------------------------------------------------------------
+    // Runtime session data
+    // -------------------------------------------------------------------------
+
+    private var currentSessionId: String = ""
+
+    private var passengerDetails: PassengerDetails? = null
+
+    private var lastSuggestedAction:
+        ScreenAnalyzer.SuggestedAction? = null
+
+    // -------------------------------------------------------------------------
+    // Public lifecycle API
+    // -------------------------------------------------------------------------
+
+    /**
+     * Starts the workflow using the platform-independent booking contract.
+     *
+     * This API is kept for MainViewModel/application orchestration.
+     */
+    fun start(
+        bookingRequest: BookingRequest,
+        passengerProfile: PassengerProfile
+    ): Boolean {
+
+        val passenger = bookingRequest.passengers.firstOrNull()
+            ?: return false
+
+        val details = PassengerDetails(
+            from = bookingRequest.fromStation.code,
+            to = bookingRequest.toStation.code,
+            date = bookingRequest.date,
+            train = bookingRequest.train.number,
+            trainClass = bookingRequest.train.classType,
+            name = passenger.name,
+            age = passenger.age.toString(),
+            gender = passenger.gender,
+            meal = ""
+        )
+
+        val sessionId = UUID.randomUUID().toString()
+
+        return startWorkflow(
+            details = details,
+            sessionId = sessionId
+        )
     }
 
-    private var currentState = WorkflowState.IDLE
-    private var currentSessionId = ""
-    private var passengerDetails: PassengerDetails? = null
-    private var lastSuggestedAction: ScreenAnalyzer.SuggestedAction? = null
+    /**
+     * Stops the currently running workflow.
+     */
+    fun stop() {
+        stopWorkflow()
+    }
 
+    /**
+     * Starts a workflow session.
+     */
     fun startWorkflow(
         details: PassengerDetails,
         sessionId: String
     ): Boolean {
+
         if (currentState != WorkflowState.IDLE) {
             return false
         }
 
-        if (details.from.isBlank() ||
-            details.to.isBlank() ||
-            details.train.isBlank() ||
-            details.trainClass.isBlank() ||
-            details.name.isBlank() ||
-            details.age.isBlank() ||
-            details.gender.isBlank()
-        ) {
+        if (sessionId.isBlank()) {
+            return false
+        }
+
+        if (!isValidPassengerDetails(details)) {
             return false
         }
 
         passengerDetails = details
         currentSessionId = sessionId
-        currentState = WorkflowState.ARMED
+        lastSuggestedAction = null
+
+        currentState = WorkflowState.CONFIGURED
+        currentState = WorkflowState.RUNNING
+
         return true
     }
 
+    /**
+     * Stops the current workflow.
+     */
     fun stopWorkflow() {
-        if (currentState == WorkflowState.STOPPED ||
-            currentState == WorkflowState.IDLE
+
+        if (currentState == WorkflowState.IDLE ||
+            currentState == WorkflowState.STOPPED
         ) {
             return
         }
 
         currentState = WorkflowState.STOPPED
+        lastSuggestedAction = null
     }
 
+    /**
+     * Returns the current workflow state.
+     */
+    fun getCurrentState(): WorkflowState =
+        currentState
+
+    /**
+     * Returns the active session ID.
+     */
+    fun getSessionId(): String =
+        currentSessionId
+
+    /**
+     * Returns whether the workflow is currently active.
+     */
+    fun isActive(): Boolean {
+        return currentState == WorkflowState.CONFIGURED ||
+            currentState == WorkflowState.RUNNING ||
+            currentState == WorkflowState.GENDER_DROPDOWN_OPENED ||
+            currentState == WorkflowState.MEAL_DROPDOWN_OPENED ||
+            currentState == WorkflowState.PASSENGER_NAME_TYPED ||
+            currentState == WorkflowState.PASSENGER_AGE_TYPED ||
+            currentState == WorkflowState.PASSENGER_GENDER_SELECTED ||
+            currentState == WorkflowState.PASSENGER_MEAL_SELECTED
+    }
+
+    /**
+     * Updates the workflow state.
+     *
+     * State transitions remain centralized here.
+     */
+    fun updateState(
+        newState: WorkflowState
+    ) {
+        currentState = newState
+    }
+
+    // -------------------------------------------------------------------------
+    // Screen analysis
+    // -------------------------------------------------------------------------
+
+    /**
+     * Converts screen analysis into a platform-independent WorkflowAction.
+     */
     fun handleScreenAnalysis(
         analysis: ScreenAnalyzer.AnalysisResult,
         ocrText: String,
         ocrBlocks: List<OcrResult.TextBlock>
     ): WorkflowAction? {
-        if (currentState != WorkflowState.ARMED) {
+
+        if (!isActive()) {
+            return null
+        }
+
+        val sessionId = currentSessionId
+
+        if (sessionId.isBlank()) {
             return null
         }
 
         val ocrResult = OcrResult(
-            currentSessionId,
+            sessionId,
             System.currentTimeMillis(),
             ocrText,
             ocrBlocks
         )
 
+        // -------------------------------------------------------------
+        // Security / user boundary
+        // -------------------------------------------------------------
+
         if (classifier.isSensitiveScreen(ocrResult)) {
+
             if (currentState != WorkflowState.USER_BOUNDARY) {
+
                 recorder.recordEvent(
                     ExecutionEvent.SessionError(
-                        currentSessionId,
+                        sessionId,
                         "SECURITY_BOUNDARY",
                         "Sensitive screen detected"
                     )
                 )
 
                 metrics.stopMetrics(
-                    currentSessionId,
+                    sessionId,
                     "USER_BOUNDARY"
                 )
 
-                currentState = WorkflowState.USER_BOUNDARY
+                currentState =
+                    WorkflowState.USER_BOUNDARY
+
+                lastSuggestedAction = null
             }
 
             return null
         }
 
         if (currentState == WorkflowState.USER_BOUNDARY ||
-            currentState == WorkflowState.STOPPED
+            currentState == WorkflowState.STOPPED ||
+            currentState == WorkflowState.ERROR
         ) {
             return null
         }
 
-        val suggestedAction = analysis.suggestedAction
+        val suggestedAction =
+            analysis.suggestedAction
 
-        if (suggestedAction == lastSuggestedAction &&
-            suggestedAction != ScreenAnalyzer.SuggestedAction.NONE
+        if (suggestedAction ==
+            lastSuggestedAction &&
+            suggestedAction !=
+            ScreenAnalyzer.SuggestedAction.NONE
         ) {
             return null
         }
 
         return when (suggestedAction) {
-            ScreenAnalyzer.SuggestedAction.SELECT_TRAIN -> {
+
+            ScreenAnalyzer.SuggestedAction.SELECT_TRAIN ->
                 handleTrainSelection(analysis)
-            }
 
-            ScreenAnalyzer.SuggestedAction.SELECT_CLASS -> {
+            ScreenAnalyzer.SuggestedAction.SELECT_CLASS ->
                 handleClassSelection(analysis)
-            }
 
-            ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_NAME -> {
+            ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_NAME ->
                 handlePassengerName(analysis)
-            }
 
-            ScreenAnalyzer.SuggestedAction.REVIEW_JOURNEY -> {
-                handleReviewAndProceed(analysis)
-            }
-
-            ScreenAnalyzer.SuggestedAction.ADD_PASSENGER -> {
-                handleAddPassenger(analysis)
-            }
-
-            ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_AGE -> {
+            ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_AGE ->
                 handlePassengerAgeFromAnalysis(analysis)
-            }
 
-            else -> null
+            ScreenAnalyzer.SuggestedAction.ADD_PASSENGER ->
+                handleAddPassenger(analysis)
+
+            ScreenAnalyzer.SuggestedAction.REVIEW_JOURNEY ->
+                handleReviewAndProceed(analysis)
+
+            else ->
+                null
         }
     }
 
+    // -------------------------------------------------------------------------
+    // State-driven actions
+    // -------------------------------------------------------------------------
+
+    /**
+     * Produces the next action for the current passenger-entry state.
+     */
     fun handleStateAction(
         state: WorkflowState,
         uiElements: List<UIElement>
     ): WorkflowAction? {
+
         return when (state) {
+
             WorkflowState.GENDER_DROPDOWN_OPENED -> {
                 selectDropdownOption(
                     uiElements,
-                    passengerDetails?.gender ?: ""
+                    passengerDetails?.gender.orEmpty()
                 )
             }
 
             WorkflowState.MEAL_DROPDOWN_OPENED -> {
-                selectDropdownOption(
-                    uiElements,
-                    passengerDetails?.meal ?: ""
-                )
+
+                val meal =
+                    passengerDetails?.meal.orEmpty()
+
+                if (meal.isBlank()) {
+                    null
+                } else {
+                    selectDropdownOption(
+                        uiElements,
+                        meal
+                    )
+                }
             }
 
             WorkflowState.PASSENGER_NAME_TYPED -> {
@@ -195,50 +415,79 @@ class WorkflowController(
             }
 
             WorkflowState.PASSENGER_MEAL_SELECTED -> {
+
                 lastSuggestedAction = null
-                currentState = WorkflowState.ARMED
+                currentState = WorkflowState.RUNNING
+
                 null
             }
 
-            else -> null
+            else -> {
+                null
+            }
         }
     }
 
-    fun updateState(newState: WorkflowState) {
-        currentState = newState
+    // -------------------------------------------------------------------------
+    // Validation
+    // -------------------------------------------------------------------------
+
+    private fun isValidPassengerDetails(
+        details: PassengerDetails
+    ): Boolean {
+
+        return details.from.isNotBlank() &&
+            details.to.isNotBlank() &&
+            details.date.isNotBlank() &&
+            details.train.isNotBlank() &&
+            details.trainClass.isNotBlank() &&
+            details.name.isNotBlank() &&
+            details.age.isNotBlank() &&
+            details.gender.isNotBlank()
     }
 
-    fun getCurrentState(): WorkflowState = currentState
-
-    fun getSessionId(): String = currentSessionId
+    // -------------------------------------------------------------------------
+    // TRAIN
+    // -------------------------------------------------------------------------
 
     private fun handleTrainSelection(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val details = passengerDetails ?: return null
-        val elements = analysis.evidence?.uiElements ?: return null
 
-        var i = 0
+        val details =
+            passengerDetails ?: return null
+
+        val elements =
+            analysis.evidence?.uiElements ?: return null
+
         var target: UIElement? = null
 
-        while (i < elements.size) {
-            val element = elements.get(i)
+        for (element in elements) {
 
-            if (element.isClickable) {
-                val text = element.text
-
-                if (text.equals(details.train, ignoreCase = true) ||
-                    text.contains(details.train, ignoreCase = true)
-                ) {
-                    target = element
-                    break
-                }
+            if (!element.isClickable) {
+                continue
             }
 
-            i = i + 1
+            val text =
+                element.text
+
+            if (
+                text.equals(
+                    details.train,
+                    ignoreCase = true
+                ) ||
+                text.contains(
+                    details.train,
+                    ignoreCase = true
+                )
+            ) {
+                target = element
+                break
+            }
         }
 
         if (target == null) {
+
             val keywords = arrayOf(
                 "SELECT",
                 "VIEW",
@@ -248,513 +497,488 @@ class WorkflowController(
                 "CHECK"
             )
 
-            i = 0
+            for (element in elements) {
 
-            while (i < elements.size) {
-                val element = elements.get(i)
-
-                if (element.isClickable) {
-                    val text = element.text
-                    var j = 0
-
-                    while (j < keywords.size) {
-                        if (text.contains(
-                                keywords.get(j),
-                                ignoreCase = true
-                            )
-                        ) {
-                            target = element
-                            break
-                        }
-
-                        j = j + 1
-                    }
-
-                    if (target != null) {
-                        break
-                    }
+                if (!element.isClickable) {
+                    continue
                 }
 
-                i = i + 1
+                val text =
+                    element.text
+
+                if (
+                    keywords.any {
+                        text.contains(
+                            it,
+                            ignoreCase = true
+                        )
+                    }
+                ) {
+                    target = element
+                    break
+                }
             }
         }
 
-        if (target != null) {
-            lastSuggestedAction =
-                ScreenAnalyzer.SuggestedAction.SELECT_TRAIN
-
-            val targetId =
-                if (target.id.isNotEmpty()) target.id else null
-
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(target)
-            )
+        if (target == null) {
+            return null
         }
 
-        return null
+        lastSuggestedAction =
+            ScreenAnalyzer.SuggestedAction.SELECT_TRAIN
+
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
+            }
+
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(target)
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // CLASS
+    // -------------------------------------------------------------------------
 
     private fun handleClassSelection(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val details = passengerDetails ?: return null
-        val elements = analysis.evidence?.uiElements ?: return null
 
-        var i = 0
-        var target: UIElement? = null
+        val details =
+            passengerDetails ?: return null
 
-        while (i < elements.size) {
-            val element = elements.get(i)
+        val elements =
+            analysis.evidence?.uiElements ?: return null
 
-            if (element.isClickable &&
-                element.text.contains(
-                    details.trainClass,
-                    ignoreCase = true
-                )
-            ) {
-                target = element
-                break
+        val target =
+            elements.firstOrNull {
+                it.isClickable &&
+                    it.text.contains(
+                        details.trainClass,
+                        ignoreCase = true
+                    )
+            }
+            ?: return null
+
+        lastSuggestedAction =
+            ScreenAnalyzer.SuggestedAction.SELECT_CLASS
+
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (target != null) {
-            lastSuggestedAction =
-                ScreenAnalyzer.SuggestedAction.SELECT_CLASS
-
-            val targetId =
-                if (target.id.isNotEmpty()) target.id else null
-
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(target)
-            )
-        }
-
-        return null
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(target)
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // PASSENGER NAME
+    // -------------------------------------------------------------------------
 
     private fun handlePassengerName(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val details = passengerDetails ?: return null
-        val elements = analysis.evidence?.uiElements ?: return null
 
-        var i = 0
-        var nameTarget: UIElement? = null
+        val details =
+            passengerDetails ?: return null
 
-        while (i < elements.size) {
-            val element = elements.get(i)
+        val elements =
+            analysis.evidence?.uiElements ?: return null
 
-            if (element.isEditable) {
-                val hint = element.hint
-                val text = element.text
-                val desc = element.contentDescription
+        val target =
+            findEditableByLabel(
+                elements,
+                "Name"
+            )
+            ?: return null
 
-                if (hint != null &&
-                    hint.contains("Name", ignoreCase = true)
-                ) {
-                    nameTarget = element
-                    break
-                }
+        lastSuggestedAction =
+            ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_NAME
 
-                if (text.contains("Name", ignoreCase = true)) {
-                    nameTarget = element
-                    break
-                }
+        currentState =
+            WorkflowState.PASSENGER_NAME_TYPED
 
-                if (desc != null &&
-                    desc.contains("Name", ignoreCase = true)
-                ) {
-                    nameTarget = element
-                    break
-                }
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (nameTarget != null) {
-            lastSuggestedAction =
-                ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_NAME
-
-            currentState = WorkflowState.PASSENGER_NAME_TYPED
-
-            val targetId =
-                if (nameTarget.id.isNotEmpty()) nameTarget.id else null
-
-            return WorkflowAction.SetText(
-                targetId = targetId,
-                text = details.name
-            )
-        }
-
-        return null
+        return WorkflowAction.SetText(
+            targetId = targetId,
+            text = details.name
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // PASSENGER AGE
+    // -------------------------------------------------------------------------
 
     private fun handlePassengerAgeFromAnalysis(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val details = passengerDetails ?: return null
-        val elements = analysis.evidence?.uiElements ?: return null
 
-        var i = 0
-        var ageTarget: UIElement? = null
+        val details =
+            passengerDetails ?: return null
 
-        while (i < elements.size) {
-            val element = elements.get(i)
+        val elements =
+            analysis.evidence?.uiElements ?: return null
 
-            if (element.isEditable) {
-                val hint = element.hint
-                val text = element.text
-                val desc = element.contentDescription
+        val target =
+            findEditableByLabel(
+                elements,
+                "Age"
+            )
+            ?: return null
 
-                if (hint != null &&
-                    hint.contains("Age", ignoreCase = true)
-                ) {
-                    ageTarget = element
-                    break
-                }
+        currentState =
+            WorkflowState.PASSENGER_AGE_TYPED
 
-                if (text.contains("Age", ignoreCase = true)) {
-                    ageTarget = element
-                    break
-                }
-
-                if (desc != null &&
-                    desc.contains("Age", ignoreCase = true)
-                ) {
-                    ageTarget = element
-                    break
-                }
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (ageTarget != null) {
-            currentState = WorkflowState.PASSENGER_AGE_TYPED
-
-            val targetId =
-                if (ageTarget.id.isNotEmpty()) ageTarget.id else null
-
-            return WorkflowAction.SetText(
-                targetId = targetId,
-                text = details.age
-            )
-        }
-
-        return null
+        return WorkflowAction.SetText(
+            targetId = targetId,
+            text = details.age
+        )
     }
 
     private fun handlePassengerAge(
         uiElements: List<UIElement>
     ): WorkflowAction? {
-        val details = passengerDetails ?: return null
 
-        var i = 0
-        var ageTarget: UIElement? = null
+        val details =
+            passengerDetails ?: return null
 
-        while (i < uiElements.size) {
-            val element = uiElements.get(i)
+        val ageTarget =
+            findEditableByLabel(
+                uiElements,
+                "Age"
+            )
+            ?: return null
 
-            if (element.isEditable) {
-                val hint = element.hint
-                val text = element.text
-                val desc = element.contentDescription
+        currentState =
+            WorkflowState.PASSENGER_AGE_TYPED
 
-                if (hint != null &&
-                    hint.contains("Age", ignoreCase = true)
-                ) {
-                    ageTarget = element
-                    break
-                }
-
-                if (text.contains("Age", ignoreCase = true)) {
-                    ageTarget = element
-                    break
-                }
-
-                if (desc != null &&
-                    desc.contains("Age", ignoreCase = true)
-                ) {
-                    ageTarget = element
-                    break
-                }
+        val targetId =
+            ageTarget.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (ageTarget != null) {
-            currentState = WorkflowState.PASSENGER_AGE_TYPED
-
-            val targetId =
-                if (ageTarget.id.isNotEmpty()) ageTarget.id else null
-
-            return WorkflowAction.SetText(
-                targetId = targetId,
-                text = details.age
-            )
-        }
-
-        return null
+        return WorkflowAction.SetText(
+            targetId = targetId,
+            text = details.age
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // GENDER
+    // -------------------------------------------------------------------------
 
     private fun handlePassengerGender(
         uiElements: List<UIElement>
     ): WorkflowAction? {
-        var i = 0
-        var genderTarget: UIElement? = null
 
-        while (i < uiElements.size) {
-            val element = uiElements.get(i)
+        val genderTarget =
+            findClickableByLabel(
+                uiElements,
+                "Gender"
+            )
+            ?: return null
 
-            if (element.isClickable) {
-                val hint = element.hint
-                val text = element.text
-                val desc = element.contentDescription
+        currentState =
+            WorkflowState.GENDER_DROPDOWN_OPENED
 
-                if (hint != null &&
-                    hint.contains("Gender", ignoreCase = true)
-                ) {
-                    genderTarget = element
-                    break
-                }
-
-                if (text.contains("Gender", ignoreCase = true)) {
-                    genderTarget = element
-                    break
-                }
-
-                if (desc != null &&
-                    desc.contains("Gender", ignoreCase = true)
-                ) {
-                    genderTarget = element
-                    break
-                }
+        val targetId =
+            genderTarget.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (genderTarget != null) {
-            currentState = WorkflowState.GENDER_DROPDOWN_OPENED
-
-            val targetId =
-                if (genderTarget.id.isNotEmpty()) genderTarget.id else null
-
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(genderTarget)
-            )
-        }
-
-        return null
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(genderTarget)
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // MEAL
+    // -------------------------------------------------------------------------
 
     private fun handlePassengerMeal(
         uiElements: List<UIElement>
     ): WorkflowAction? {
-        var i = 0
-        var mealTarget: UIElement? = null
 
-        while (i < uiElements.size) {
-            val element = uiElements.get(i)
+        val details =
+            passengerDetails ?: return null
 
-            if (element.isClickable) {
-                val hint = element.hint
-                val text = element.text
-                val desc = element.contentDescription
+        /*
+         * Meal is optional.
+         *
+         * If no meal preference is configured, do not click an
+         * arbitrary meal control.
+         */
+        if (details.meal.isBlank()) {
+            currentState =
+                WorkflowState.PASSENGER_MEAL_SELECTED
 
-                if (hint != null &&
-                    hint.contains("Meal", ignoreCase = true)
-                ) {
-                    mealTarget = element
-                    break
-                }
+            return null
+        }
 
-                if (text.contains("Meal", ignoreCase = true)) {
-                    mealTarget = element
-                    break
-                }
+        val mealTarget =
+            findClickableByLabel(
+                uiElements,
+                "Meal"
+            )
+            ?: return null
 
-                if (desc != null &&
-                    desc.contains("Meal", ignoreCase = true)
-                ) {
-                    mealTarget = element
-                    break
-                }
+        currentState =
+            WorkflowState.MEAL_DROPDOWN_OPENED
+
+        val targetId =
+            mealTarget.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (mealTarget != null) {
-            currentState = WorkflowState.MEAL_DROPDOWN_OPENED
-
-            val targetId =
-                if (mealTarget.id.isNotEmpty()) mealTarget.id else null
-
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(mealTarget)
-            )
-        }
-
-        return null
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(mealTarget)
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // DROPDOWN OPTION
+    // -------------------------------------------------------------------------
 
     private fun selectDropdownOption(
         uiElements: List<UIElement>,
         targetText: String
     ): WorkflowAction? {
-        var i = 0
-        var target: UIElement? = null
 
-        while (i < uiElements.size) {
-            val element = uiElements.get(i)
-
-            if (element.isClickable &&
-                element.text.contains(
-                    targetText,
-                    ignoreCase = true
-                )
-            ) {
-                target = element
-                break
-            }
-
-            i = i + 1
+        if (targetText.isBlank()) {
+            return null
         }
 
-        if (target != null) {
-            currentState = when (currentState) {
+        val target =
+            uiElements.firstOrNull {
+                it.isClickable &&
+                    it.text.contains(
+                        targetText,
+                        ignoreCase = true
+                    )
+            }
+            ?: return null
+
+        currentState =
+            when (currentState) {
+
                 WorkflowState.GENDER_DROPDOWN_OPENED ->
                     WorkflowState.PASSENGER_GENDER_SELECTED
 
                 WorkflowState.MEAL_DROPDOWN_OPENED ->
                     WorkflowState.PASSENGER_MEAL_SELECTED
 
-                else -> currentState
+                else ->
+                    currentState
             }
 
-            val targetId =
-                if (target.id.isNotEmpty()) target.id else null
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
+            }
 
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(target)
-            )
-        }
-
-        return null
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(target)
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // ADD PASSENGER
+    // -------------------------------------------------------------------------
 
     private fun handleAddPassenger(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val elements = analysis.evidence?.uiElements ?: return null
 
-        var i = 0
-        var addNewButton: UIElement? = null
+        val elements =
+            analysis.evidence?.uiElements ?: return null
 
-        while (i < elements.size) {
-            val element = elements.get(i)
+        val target =
+            elements.firstOrNull {
+                it.isClickable &&
+                    it.text.contains(
+                        "Add New",
+                        ignoreCase = true
+                    )
+            }
+            ?: return null
 
-            if (element.isClickable &&
-                element.text.contains(
-                    "Add New",
-                    ignoreCase = true
-                )
-            ) {
-                addNewButton = element
-                break
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
-        }
-
-        if (addNewButton != null) {
-            val targetId =
-                if (addNewButton.id.isNotEmpty()) addNewButton.id else null
-
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(addNewButton)
-            )
-        }
-
-        return null
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(target)
+        )
     }
+
+    // -------------------------------------------------------------------------
+    // REVIEW / USER BOUNDARY
+    // -------------------------------------------------------------------------
 
     private fun handleReviewAndProceed(
         analysis: ScreenAnalyzer.AnalysisResult
     ): WorkflowAction? {
-        val elements = analysis.evidence?.uiElements ?: return null
 
-        var i = 0
-        var target: UIElement? = null
+        val elements =
+            analysis.evidence?.uiElements ?: return null
 
-        while (i < elements.size) {
-            val element = elements.get(i)
+        val target =
+            elements.firstOrNull { element ->
 
-            if (element.isClickable) {
-                val text = element.text
-
-                if (text.contains("REVIEW", ignoreCase = true) ||
-                    text.contains("Proceed to Pay", ignoreCase = true) ||
-                    text.contains("PROCEED TO PAY", ignoreCase = true)
-                ) {
-                    target = element
-                    break
+                if (!element.isClickable) {
+                    return@firstOrNull false
                 }
+
+                val text =
+                    element.text
+
+                text.contains(
+                    "REVIEW",
+                    ignoreCase = true
+                ) ||
+                    text.contains(
+                        "Proceed to Pay",
+                        ignoreCase = true
+                    ) ||
+                    text.contains(
+                        "PROCEED TO PAY",
+                        ignoreCase = true
+                    )
+            }
+            ?: return null
+
+        lastSuggestedAction =
+            ScreenAnalyzer.SuggestedAction.REVIEW_JOURNEY
+
+        /*
+         * Reaching Review/Proceed-to-Pay is an explicit user-controlled
+         * boundary. The controller must not continue beyond it.
+         */
+        currentState =
+            WorkflowState.USER_BOUNDARY
+
+        val targetId =
+            target.id.takeIf {
+                it.isNotEmpty()
             }
 
-            i = i + 1
+        return WorkflowAction.Click(
+            targetId = targetId,
+            coordinates = getCoordinates(target)
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // UI helpers
+    // -------------------------------------------------------------------------
+
+    private fun findEditableByLabel(
+        elements: List<UIElement>,
+        label: String
+    ): UIElement? {
+
+        return elements.firstOrNull { element ->
+
+            if (!element.isEditable) {
+                return@firstOrNull false
+            }
+
+            val hint =
+                element.hint.orEmpty()
+
+            val text =
+                element.text
+
+            val description =
+                element.contentDescription.orEmpty()
+
+            hint.contains(
+                label,
+                ignoreCase = true
+            ) ||
+                text.contains(
+                    label,
+                    ignoreCase = true
+                ) ||
+                description.contains(
+                    label,
+                    ignoreCase = true
+                )
         }
+    }
 
-        if (target != null) {
-            lastSuggestedAction =
-                ScreenAnalyzer.SuggestedAction.REVIEW_JOURNEY
+    private fun findClickableByLabel(
+        elements: List<UIElement>,
+        label: String
+    ): UIElement? {
 
-            currentState = WorkflowState.STOPPED
+        return elements.firstOrNull { element ->
 
-            val targetId =
-                if (target.id.isNotEmpty()) target.id else null
+            if (!element.isClickable) {
+                return@firstOrNull false
+            }
 
-            return WorkflowAction.Click(
-                targetId = targetId,
-                coordinates = getCoordinates(target)
-            )
+            val hint =
+                element.hint.orEmpty()
+
+            val text =
+                element.text
+
+            val description =
+                element.contentDescription.orEmpty()
+
+            hint.contains(
+                label,
+                ignoreCase = true
+            ) ||
+                text.contains(
+                    label,
+                    ignoreCase = true
+                ) ||
+                description.contains(
+                    label,
+                    ignoreCase = true
+                )
         }
-
-        return null
     }
 
     private fun getCoordinates(
         element: UIElement
     ): Pair<Int, Int>? {
-        val bounds = element.bounds
 
-        if (bounds != null) {
-            val left = bounds.left
-            val right = bounds.right
-            val top = bounds.top
-            val bottom = bounds.bottom
+        val bounds =
+            element.bounds
+                ?: return null
 
-            return Pair(
-                (left + right) / 2,
-                (top + bottom) / 2
-            )
-        }
-
-        return null
+        return Pair(
+            (bounds.left + bounds.right) / 2,
+            (bounds.top + bounds.bottom) / 2
+        )
     }
 }
 
+/**
+ * Platform-independent action generated by WorkflowController.
+ */
 sealed class WorkflowAction {
 
     data class Click(
