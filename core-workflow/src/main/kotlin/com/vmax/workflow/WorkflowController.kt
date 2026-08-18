@@ -38,7 +38,7 @@ import java.util.UUID
  * - No duplicate WorkflowState enum.
  * - Uses WorkflowState.kt as the single source of truth.
  *
- * Important JVM rule:
+ * JVM rule:
  * - Internal state property is named workflowState.
  * - Public getCurrentState() is retained for Java/UI compatibility.
  * - This avoids Kotlin's generated getCurrentState() JVM clash.
@@ -56,10 +56,8 @@ class WorkflowController(
         /**
          * IRCTC Android package identifier.
          *
-         * Platform-level package filtering belongs to the
+         * Actual package filtering belongs to the
          * Android AccessibilityService layer.
-         *
-         * This constant is retained as workflow metadata.
          */
         private const val IRCTC_PACKAGE =
             "cris.org.in.prs.ima"
@@ -81,8 +79,6 @@ class WorkflowController(
 
         /**
          * Initializes the canonical controller instance.
-         *
-         * Duplicate initialization is rejected.
          */
         @JvmStatic
         fun initialize(
@@ -130,8 +126,6 @@ class WorkflowController(
 
     /**
      * Passenger details required by the workflow engine.
-     *
-     * Platform-independent.
      */
     data class PassengerDetails(
         val from: String,
@@ -162,14 +156,10 @@ class WorkflowController(
      * Internal workflow state.
      *
      * IMPORTANT:
-     * This is intentionally NOT called currentState.
+     * Do NOT rename this property to currentState.
      *
-     * Calling it currentState would cause Kotlin to generate:
-     *
-     * getCurrentState()
-     *
-     * which would clash with the explicit getCurrentState()
-     * method below.
+     * Kotlin would generate getCurrentState(), which would clash
+     * with the explicit getCurrentState() method below.
      */
     private var workflowState: WorkflowState
         get() = _state.value
@@ -258,8 +248,6 @@ class WorkflowController(
 
         /*
          * Only IDLE can start a new session.
-         *
-         * This prevents overlapping sessions.
          */
         if (workflowState != WorkflowState.IDLE) {
             return false
@@ -313,8 +301,6 @@ class WorkflowController(
     /**
      * Resets the controller after a completed/stopped/error/boundary
      * session.
-     *
-     * Active sessions cannot be reset.
      */
     fun reset(): Boolean {
 
@@ -339,11 +325,7 @@ class WorkflowController(
     /**
      * Returns the current canonical workflow state.
      *
-     * This explicit method is intentionally retained for callers
-     * that use the Java-style API.
-     *
-     * There is no JVM clash because the internal property is named
-     * workflowState rather than currentState.
+     * Explicit method retained for Java/UI compatibility.
      */
     fun getCurrentState(): WorkflowState =
         workflowState
@@ -357,6 +339,10 @@ class WorkflowController(
     /**
      * Returns true when the controller is allowed to process
      * workflow/screen events.
+     *
+     * IMPORTANT:
+     * ARMED is an active workflow state and therefore MUST be
+     * included here.
      */
     fun isActive(): Boolean {
 
@@ -364,6 +350,7 @@ class WorkflowController(
 
             WorkflowState.CONFIGURED,
             WorkflowState.RUNNING,
+            WorkflowState.ARMED,
             WorkflowState.GENDER_DROPDOWN_OPENED,
             WorkflowState.MEAL_DROPDOWN_OPENED,
             WorkflowState.PASSENGER_NAME_TYPED,
@@ -386,7 +373,7 @@ class WorkflowController(
     ) {
 
         /*
-         * Hard boundary states must clear pending actions.
+         * Hard boundary states clear pending actions.
          */
         if (
             newState == WorkflowState.USER_BOUNDARY ||
@@ -406,13 +393,6 @@ class WorkflowController(
 
     /**
      * Converts screen analysis into a platform-independent action.
-     *
-     * Returns null when:
-     * - workflow is inactive,
-     * - session is invalid,
-     * - security boundary is detected,
-     * - no safe action is available,
-     * - same action is already pending.
      */
     fun handleScreenAnalysis(
         analysis: ScreenAnalyzer.AnalysisResult,
@@ -477,7 +457,7 @@ class WorkflowController(
         }
 
         /*
-         * Do not repeatedly generate the same action.
+         * Prevent repeated generation of the same action.
          */
         if (
             suggestedAction ==
@@ -512,13 +492,7 @@ class WorkflowController(
             }
 
         /*
-         * IMPORTANT:
-         *
-         * Remember the suggested action ONLY when a real action
-         * was generated.
-         *
-         * If target discovery fails, the next screen analysis can
-         * retry instead of being permanently suppressed.
+         * Only remember the suggestion when a real action was created.
          */
         if (action != null) {
             lastSuggestedAction =
@@ -1141,9 +1115,9 @@ class WorkflowController(
         /*
          * Review / Proceed-to-Pay is a hard user boundary.
          *
-         * The controller may return the boundary action,
-         * but it will never generate another automatic action
-         * after entering USER_BOUNDARY.
+         * The controller may return this boundary action,
+         * but it will not generate another automatic action
+         * afterwards.
          */
         workflowState =
             WorkflowState.USER_BOUNDARY
