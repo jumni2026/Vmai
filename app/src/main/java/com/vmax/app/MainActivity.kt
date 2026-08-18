@@ -27,13 +27,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             VMAXTheme {
-                // ✅ Navigation State: true = History Screen, false = Dashboard
                 var showHistory by remember { mutableStateOf(false) }
 
-                // ✅ Create Repository for History Screen
                 val historyStore = AndroidExecutionHistoryStore(this)
                 val metricsCollector = AndroidMetricsCollector()
-                val historyRepository = AndroidExecutionHistoryRepository(historyStore, metricsCollector)
+                val historyRepository =
+                    AndroidExecutionHistoryRepository(
+                        historyStore,
+                        metricsCollector
+                    )
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -58,17 +60,15 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VMAXDashboard(
-    onHistoryClick: () -> Unit  // ✅ New callback for History button
+    onHistoryClick: () -> Unit
 ) {
-
     val viewModel: MainViewModel = viewModel()
 
     val trainNumber by viewModel.trainNumber.collectAsState()
     val trainName by viewModel.trainName.collectAsState()
     val classType by viewModel.classType.collectAsState()
     val quota by viewModel.quota.collectAsState()
-    
-    // ✅ UI Level States for Station Input (Strings)
+
     var fromStationInput by remember { mutableStateOf("") }
     var toStationInput by remember { mutableStateOf("") }
 
@@ -85,41 +85,54 @@ fun VMAXDashboard(
     var showPassengerDialog by remember { mutableStateOf(false) }
     var quotaExpanded by remember { mutableStateOf(false) }
 
-    // ✅ CLASS TYPE DROPDOWN STATE
-    val classOptions = listOf("1A", "2A", "3A", "SL", "CC", "EC", "3E", "2S", "FC")
+    val classOptions =
+        listOf("1A", "2A", "3A", "SL", "CC", "EC", "3E", "2S", "FC")
+
     var classExpanded by remember { mutableStateOf(false) }
 
     val currentWorkflowState = workflowState
 
+    /*
+     * WorkflowState is an enum.
+     *
+     * Therefore enum entries are compared with ==.
+     * Do NOT use:
+     * is WorkflowState.RUNNING
+     * is WorkflowState.ERROR
+     */
     val statusText = when (currentWorkflowState) {
-        is WorkflowState.CONFIGURED ->
+
+        WorkflowState.CONFIGURED ->
             "CONFIGURED (Waiting for Engine)"
 
-        is WorkflowState.RUNNING ->
-            "RUNNING (Target: ${trainNumber.takeIf { it.isNotBlank() } ?: "N/A"})"
+        WorkflowState.RUNNING ->
+            "RUNNING (Target: ${
+                trainNumber.takeIf { it.isNotBlank() } ?: "N/A"
+            })"
 
-        is WorkflowState.ERROR ->
-            "ERROR: ${currentWorkflowState.reason}"
+        WorkflowState.ERROR ->
+            "ERROR"
 
         else ->
             "IDLE"
     }
 
     val workflowActive =
-        currentWorkflowState is WorkflowState.RUNNING ||
-        currentWorkflowState is WorkflowState.CONFIGURED
+        currentWorkflowState == WorkflowState.RUNNING ||
+        currentWorkflowState == WorkflowState.CONFIGURED
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
 
-        // ✅ Added TopAppBar with History button
         topBar = {
             TopAppBar(
                 title = {
                     Text("VMAX Enterprise")
                 },
                 actions = {
-                    TextButton(onClick = onHistoryClick) {
+                    TextButton(
+                        onClick = onHistoryClick
+                    ) {
                         Text("History")
                     }
                 }
@@ -133,7 +146,6 @@ fun VMAXDashboard(
             ) {
                 Button(
                     onClick = {
-                        // ✅ Update ViewModel with String Inputs
                         viewModel.updateFromStation(fromStationInput)
                         viewModel.updateToStation(toStationInput)
 
@@ -155,19 +167,21 @@ fun VMAXDashboard(
                         )
                         .height(50.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (workflowActive) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        }
+                        containerColor =
+                            if (workflowActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            }
                     )
                 ) {
                     Text(
-                        text = if (workflowActive) {
-                            "STOP WORKFLOW ENGINE"
-                        } else {
-                            "CONFIGURE & START ENGINE"
-                        },
+                        text =
+                            if (workflowActive) {
+                                "STOP WORKFLOW ENGINE"
+                            } else {
+                                "CONFIGURE & START ENGINE"
+                            },
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -191,10 +205,6 @@ fun VMAXDashboard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            // ---------------------------------------------------------
-            // HEADER
-            // ---------------------------------------------------------
-
             Text(
                 text = "VMAX ENTERPRISE",
                 fontSize = 24.sp,
@@ -208,10 +218,6 @@ fun VMAXDashboard(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            // ---------------------------------------------------------
-            // TARGET SETTINGS
-            // ---------------------------------------------------------
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -271,31 +277,46 @@ fun VMAXDashboard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // ✅ CLASS TYPE DROPDOWN
                     ExposedDropdownMenuBox(
                         expanded = classExpanded,
-                        onExpandedChange = { classExpanded = it }
+                        onExpandedChange = {
+                            classExpanded = it
+                        }
                     ) {
                         OutlinedTextField(
                             value = classType,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Class Type") },
-                            placeholder = { Text("e.g., 3A") },
+                            label = {
+                                Text("Class Type")
+                            },
+                            placeholder = {
+                                Text("e.g., 3A")
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = classExpanded) },
-                            isError = validationError?.contains("Class Type") == true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                    expanded = classExpanded
+                                )
+                            },
+                            isError = validationError
+                                ?.contains("Class Type") == true,
                             singleLine = true
                         )
+
                         ExposedDropdownMenu(
                             expanded = classExpanded,
-                            onDismissRequest = { classExpanded = false }
+                            onDismissRequest = {
+                                classExpanded = false
+                            }
                         ) {
                             classOptions.forEach { option ->
                                 DropdownMenuItem(
-                                    text = { Text(option) },
+                                    text = {
+                                        Text(option)
+                                    },
                                     onClick = {
                                         viewModel.updateClassType(option)
                                         classExpanded = false
@@ -306,10 +327,6 @@ fun VMAXDashboard(
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
-
-                    // -------------------------------------------------
-                    // QUOTA
-                    // -------------------------------------------------
 
                     Text(
                         text = "Quota",
@@ -339,7 +356,6 @@ fun VMAXDashboard(
                             }
                         ) {
                             Quota.values().forEach { q ->
-
                                 DropdownMenuItem(
                                     text = {
                                         Text(q.name)
@@ -355,17 +371,15 @@ fun VMAXDashboard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // -------------------------------------------------
-                    // STATIONS (String-based)
-                    // -------------------------------------------------
-
                     Row(
                         modifier = Modifier.fillMaxWidth()
                     ) {
 
                         OutlinedTextField(
                             value = fromStationInput,
-                            onValueChange = { fromStationInput = it },
+                            onValueChange = {
+                                fromStationInput = it
+                            },
                             label = {
                                 Text("From Station Code")
                             },
@@ -384,7 +398,9 @@ fun VMAXDashboard(
 
                         OutlinedTextField(
                             value = toStationInput,
-                            onValueChange = { toStationInput = it },
+                            onValueChange = {
+                                toStationInput = it
+                            },
                             label = {
                                 Text("To Station Code")
                             },
@@ -399,10 +415,6 @@ fun VMAXDashboard(
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
-
-                    // -------------------------------------------------
-                    // JOURNEY DATE
-                    // -------------------------------------------------
 
                     OutlinedTextField(
                         value = journeyDate,
@@ -439,10 +451,6 @@ fun VMAXDashboard(
             Spacer(
                 modifier = Modifier.height(16.dp)
             )
-
-            // ---------------------------------------------------------
-            // PASSENGER DATA
-            // ---------------------------------------------------------
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -488,19 +496,15 @@ fun VMAXDashboard(
                 modifier = Modifier.height(16.dp)
             )
 
-            // ---------------------------------------------------------
-            // AUTOMATION STATUS
-            // ---------------------------------------------------------
-
             Text(
                 text = "Automation Status: $statusText",
                 fontWeight = FontWeight.Bold,
                 color = when (currentWorkflowState) {
 
-                    is WorkflowState.RUNNING ->
+                    WorkflowState.RUNNING ->
                         MaterialTheme.colorScheme.primary
 
-                    is WorkflowState.ERROR ->
+                    WorkflowState.ERROR ->
                         MaterialTheme.colorScheme.error
 
                     else ->
@@ -513,10 +517,6 @@ fun VMAXDashboard(
             )
         }
     }
-
-    // -------------------------------------------------------------
-    // PASSENGER DIALOG
-    // -------------------------------------------------------------
 
     if (showPassengerDialog) {
 
