@@ -1,6 +1,7 @@
 package com.vmax.core_intelligence
 
 import com.vmax.common.Logger
+import java.util.Locale
 
 private typealias ScreenEvidence = UIEvidenceCollector.ScreenEvidence
 private typealias UIElement = UIEvidenceCollector.ScreenEvidence.UIElement
@@ -35,6 +36,52 @@ class ScreenAnalyzer(
         private const val CONFIDENCE_LOADING = 0.90f
         private const val CONFIDENCE_ERROR = 0.90f
         private const val CONFIDENCE_COMPLETED = 1.0f
+
+        private val TRAIN_ACTION_KEYWORDS = listOf(
+            "SELECT",
+            "BOOK",
+            "BOOK NOW",
+            "VIEW",
+            "TRAIN",
+            "SEARCH",
+            "FIND TRAINS",
+            "CHECK"
+        )
+
+        private val CLASS_CODES = listOf(
+            "SL",
+            "3A",
+            "2A",
+            "1A",
+            "CC",
+            "EC",
+            "3E",
+            "2S",
+            "FC"
+        )
+
+        private val PAYMENT_CATEGORY_NAMES = listOf(
+            "UPI",
+            "WALLET",
+            "CREDIT CARD",
+            "DEBIT CARD",
+            "NETBANKING",
+            "INTERNATIONAL CARD",
+            "EMI"
+        )
+
+        private val UPI_PROVIDER_NAMES = listOf(
+            "IRCTC IPAY",
+            "PAYU",
+            "PAYTM",
+            "PHONEPE"
+        )
+
+        private val WALLET_PROVIDER_NAMES = listOf(
+            "MOBIKWIK",
+            "AMAZON PAY",
+            "IRCTC WALLET"
+        )
     }
 
     enum class ScreenState {
@@ -136,7 +183,7 @@ class ScreenAnalyzer(
         /*
          * Detection priority:
          *
-         * 1. Modal/dialog
+         * 1. Station confirmation
          * 2. Completed
          * 3. Error
          * 4. Loading
@@ -313,7 +360,7 @@ class ScreenAnalyzer(
             .replace('\r', ' ')
             .replace(Regex("\\s+"), " ")
             .trim()
-            .uppercase()
+            .uppercase(Locale.ROOT)
     }
 
     private fun normalizedElementText(
@@ -334,11 +381,7 @@ class ScreenAnalyzer(
     ): Boolean {
 
         for (value in values) {
-            if (
-                text.contains(
-                    value.uppercase()
-                )
-            ) {
+            if (text.contains(value)) {
                 return true
             }
         }
@@ -356,28 +399,17 @@ class ScreenAnalyzer(
     ): Boolean {
 
         val textSignature =
-            fullText.contains(
-                "YOU SEARCHED TRAINS FROM"
-            ) &&
-            fullText.contains(
-                "BUT BOOKING FROM"
-            ) &&
-            (
-                fullText.contains(
-                    "DO YOU WANT TO CONTINUE"
-                ) ||
-                fullText.contains(
-                    "CONTINUE WITH THE SAME"
-                )
-            )
+            fullText.contains("YOU SEARCHED TRAINS FROM") &&
+                fullText.contains("BUT BOOKING FROM") &&
+                (
+                    fullText.contains("DO YOU WANT TO CONTINUE") ||
+                        fullText.contains("CONTINUE WITH THE SAME")
+                    )
 
         if (textSignature) {
             return true
         }
 
-        /*
-         * UI fallback for dialog text not captured by OCR.
-         */
         var hasSearchedFrom = false
         var hasBookingFrom = false
         var hasContinue = false
@@ -386,25 +418,15 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains(
-                    "YOU SEARCHED TRAINS FROM"
-                )
-            ) {
+            if (text.contains("YOU SEARCHED TRAINS FROM")) {
                 hasSearchedFrom = true
             }
 
-            if (
-                text.contains(
-                    "BUT BOOKING FROM"
-                )
-            ) {
+            if (text.contains("BUT BOOKING FROM")) {
                 hasBookingFrom = true
             }
 
-            if (
-                text.contains("CONTINUE")
-            ) {
+            if (text.contains("CONTINUE")) {
                 hasContinue = true
             }
         }
@@ -459,18 +481,12 @@ class ScreenAnalyzer(
 
             if (
                 element.isClickable &&
-                (
-                    text == "ADD PASSENGER" ||
-                    text.contains("ADD PASSENGER")
-                )
+                text.contains("ADD PASSENGER")
             ) {
                 hasAddPassengerButton = true
             }
         }
 
-        /*
-         * Strong form signature.
-         */
         if (
             hasNameField &&
             hasAgeField &&
@@ -479,28 +495,22 @@ class ScreenAnalyzer(
             return true
         }
 
-        /*
-         * Button + field signature.
-         */
         if (
             hasAddPassengerButton &&
             (
                 hasNameField ||
-                hasAgeField ||
-                hasGenderOption
-            )
+                    hasAgeField ||
+                    hasGenderOption
+                )
         ) {
             return true
         }
 
-        /*
-         * OCR-supported fallback.
-         */
         return fullText.contains("ADD PASSENGER") &&
             (
                 hasNameField ||
-                hasAgeField
-            )
+                    hasAgeField
+                )
     }
 
     private fun isPassengerInputScreen(
@@ -510,7 +520,7 @@ class ScreenAnalyzer(
 
         val hasPassengerTitle =
             fullText.contains("PASSENGER DETAILS") ||
-            fullText.contains("PASSENGERS DETAILS")
+                fullText.contains("PASSENGERS DETAILS")
 
         var hasAddNewButton = false
         var hasReviewButton = false
@@ -522,16 +532,12 @@ class ScreenAnalyzer(
 
             if (element.isClickable) {
 
-                if (
-                    text.contains("ADD NEW")
-                ) {
+                if (text.contains("ADD NEW")) {
                     hasAddNewButton = true
                 }
 
                 if (
-                    text.contains(
-                        "REVIEW JOURNEY DETAILS"
-                    ) ||
+                    text.contains("REVIEW JOURNEY DETAILS") ||
                     text == "REVIEW JOURNEY"
                 ) {
                     hasReviewButton = true
@@ -547,13 +553,13 @@ class ScreenAnalyzer(
             hasPassengerTitle &&
                 (
                     hasAddNewButton ||
-                    hasReviewButton
-                )
+                        hasReviewButton
+                    )
             ) ||
             (
                 hasEditableField &&
                     hasReviewButton
-            )
+                )
     }
 
     private fun isReviewJourneyScreen(
@@ -564,29 +570,17 @@ class ScreenAnalyzer(
 
         val hasReviewTitle =
             fullText.contains("REVIEW JOURNEY") ||
-            fullText.contains("REVIEW JOURNEY DETAILS")
+                fullText.contains("REVIEW JOURNEY DETAILS")
 
         val hasPassengerDetails =
             fullText.contains("PASSENGER DETAILS") ||
-            fullText.contains("PASSENGERS DETAILS")
+                fullText.contains("PASSENGERS DETAILS")
 
         val hasTrainDetails =
-            hasKey(
-                keyValuePairs,
-                "train_number"
-            ) ||
-            hasKey(
-                keyValuePairs,
-                "train_name"
-            ) ||
-            hasKey(
-                keyValuePairs,
-                "from_station"
-            ) ||
-            hasKey(
-                keyValuePairs,
-                "to_station"
-            )
+            hasKey(keyValuePairs, "train_number") ||
+                hasKey(keyValuePairs, "train_name") ||
+                hasKey(keyValuePairs, "from_station") ||
+                hasKey(keyValuePairs, "to_station")
 
         var hasProceedButton = false
 
@@ -598,9 +592,7 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("PROCEED TO PAY")
-            ) {
+            if (text.contains("PROCEED TO PAY")) {
                 hasProceedButton = true
                 break
             }
@@ -610,23 +602,17 @@ class ScreenAnalyzer(
             hasReviewTitle &&
             (
                 hasPassengerDetails ||
-                hasTrainDetails
-            )
+                    hasTrainDetails
+                )
         ) {
             return true
         }
 
-        if (
-            hasProceedButton &&
+        return hasProceedButton &&
             (
                 hasPassengerDetails ||
-                hasTrainDetails
-            )
-        ) {
-            return true
-        }
-
-        return false
+                    hasTrainDetails
+                )
     }
 
     private fun isPaymentUPIScreen(
@@ -636,7 +622,9 @@ class ScreenAnalyzer(
 
         val hasUpiTitle =
             fullText.contains("PAY USING UPI") ||
-            fullText.contains("UPI PAYMENT")
+                fullText.contains("UPI PAYMENT") ||
+                fullText.contains("ENTER UPI") ||
+                fullText.contains("UPI ID")
 
         var hasProvider = false
 
@@ -648,27 +636,29 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("IRCTC IPAY") ||
-                text.contains("PAYU") ||
-                text.contains("PAYTM") ||
-                text.contains("PHONEPE")
-            ) {
+            if (containsAny(text, UPI_PROVIDER_NAMES)) {
                 hasProvider = true
                 break
             }
         }
 
-        return hasUpiTitle ||
+        /*
+         * A bare UPI provider name is not enough.
+         * Payment context must also be visible.
+         */
+        val hasPaymentContext =
+            fullText.contains("PAYMENT") ||
+                fullText.contains("PAY") ||
+                fullText.contains("UPI")
+
+        return (
+            hasUpiTitle &&
+                hasPaymentContext
+            ) ||
             (
                 hasProvider &&
-                    (
-                        fullText.contains("UPI") ||
-                        fullText.contains("PAYMENT")
-                    )
-            ) ||
-            fullText.contains("ENTER UPI") ||
-            fullText.contains("UPI ID")
+                    hasPaymentContext
+                )
     }
 
     private fun isPaymentWalletScreen(
@@ -678,7 +668,9 @@ class ScreenAnalyzer(
 
         val hasWalletTitle =
             fullText.contains("PAY USING WALLET") ||
-            fullText.contains("WALLET PAYMENT")
+                fullText.contains("WALLET PAYMENT") ||
+                fullText.contains("WALLET BALANCE") ||
+                fullText.contains("INSUFFICIENT BALANCE")
 
         var hasWalletProvider = false
 
@@ -690,11 +682,7 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("MOBIKWIK") ||
-                text.contains("AMAZON PAY") ||
-                text.contains("IRCTC WALLET")
-            ) {
+            if (containsAny(text, WALLET_PROVIDER_NAMES)) {
                 hasWalletProvider = true
                 break
             }
@@ -703,26 +691,18 @@ class ScreenAnalyzer(
         return hasWalletTitle ||
             (
                 hasWalletProvider &&
-                    fullText.contains("PAYMENT")
-            ) ||
-            fullText.contains("WALLET BALANCE") ||
-            fullText.contains("INSUFFICIENT BALANCE")
+                    (
+                        fullText.contains("PAYMENT") ||
+                            fullText.contains("PAY") ||
+                            fullText.contains("WALLET")
+                        )
+                )
     }
 
     private fun isPaymentCategoryScreen(
         fullText: String,
         uiElements: List<UIElement>
     ): Boolean {
-
-        val categoryNames = listOf(
-            "UPI",
-            "WALLET",
-            "CREDIT CARD",
-            "DEBIT CARD",
-            "NETBANKING",
-            "INTERNATIONAL CARD",
-            "EMI"
-        )
 
         var categoryCount = 0
 
@@ -734,23 +714,19 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            for (category in categoryNames) {
-
-                if (text.contains(category)) {
-                    categoryCount++
-                    break
-                }
+            if (containsAny(text, PAYMENT_CATEGORY_NAMES)) {
+                categoryCount++
             }
         }
 
         val hasPaymentTitle =
             fullText.contains("MAKE PAYMENT") ||
-            fullText.contains("PAYMENT OPTIONS") ||
-            fullText.contains("SELECT PAYMENT")
+                fullText.contains("PAYMENT OPTIONS") ||
+                fullText.contains("SELECT PAYMENT")
 
         val hasTotal =
             fullText.contains("TOTAL AMOUNT") ||
-            fullText.contains("TOTAL FARE")
+                fullText.contains("TOTAL FARE")
 
         return (
             categoryCount >= 1 &&
@@ -767,18 +743,6 @@ class ScreenAnalyzer(
         uiElements: List<UIElement>
     ): Boolean {
 
-        val classCodes = listOf(
-            "SL",
-            "3A",
-            "2A",
-            "1A",
-            "CC",
-            "EC",
-            "3E",
-            "2S",
-            "FC"
-        )
-
         var classCount = 0
         var hasAvailabilityIndicator = false
         var hasRefresh = false
@@ -789,10 +753,7 @@ class ScreenAnalyzer(
 
             if (
                 element.isClickable &&
-                containsClassCode(
-                    text,
-                    classCodes
-                )
+                containsClassCode(text, CLASS_CODES)
             ) {
                 classCount++
             }
@@ -825,8 +786,8 @@ class ScreenAnalyzer(
         return hasRefresh &&
             (
                 fullText.contains("AVAILABILITY") ||
-                fullText.contains("TRAIN")
-            )
+                    fullText.contains("TRAIN")
+                )
     }
 
     private fun isTrainListScreen(
@@ -836,21 +797,16 @@ class ScreenAnalyzer(
     ): Boolean {
 
         val hasTrainNumber =
-            hasKey(
-                keyValuePairs,
-                "train_number"
-            )
+            hasKey(keyValuePairs, "train_number")
 
         val hasTrainName =
-            hasKey(
-                keyValuePairs,
-                "train_name"
-            )
+            hasKey(keyValuePairs, "train_name")
 
         val hasTrainHeading =
             fullText.contains("TRAIN LIST") ||
-            fullText.contains("TRAINS") ||
-            fullText.contains("SORT BY")
+                fullText.contains("TRAINS") ||
+                fullText.contains("SORT BY") ||
+                fullText.contains("FIND TRAINS")
 
         var hasTrainAction = false
 
@@ -862,12 +818,7 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("SELECT TRAIN") ||
-                text.contains("SELECT") ||
-                text.contains("VIEW") ||
-                text.contains("BOOK")
-            ) {
+            if (containsAny(text, TRAIN_ACTION_KEYWORDS)) {
                 hasTrainAction = true
                 break
             }
@@ -876,21 +827,15 @@ class ScreenAnalyzer(
         if (
             (
                 hasTrainNumber ||
-                hasTrainName
-            ) &&
+                    hasTrainName
+                ) &&
             hasTrainAction
         ) {
             return true
         }
 
-        if (
-            hasTrainHeading &&
+        return hasTrainHeading &&
             hasTrainAction
-        ) {
-            return true
-        }
-
-        return false
     }
 
     private fun isLoadingScreen(
@@ -898,11 +843,27 @@ class ScreenAnalyzer(
         uiElements: List<UIElement>
     ): Boolean {
 
+        /*
+         * Strong textual loading signals.
+         */
         val hasStrongLoadingText =
             fullText.contains("PLEASE WAIT") ||
-            fullText.contains("PROCESSING") ||
-            fullText.contains("FETCHING") ||
-            fullText.contains("LOADING")
+                fullText.contains("LOADING") ||
+                fullText.contains("FETCHING")
+
+        /*
+         * PROCESSING alone can appear in payment/review
+         * contexts, therefore it requires additional
+         * loading context.
+         */
+        val hasProcessingText =
+            fullText.contains("PROCESSING") &&
+                (
+                    fullText.contains("PLEASE") ||
+                        fullText.contains("WAIT") ||
+                        fullText.contains("REQUEST") ||
+                        fullText.contains("FETCH")
+                    )
 
         var hasProgressElement = false
 
@@ -911,18 +872,9 @@ class ScreenAnalyzer(
             val type = element.type
 
             if (
-                type.contains(
-                    "PROGRESSBAR",
-                    ignoreCase = true
-                ) ||
-                type.contains(
-                    "SPINNER",
-                    ignoreCase = true
-                ) ||
-                type.contains(
-                    "LOADING",
-                    ignoreCase = true
-                )
+                type.contains("PROGRESSBAR", ignoreCase = true) ||
+                type.contains("SPINNER", ignoreCase = true) ||
+                type.contains("LOADING", ignoreCase = true)
             ) {
                 hasProgressElement = true
                 break
@@ -930,6 +882,7 @@ class ScreenAnalyzer(
         }
 
         return hasStrongLoadingText ||
+            hasProcessingText ||
             hasProgressElement
     }
 
@@ -939,34 +892,24 @@ class ScreenAnalyzer(
     ): Boolean {
 
         if (
-            fullText.contains(
-                "SOMETHING WENT WRONG"
-            ) ||
-            fullText.contains(
-                "TECHNICAL ERROR"
-            ) ||
-            fullText.contains(
-                "SESSION EXPIRED"
-            ) ||
-            fullText.contains(
-                "NETWORK ERROR"
-            ) ||
-            fullText.contains(
-                "UNABLE TO PROCESS"
-            )
+            fullText.contains("SOMETHING WENT WRONG") ||
+            fullText.contains("TECHNICAL ERROR") ||
+            fullText.contains("SESSION EXPIRED") ||
+            fullText.contains("NETWORK ERROR") ||
+            fullText.contains("UNABLE TO PROCESS")
         ) {
             return true
         }
 
         val hasGenericError =
             fullText.contains("ERROR") ||
-            fullText.contains("FAILED")
+                fullText.contains("FAILED")
 
         val hasRecovery =
             fullText.contains("TRY AGAIN") ||
-            fullText.contains("RETRY") ||
-            fullText.contains("CLOSE") ||
-            fullText.contains("BACK")
+                fullText.contains("RETRY") ||
+                fullText.contains("CLOSE") ||
+                fullText.contains("BACK")
 
         return hasGenericError &&
             hasRecovery
@@ -977,25 +920,40 @@ class ScreenAnalyzer(
         uiElements: List<UIElement>
     ): Boolean {
 
-        val directCompletion =
+        /*
+         * Strong completion signatures.
+         */
+        if (
             fullText.contains("BOOKING CONFIRMED") ||
             fullText.contains("TICKET CONFIRMED") ||
             fullText.contains("PAYMENT SUCCESSFUL") ||
-            fullText.contains("TRANSACTION SUCCESSFUL")
-
-        if (directCompletion) {
+            fullText.contains("TRANSACTION SUCCESSFUL") ||
+            fullText.contains("TICKET BOOKED SUCCESSFULLY")
+        ) {
             return true
         }
 
+        /*
+         * PNR by itself is NOT completion evidence.
+         *
+         * This avoids the old false-positive:
+         * PNR + BOOKING -> COMPLETED
+         */
         val hasPnr =
             fullText.contains("PNR")
 
-        val hasConfirmation =
+        val hasConfirmedState =
             fullText.contains("CONFIRMED") ||
-            fullText.contains("BOOKING")
+                fullText.contains("SUCCESSFUL")
+
+        val hasTicketContext =
+            fullText.contains("TICKET") ||
+                fullText.contains("BOOKING CONFIRMATION") ||
+                fullText.contains("TRANSACTION")
 
         return hasPnr &&
-            hasConfirmation
+            hasConfirmedState &&
+            hasTicketContext
     }
 
     // ============================================================
@@ -1025,8 +983,8 @@ class ScreenAnalyzer(
                     nameField == null &&
                     (
                         hint.contains("NAME") ||
-                        text.contains("NAME")
-                    )
+                            text.contains("NAME")
+                        )
                 ) {
                     nameField = element
                 }
@@ -1035,8 +993,8 @@ class ScreenAnalyzer(
                     ageField == null &&
                     (
                         hint.contains("AGE") ||
-                        text.contains("AGE")
-                    )
+                            text.contains("AGE")
+                        )
                 ) {
                     ageField = element
                 }
@@ -1139,11 +1097,9 @@ class ScreenAnalyzer(
 
                 if (
                     (
-                        text.contains(
-                            "REVIEW JOURNEY DETAILS"
-                        ) ||
-                        text == "REVIEW JOURNEY"
-                    ) &&
+                        text.contains("REVIEW JOURNEY DETAILS") ||
+                            text == "REVIEW JOURNEY"
+                        ) &&
                     reviewButton == null
                 ) {
                     reviewButton = element
@@ -1163,19 +1119,19 @@ class ScreenAnalyzer(
                 evidence.ocrEvidence?.fullText.orEmpty()
             )
 
+        /*
+         * Only concrete passenger evidence is counted.
+         * The generic title "PASSENGER DETAILS" should not
+         * itself prove that a passenger exists.
+         */
         if (
-            ocrText.contains("PASSENGER")
+            ocrText.contains("PASSENGER NAME") ||
+            ocrText.contains("AGE") ||
+            ocrText.contains("GENDER")
         ) {
             hasPassengerEvidence = true
         }
 
-        /*
-         * "PASSENGER DETAILS" itself is not enough to
-         * conclude that a passenger already exists.
-         *
-         * A visible Add New control with no concrete
-         * passenger evidence is treated conservatively.
-         */
         if (
             addNewButton != null &&
             !hasPassengerEvidence
@@ -1226,9 +1182,10 @@ class ScreenAnalyzer(
             val text = normalizedElementText(element)
 
             if (
-                text.contains("SELECT") ||
-                text.contains("VIEW") ||
-                text.contains("BOOK")
+                containsAny(
+                    text,
+                    TRAIN_ACTION_KEYWORDS
+                )
             ) {
                 hasSelectableTrain = true
                 break
@@ -1258,18 +1215,6 @@ class ScreenAnalyzer(
         evidence: ScreenEvidence
     ): AnalysisResult {
 
-        val classCodes = listOf(
-            "SL",
-            "3A",
-            "2A",
-            "1A",
-            "CC",
-            "EC",
-            "3E",
-            "2S",
-            "FC"
-        )
-
         val availableClasses =
             mutableListOf<String>()
 
@@ -1281,14 +1226,9 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                containsClassCode(
-                    text,
-                    classCodes
-                )
-            ) {
-                val value =
-                    element.text.trim()
+            if (containsClassCode(text, CLASS_CODES)) {
+
+                val value = element.text.trim()
 
                 if (value.isNotEmpty()) {
                     availableClasses.add(value)
@@ -1338,9 +1278,7 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("PROCEED TO PAY")
-            ) {
+            if (text.contains("PROCEED TO PAY")) {
                 hasProceedButton = true
                 break
             }
@@ -1353,8 +1291,8 @@ class ScreenAnalyzer(
 
         val hasAmount =
             fullText.contains("₹") ||
-            fullText.contains("TOTAL AMOUNT") ||
-            fullText.contains("TOTAL FARE")
+                fullText.contains("TOTAL AMOUNT") ||
+                fullText.contains("TOTAL FARE")
 
         if (
             hasProceedButton &&
@@ -1392,19 +1330,14 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("IRCTC IPAY") ||
-                text.contains("PAYU") ||
-                text.contains("PAYTM") ||
-                text.contains("PHONEPE")
-            ) {
+            if (containsAny(text, UPI_PROVIDER_NAMES)) {
                 provider = element.text.trim()
                 break
             }
         }
 
         val data =
-            if (provider != null) {
+            if (!provider.isNullOrBlank()) {
                 mapOf(
                     "provider" to provider
                 )
@@ -1415,7 +1348,7 @@ class ScreenAnalyzer(
         return AnalysisResult(
             screenState = ScreenState.PAYMENT_UPI,
             confidence =
-                if (provider != null) {
+                if (!provider.isNullOrBlank()) {
                     0.92f
                 } else {
                     0.75f
@@ -1437,9 +1370,7 @@ class ScreenAnalyzer(
             )
 
         if (
-            fullText.contains(
-                "INSUFFICIENT BALANCE"
-            )
+            fullText.contains("INSUFFICIENT BALANCE")
         ) {
             return AnalysisResult(
                 screenState = ScreenState.PAYMENT_WALLET,
@@ -1460,18 +1391,14 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("MOBIKWIK") ||
-                text.contains("AMAZON PAY") ||
-                text.contains("IRCTC WALLET")
-            ) {
+            if (containsAny(text, WALLET_PROVIDER_NAMES)) {
                 provider = element.text.trim()
                 break
             }
         }
 
         val data =
-            if (provider != null) {
+            if (!provider.isNullOrBlank()) {
                 mapOf(
                     "provider" to provider
                 )
@@ -1482,7 +1409,7 @@ class ScreenAnalyzer(
         return AnalysisResult(
             screenState = ScreenState.PAYMENT_WALLET,
             confidence =
-                if (provider != null) {
+                if (!provider.isNullOrBlank()) {
                     0.90f
                 } else {
                     0.70f
@@ -1508,14 +1435,7 @@ class ScreenAnalyzer(
 
             val text = normalizedElementText(element)
 
-            if (
-                text.contains("UPI") ||
-                text.contains("WALLET") ||
-                text.contains("CREDIT CARD") ||
-                text.contains("DEBIT CARD") ||
-                text.contains("NETBANKING") ||
-                text.contains("EMI")
-            ) {
+            if (containsAny(text, PAYMENT_CATEGORY_NAMES)) {
                 target = element
                 break
             }
@@ -1563,9 +1483,7 @@ class ScreenAnalyzer(
                         "($|\\s|[^A-Z0-9])"
                 )
 
-            if (
-                regex.containsMatchIn(text)
-            ) {
+            if (regex.containsMatchIn(text)) {
                 return true
             }
         }
@@ -1599,12 +1517,8 @@ class ScreenAnalyzer(
         /*
          * Logger contract is intentionally not assumed.
          *
-         * This keeps core-intelligence independent from
-         * Android logging APIs and from an unknown Logger
-         * implementation contract.
-         *
-         * Keep parameters referenced to avoid compiler warnings
-         * if the project enables strict warning checks.
+         * Do not introduce an Android logger here.
+         * This keeps core-intelligence JVM-only.
          */
         @Suppress("UNUSED_VARIABLE")
         val ignoredTag = TAG
@@ -1635,8 +1549,7 @@ class ScreenAnalyzer(
             return null
         }
 
-        val target =
-            normalizeText(text)
+        val target = normalizeText(text)
 
         for (element in getCurrentUIElements()) {
 
