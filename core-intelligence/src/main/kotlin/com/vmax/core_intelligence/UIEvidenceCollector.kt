@@ -3,21 +3,14 @@ package com.vmax.core_intelligence
 import com.vmax.common.Logger
 
 /**
- * VMAX v2.6.1 - UI Evidence Collector (OCR Integration)
- *
- * Responsibility: Allowed OCR evidence को existing UI evidence system में जोड़ना
- * 
- * Architecture Rule:
- * - सिर्फ SAFE_UI evidence accept करेगा
- * - SENSITIVE evidence explicitly reject करेगा
- * - Existing evidence structure में seamless integrate होगा
+ * VMAX v2.6.1 - UI Evidence Collector
+ * Collects OCR evidence, enforces security classification, and maintains screen‑aligned evidence.
  */
-class UIEvidenceCollector(
-    private val logger: Logger
-) {
+class UIEvidenceCollector(private val logger: Logger) {
 
     companion object {
         private const val TAG = "UIEvidenceCollector"
+        private const val MIN_OCR_CONFIDENCE = 0.3f
     }
 
     data class ScreenEvidence(
@@ -49,107 +42,142 @@ class UIEvidenceCollector(
             val hasOcrData: Boolean = false,
             val ocrConfidence: Float = 0f,
             val elementCount: Int = 0,
-            val classification: TextClassifier.Classification = TextClassifier.Classification.UNKNOWN
+            val classification: TextClassifier.Classification = TextClassifier.Classification.UNKNOWN,
+            val classificationConfidence: Float = 0f
         )
     }
 
     private var currentEvidence: ScreenEvidence? = null
+    private var currentScreenId: String? = null
 
+    @Synchronized
     fun collectOcrEvidence(classifiedResult: TextClassifier.ClassifiedResult): CollectionResult {
-        if (classifiedResult.classification == TextClassifier.Classification.SENSITIVE) {
-            logger.warn(TAG, "SENSITIVE evidence rejected - screenId: ${classifiedResult.ocrResult.screenId}")
+        val ocrResult = classifiedResult.ocrResult
+        val classification = classifiedResult.classification
+        val classConf = classifiedResult.confidence
+
+        // 1. Empty check
+        if (ocrResult.isEmpty()) {
+            logger.warn(TAG, "Empty OCR result rejected")
+            return CollectionResult.Rejected(RejectionReason.EMPTY_RESULT)
+        }
+
+        // 2. Low confidence check (unless SENSITIVE – we reject anyway)
+        val avgConf = ocrResult.getAverageConfidence()
+        if (avgConf < MIN_OCR_CONFIDENCE && classification != TextClassifier.Classification.SENSITIVE) {
+            logger.warn(TAG, "Low OCR confidence $avgConf")
+            return CollectionResult.Rejected(RejectionReason.LOW_CONFIDENCE)
+        }
+
+        // 3. SENSITIVE → hard reject (also stop automation)
+        if (classification == TextClassifier.Classification.SENSITIVE) {
+            logger.warn(TAG, "SENSITIVE evidence rejected")
             return CollectionResult.Rejected(
                 reason = RejectionReason.SENSITIVE_CONTENT_BLOCKED,
                 matchedPatterns = classifiedResult.matchedPatterns
             )
         }
 
-        if (classifiedResult.classification == TextClassifier.Classification.UNKNOWN) {
-            logger.debug(TAG, "UNKNOWN evidence retained for analysis - screenId: ${classifiedResult.ocrResult.screenId}")
-            return CollectionResult.RetainedAsUnknown(
-                screenId = classifiedResult.ocrResult.screenId
-            )
-        }
-
-        return processSafeEvidence(classifiedResult)
+        // 4. SAFE_UI or UNKNOWN → store evidence (with classification metadata)
+        return processAndStore(ocrResult, classification, classConf)
     }
 
-    private fun processSafeEvidence(classifiedResult: TextClassifier.ClassifiedResult): CollectionResult {
-        val ocrResult = classifiedResult.ocrResult
-        val keyValuePairs = extractKeyValuePairs(ocrResult)
+    private fun processAndStore(
+        ocrResult: OcrResult,
+        classification: TextClassifier.Classification,
+        classConf: Float
+    ): CollectionResult {
+        val keyValues = extractKeyValuePairs(ocrResult)
         val ocrEvidence = ScreenEvidence.OcrEvidence(
             fullText = ocrResult.getCleanedText(),
-            keyValuePairs = keyValuePairs,
+            keyValuePairs = keyValues,
             rawBlocks = ocrResult.textBlocks,
             confidence = ocrResult.getAverageConfidence()
         )
+
+        // Use existing screenId if available, otherwise from OCR
+        val screenId = currentScreenId ?: ocrResult.screenId
+        val existingElements = currentEvidence?.uiElements ?: emptyList()
+
         val evidence = ScreenEvidence(
-            screenId = ocrResult.screenId,
-            timestamp = ocrResult.timestamp,
-            uiElements = currentEvidence?.uiElements ?: emptyList(),
+            screenId = screenId,
+            timestamp = System.currentTimeMillis(),
+            uiElements = existingElements,
             ocrEvidence = ocrEvidence,
             metadata = ScreenEvidence.EvidenceMetadata(
                 hasOcrData = true,
                 ocrConfidence = ocrEvidence.confidence,
                 elementCount = ocrResult.textBlocks.size,
-                classification = TextClassifier.Classification.SAFE_UI
+                classification = classification,
+                classificationConfidence = classConf
             )
         )
+
         currentEvidence = evidence
-        logger.info(
-            TAG,
-            "SAFE_UI evidence collected - screenId: ${evidence.screenId}, keys: ${keyValuePairs.keys}, confidence: ${ocrEvidence.confidence}"
-        )
-        return CollectionResult.Success(
-            evidence = evidence,
-            extractedKeys = keyValuePairs.keys.toList()
-        )
+        currentScreenId = screenId
+        logger.info(TAG, "Evidence stored: screen=$screenId, classification=$classification, keys=${keyValues.keys}")
+        return CollectionResult.Success(evidence, keyValues.keys.toList())
     }
 
+    @Synchronized
+    fun updateUiElements(elements: List<ScreenEvidence.UIElement>, screenId: String? = null) {
+        val newScreenId = screenId ?: currentScreenId ?: System.currentTimeMillis().toString()
+        val existing = currentEvidence
+        if (existing != null && existing.screenId == newScreenId) {
+            currentEvidence = existing.copy(uiElements = elements, timestamp = System.currentTimeMillis())
+        } else {
+            currentEvidence = ScreenEvidence(
+                screenId = newScreenId,
+                timestamp = System.currentTimeMillis(),
+                uiElements = elements
+            )
+        }
+        currentScreenId = newScreenId
+        logger.debug(TAG, "UI elements updated for screen $newScreenId")
+    }
+
+    @Synchronized
+    fun getCurrentEvidence(): ScreenEvidence? = currentEvidence
+
+    @Synchronized
+    fun clearEvidence() {
+        currentEvidence = null
+        currentScreenId = null
+        logger.debug(TAG, "Evidence cleared")
+    }
+
+    // ----- Improved key‑value extraction (non‑greedy, word boundaries) -----
     private fun extractKeyValuePairs(ocrResult: OcrResult): Map<String, String> {
         val pairs = mutableMapOf<String, String>()
         val text = ocrResult.fullText
 
-        // Train Number
         val trainNoRegex = Regex("\\bTRAIN\\s*(?:NO\\.?|No\\.?)?\\s*:?\\s*(\\d{1,5})\\b", RegexOption.IGNORE_CASE)
         trainNoRegex.find(text)?.groupValues?.get(1)?.let { pairs["train_number"] = it }
 
-        // Train Name
-        val trainNameRegex = Regex("\\bTRAIN\\s*(?:NO\\.?|No\\.?)?\\s*:?\\s*\\d{1,5}\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
-        trainNameRegex.find(text)?.groupValues?.get(1)?.trim()?.let { name ->
-            if (name.length > 3) pairs["train_name"] = name
-        }
+        val trainNameRegex = Regex("\\bTRAIN\\s*(?:NO\\.?|No\\.?)?\\s*:?\\s*\\d{1,5}\\s*([A-Za-z\\s]+?)(?=\\s*(?:FROM|TO|DATE|CLASS|\\d|$))", RegexOption.IGNORE_CASE)
+        trainNameRegex.find(text)?.groupValues?.get(1)?.trim()?.let { if (it.length > 3) pairs["train_name"] = it }
 
-        // From Station
-        val fromRegex = Regex("(?:FROM)\\s*(?:STATION|STN)?\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
+        val fromRegex = Regex("\\bFROM\\s*(?:STATION|STN)?\\s*:?\\s*([A-Za-z\\s]+?)(?=\\s*(?:TO|DATE|CLASS|\\d|$))", RegexOption.IGNORE_CASE)
         fromRegex.find(text)?.groupValues?.get(1)?.trim()?.let { pairs["from_station"] = it }
 
-        // To Station
-        val toRegex = Regex("(?:TO)\\s*(?:STATION|STN)?\\s*:?\\s*([A-Za-z\\s]+)", RegexOption.IGNORE_CASE)
+        val toRegex = Regex("\\bTO\\s*(?:STATION|STN)?\\s*:?\\s*([A-Za-z\\s]+?)(?=\\s*(?:DATE|CLASS|\\d|$))", RegexOption.IGNORE_CASE)
         toRegex.find(text)?.groupValues?.get(1)?.trim()?.let { pairs["to_station"] = it }
 
-        // Date
         val dateRegex = Regex("\\b(\\d{2}[./-]\\d{2}[./-]\\d{4})\\b")
         dateRegex.find(text)?.value?.let { pairs["journey_date"] = it }
 
-        // Class
         val classRegex = Regex("\\b(SL|3A|2A|1A|CC|EC|3E|2S|FC)\\b", RegexOption.IGNORE_CASE)
         classRegex.find(text)?.value?.uppercase()?.let { pairs["travel_class"] = it }
 
-        // Availability
-        val availRegex = Regex("\\b(AVAILABLE|RAC|WL)\\b", RegexOption.IGNORE_CASE)
-        val availMatch = availRegex.find(text)
-        if (availMatch != null) {
-            pairs["availability_type"] = availMatch.value.uppercase()
-            val countRegex = Regex("\\b(AVAILABLE|RAC|WL)\\s*(\\d+)", RegexOption.IGNORE_CASE)
-            countRegex.find(text)?.groupValues?.get(2)?.let { pairs["availability_count"] = it }
+        val availRegex = Regex("\\b(AVAILABLE|RAC|WL)\\s*(\\d+)?\\b", RegexOption.IGNORE_CASE)
+        availRegex.find(text)?.let { match ->
+            pairs["availability_type"] = match.groupValues[1].uppercase()
+            match.groupValues[2].takeIf { it.isNotEmpty() }?.let { pairs["availability_count"] = it }
         }
 
-        // Fare
         val fareRegex = Regex("(?:FARE|PRICE|TOTAL)\\s*:?\\s*(?:₹|Rs\\.?|\\$|INR)?\\s*(\\d{1,5}(?:[.,]\\d*)?)", RegexOption.IGNORE_CASE)
         fareRegex.find(text)?.groupValues?.get(1)?.let { pairs["fare"] = it }
 
-        // Passenger fields
         if (text.contains("PASSENGER", ignoreCase = true)) {
             pairs["has_passenger_fields"] = "true"
         }
@@ -164,26 +192,15 @@ class UIEvidenceCollector(
         return pairs
     }
 
-    fun updateUiElements(elements: List<ScreenEvidence.UIElement>) {
-        currentEvidence = currentEvidence?.copy(uiElements = elements) ?: ScreenEvidence(
-            screenId = System.currentTimeMillis().toString(),
-            timestamp = System.currentTimeMillis(),
-            uiElements = elements
-        )
-    }
-
-    fun getCurrentEvidence(): ScreenEvidence? = currentEvidence
-
-    fun clearEvidence() {
-        currentEvidence = null
-        logger.debug(TAG, "Evidence cleared")
-    }
-
     sealed class CollectionResult {
         data class Success(val evidence: ScreenEvidence, val extractedKeys: List<String>) : CollectionResult()
-        data class Rejected(val reason: RejectionReason, val matchedPatterns: List<String>) : CollectionResult()
-        data class RetainedAsUnknown(val screenId: String) : CollectionResult()
+        data class Rejected(val reason: RejectionReason, val matchedPatterns: List<String> = emptyList()) : CollectionResult()
+        // RetainedAsUnknown removed – UNKNOWN is stored as Success.
     }
 
-    enum class RejectionReason { SENSITIVE_CONTENT_BLOCKED, LOW_CONFIDENCE, EMPTY_RESULT }
+    enum class RejectionReason {
+        SENSITIVE_CONTENT_BLOCKED,
+        LOW_CONFIDENCE,
+        EMPTY_RESULT
+    }
 }
