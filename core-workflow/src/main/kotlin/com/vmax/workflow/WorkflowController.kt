@@ -37,6 +37,11 @@ import java.util.UUID
  * - No AccessibilityService imports.
  * - No duplicate WorkflowState enum.
  * - Uses WorkflowState.kt as the single source of truth.
+ *
+ * Important JVM rule:
+ * - Internal state property is named workflowState.
+ * - Public getCurrentState() is retained for Java/UI compatibility.
+ * - This avoids Kotlin's generated getCurrentState() JVM clash.
  */
 class WorkflowController(
     private val orchestrator: ActionOrchestrator,
@@ -51,8 +56,10 @@ class WorkflowController(
         /**
          * IRCTC Android package identifier.
          *
-         * Kept here as workflow-level metadata only.
-         * Actual Android package filtering belongs to the platform layer.
+         * Platform-level package filtering belongs to the
+         * Android AccessibilityService layer.
+         *
+         * This constant is retained as workflow metadata.
          */
         private const val IRCTC_PACKAGE =
             "cris.org.in.prs.ima"
@@ -62,9 +69,6 @@ class WorkflowController(
 
         /**
          * Returns the globally configured controller.
-         *
-         * The application wiring layer must initialize this
-         * controller before MainViewModel attempts to use it.
          */
         @JvmStatic
         fun getInstance(): WorkflowController {
@@ -78,7 +82,7 @@ class WorkflowController(
         /**
          * Initializes the canonical controller instance.
          *
-         * Dependency construction remains outside this class.
+         * Duplicate initialization is rejected.
          */
         @JvmStatic
         fun initialize(
@@ -111,8 +115,6 @@ class WorkflowController(
 
         /**
          * Clears the singleton reference.
-         *
-         * Intended for application/test teardown.
          */
         @JvmStatic
         fun clearInstance() {
@@ -129,7 +131,7 @@ class WorkflowController(
     /**
      * Passenger details required by the workflow engine.
      *
-     * This is intentionally platform-independent.
+     * Platform-independent.
      */
     data class PassengerDetails(
         val from: String,
@@ -144,22 +146,32 @@ class WorkflowController(
     )
 
     // -------------------------------------------------------------------------
-    // Canonical state
+    // Canonical workflow state
     // -------------------------------------------------------------------------
 
     private val _state =
         MutableStateFlow(WorkflowState.IDLE)
 
     /**
-     * Read-only state exposed to UI/application layers.
+     * Read-only state exposed to application/UI layers.
      */
     val state: StateFlow<WorkflowState> =
         _state.asStateFlow()
 
     /**
-     * Internal state accessor.
+     * Internal workflow state.
+     *
+     * IMPORTANT:
+     * This is intentionally NOT called currentState.
+     *
+     * Calling it currentState would cause Kotlin to generate:
+     *
+     * getCurrentState()
+     *
+     * which would clash with the explicit getCurrentState()
+     * method below.
      */
-    private var currentState: WorkflowState
+    private var workflowState: WorkflowState
         get() = _state.value
         set(value) {
             _state.value = value
@@ -173,6 +185,11 @@ class WorkflowController(
 
     private var passengerDetails: PassengerDetails? = null
 
+    /**
+     * Last action that was actually converted into a WorkflowAction.
+     *
+     * A failed target search must NOT update this value.
+     */
     private var lastSuggestedAction:
         ScreenAnalyzer.SuggestedAction? = null
 
@@ -182,8 +199,6 @@ class WorkflowController(
 
     /**
      * Starts a workflow from the application-level booking contract.
-     *
-     * This is the API used by MainViewModel.
      */
     fun start(
         bookingRequest: BookingRequest,
@@ -191,9 +206,10 @@ class WorkflowController(
     ): Boolean {
 
         /*
-         * PassengerProfile is intentionally accepted as part of the
-         * application contract. The workflow currently executes the
-         * first passenger from BookingRequest.
+         * PassengerProfile is part of the application contract.
+         *
+         * The workflow currently uses the first passenger from
+         * BookingRequest.
          */
         if (passengerProfile.passengers.isEmpty()) {
             return false
@@ -241,11 +257,11 @@ class WorkflowController(
     ): Boolean {
 
         /*
-         * A new session can only start from IDLE.
+         * Only IDLE can start a new session.
          *
-         * This prevents accidental overlapping workflow sessions.
+         * This prevents overlapping sessions.
          */
-        if (currentState != WorkflowState.IDLE) {
+        if (workflowState != WorkflowState.IDLE) {
             return false
         }
 
@@ -262,15 +278,15 @@ class WorkflowController(
         lastSuggestedAction = null
 
         /*
-         * Configuration is accepted first.
+         * Configuration accepted.
          */
-        currentState =
+        workflowState =
             WorkflowState.CONFIGURED
 
         /*
-         * Then the execution engine is allowed to operate.
+         * Execution begins.
          */
-        currentState =
+        workflowState =
             WorkflowState.RUNNING
 
         return true
@@ -282,22 +298,23 @@ class WorkflowController(
     fun stopWorkflow() {
 
         if (
-            currentState == WorkflowState.IDLE ||
-            currentState == WorkflowState.STOPPED
+            workflowState == WorkflowState.IDLE ||
+            workflowState == WorkflowState.STOPPED
         ) {
             return
         }
 
-        currentState =
+        workflowState =
             WorkflowState.STOPPED
 
         lastSuggestedAction = null
     }
 
     /**
-     * Resets the controller after a finished/stopped/error session.
+     * Resets the controller after a completed/stopped/error/boundary
+     * session.
      *
-     * This does NOT automatically restart anything.
+     * Active sessions cannot be reset.
      */
     fun reset(): Boolean {
 
@@ -309,7 +326,7 @@ class WorkflowController(
         passengerDetails = null
         lastSuggestedAction = null
 
-        currentState =
+        workflowState =
             WorkflowState.IDLE
 
         return true
@@ -320,10 +337,16 @@ class WorkflowController(
     // -------------------------------------------------------------------------
 
     /**
-     * Returns current canonical workflow state.
+     * Returns the current canonical workflow state.
+     *
+     * This explicit method is intentionally retained for callers
+     * that use the Java-style API.
+     *
+     * There is no JVM clash because the internal property is named
+     * workflowState rather than currentState.
      */
     fun getCurrentState(): WorkflowState =
-        currentState
+        workflowState
 
     /**
      * Returns the current session ID.
@@ -337,11 +360,10 @@ class WorkflowController(
      */
     fun isActive(): Boolean {
 
-        return when (currentState) {
+        return when (workflowState) {
 
             WorkflowState.CONFIGURED,
             WorkflowState.RUNNING,
-            WorkflowState.ARMED,
             WorkflowState.GENDER_DROPDOWN_OPENED,
             WorkflowState.MEAL_DROPDOWN_OPENED,
             WorkflowState.PASSENGER_NAME_TYPED,
@@ -357,31 +379,24 @@ class WorkflowController(
     }
 
     /**
-     * Updates state through the canonical state contract.
+     * Updates state through the canonical WorkflowState contract.
      */
     fun updateState(
         newState: WorkflowState
     ) {
 
         /*
-         * USER_BOUNDARY always clears the pending suggested action.
-         * This prevents automatic continuation.
-         */
-        if (newState == WorkflowState.USER_BOUNDARY) {
-            lastSuggestedAction = null
-        }
-
-        /*
-         * STOPPED and ERROR also clear pending actions.
+         * Hard boundary states must clear pending actions.
          */
         if (
+            newState == WorkflowState.USER_BOUNDARY ||
             newState == WorkflowState.STOPPED ||
             newState == WorkflowState.ERROR
         ) {
             lastSuggestedAction = null
         }
 
-        currentState =
+        workflowState =
             newState
     }
 
@@ -397,7 +412,7 @@ class WorkflowController(
      * - session is invalid,
      * - security boundary is detected,
      * - no safe action is available,
-     * - the same suggested action is already pending.
+     * - same action is already pending.
      */
     fun handleScreenAnalysis(
         analysis: ScreenAnalyzer.AnalysisResult,
@@ -428,11 +443,7 @@ class WorkflowController(
         // Security boundary
         // ---------------------------------------------------------------------
 
-        if (
-            classifier.isSensitiveScreen(
-                ocrResult
-            )
-        ) {
+        if (classifier.isSensitiveScreen(ocrResult)) {
 
             enterUserBoundary(
                 reason = "Sensitive screen detected"
@@ -442,12 +453,12 @@ class WorkflowController(
         }
 
         /*
-         * Explicit boundary states always block further automation.
+         * Explicit hard-boundary states always block automation.
          */
         if (
-            currentState == WorkflowState.USER_BOUNDARY ||
-            currentState == WorkflowState.STOPPED ||
-            currentState == WorkflowState.ERROR
+            workflowState == WorkflowState.USER_BOUNDARY ||
+            workflowState == WorkflowState.STOPPED ||
+            workflowState == WorkflowState.ERROR
         ) {
             return null
         }
@@ -456,7 +467,7 @@ class WorkflowController(
             analysis.suggestedAction
 
         /*
-         * NONE is never executed.
+         * NONE is never executable.
          */
         if (
             suggestedAction ==
@@ -466,8 +477,7 @@ class WorkflowController(
         }
 
         /*
-         * Prevent repeatedly generating the same action
-         * while the screen has not changed.
+         * Do not repeatedly generate the same action.
          */
         if (
             suggestedAction ==
@@ -480,46 +490,35 @@ class WorkflowController(
             when (suggestedAction) {
 
                 ScreenAnalyzer.SuggestedAction.SELECT_TRAIN ->
-                    handleTrainSelection(
-                        analysis
-                    )
+                    handleTrainSelection(analysis)
 
                 ScreenAnalyzer.SuggestedAction.SELECT_CLASS ->
-                    handleClassSelection(
-                        analysis
-                    )
+                    handleClassSelection(analysis)
 
                 ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_NAME ->
-                    handlePassengerName(
-                        analysis
-                    )
+                    handlePassengerName(analysis)
 
                 ScreenAnalyzer.SuggestedAction.FILL_PASSENGER_AGE ->
-                    handlePassengerAgeFromAnalysis(
-                        analysis
-                    )
+                    handlePassengerAgeFromAnalysis(analysis)
 
                 ScreenAnalyzer.SuggestedAction.ADD_PASSENGER ->
-                    handleAddPassenger(
-                        analysis
-                    )
+                    handleAddPassenger(analysis)
 
                 ScreenAnalyzer.SuggestedAction.REVIEW_JOURNEY ->
-                    handleReviewAndProceed(
-                        analysis
-                    )
+                    handleReviewAndProceed(analysis)
 
                 else ->
                     null
             }
 
         /*
-         * Only remember an action if an actual WorkflowAction
+         * IMPORTANT:
+         *
+         * Remember the suggested action ONLY when a real action
          * was generated.
          *
-         * This is important:
-         * failed target discovery must NOT permanently suppress
-         * the next attempt.
+         * If target discovery fails, the next screen analysis can
+         * retry instead of being permanently suppressed.
          */
         if (action != null) {
             lastSuggestedAction =
@@ -542,13 +541,12 @@ class WorkflowController(
     ): WorkflowAction? {
 
         /*
-         * Do not allow a caller to execute a state-driven action
-         * after the controller has already entered a hard boundary.
+         * Hard boundaries always win.
          */
         if (
-            currentState == WorkflowState.USER_BOUNDARY ||
-            currentState == WorkflowState.STOPPED ||
-            currentState == WorkflowState.ERROR
+            workflowState == WorkflowState.USER_BOUNDARY ||
+            workflowState == WorkflowState.STOPPED ||
+            workflowState == WorkflowState.ERROR
         ) {
             return null
         }
@@ -573,12 +571,18 @@ class WorkflowController(
                         ?.meal
                         .orEmpty()
 
+                /*
+                 * Meal is optional.
+                 */
                 if (meal.isBlank()) {
-                    currentState =
+
+                    workflowState =
                         WorkflowState.PASSENGER_MEAL_SELECTED
 
                     null
+
                 } else {
+
                     selectDropdownOption(
                         uiElements = uiElements,
                         targetText = meal
@@ -611,7 +615,7 @@ class WorkflowController(
 
                 lastSuggestedAction = null
 
-                currentState =
+                workflowState =
                     WorkflowState.RUNNING
 
                 null
@@ -630,14 +634,14 @@ class WorkflowController(
     /**
      * Enters the explicit user-controlled boundary.
      *
-     * Automation stops here and no further WorkflowAction is generated.
+     * Automation cannot continue automatically from this state.
      */
     private fun enterUserBoundary(
         reason: String
     ) {
 
         if (
-            currentState ==
+            workflowState ==
             WorkflowState.USER_BOUNDARY
         ) {
             return
@@ -664,7 +668,7 @@ class WorkflowController(
 
         lastSuggestedAction = null
 
-        currentState =
+        workflowState =
             WorkflowState.USER_BOUNDARY
     }
 
@@ -676,39 +680,14 @@ class WorkflowController(
         details: PassengerDetails
     ): Boolean {
 
-        if (details.from.isBlank()) {
-            return false
-        }
-
-        if (details.to.isBlank()) {
-            return false
-        }
-
-        if (details.date.isBlank()) {
-            return false
-        }
-
-        if (details.train.isBlank()) {
-            return false
-        }
-
-        if (details.trainClass.isBlank()) {
-            return false
-        }
-
-        if (details.name.isBlank()) {
-            return false
-        }
-
-        if (details.age.isBlank()) {
-            return false
-        }
-
-        if (details.gender.isBlank()) {
-            return false
-        }
-
-        return true
+        return details.from.isNotBlank() &&
+            details.to.isNotBlank() &&
+            details.date.isNotBlank() &&
+            details.train.isNotBlank() &&
+            details.trainClass.isNotBlank() &&
+            details.name.isNotBlank() &&
+            details.age.isNotBlank() &&
+            details.gender.isNotBlank()
     }
 
     // -------------------------------------------------------------------------
@@ -732,7 +711,7 @@ class WorkflowController(
 
         /*
          * First preference:
-         * exact/contains train number match.
+         * exact or contains train-number match.
          */
         for (element in elements) {
 
@@ -760,7 +739,7 @@ class WorkflowController(
 
         /*
          * Fallback:
-         * common train-selection actions.
+         * common train-selection controls.
          */
         if (target == null) {
 
@@ -839,7 +818,7 @@ class WorkflowController(
                         ignoreCase = true
                     )
             }
-            ?: return null
+                ?: return null
 
         val targetId =
             target.id.takeIf {
@@ -875,9 +854,9 @@ class WorkflowController(
                 elements,
                 "Name"
             )
-            ?: return null
+                ?: return null
 
-        currentState =
+        workflowState =
             WorkflowState.PASSENGER_NAME_TYPED
 
         val targetId =
@@ -913,9 +892,9 @@ class WorkflowController(
                 elements,
                 "Age"
             )
-            ?: return null
+                ?: return null
 
-        currentState =
+        workflowState =
             WorkflowState.PASSENGER_AGE_TYPED
 
         val targetId =
@@ -942,9 +921,9 @@ class WorkflowController(
                 uiElements,
                 "Age"
             )
-            ?: return null
+                ?: return null
 
-        currentState =
+        workflowState =
             WorkflowState.PASSENGER_AGE_TYPED
 
         val targetId =
@@ -971,9 +950,9 @@ class WorkflowController(
                 uiElements,
                 "Gender"
             )
-            ?: return null
+                ?: return null
 
-        currentState =
+        workflowState =
             WorkflowState.GENDER_DROPDOWN_OPENED
 
         val targetId =
@@ -1004,11 +983,11 @@ class WorkflowController(
          * Meal is optional.
          *
          * Never click an arbitrary Meal control when
-         * the user has not configured a meal preference.
+         * no preference has been configured.
          */
         if (details.meal.isBlank()) {
 
-            currentState =
+            workflowState =
                 WorkflowState.PASSENGER_MEAL_SELECTED
 
             return null
@@ -1019,9 +998,9 @@ class WorkflowController(
                 uiElements,
                 "Meal"
             )
-            ?: return null
+                ?: return null
 
-        currentState =
+        workflowState =
             WorkflowState.MEAL_DROPDOWN_OPENED
 
         val targetId =
@@ -1058,10 +1037,10 @@ class WorkflowController(
                         ignoreCase = true
                     )
             }
-            ?: return null
+                ?: return null
 
-        currentState =
-            when (currentState) {
+        workflowState =
+            when (workflowState) {
 
                 WorkflowState.GENDER_DROPDOWN_OPENED ->
                     WorkflowState.PASSENGER_GENDER_SELECTED
@@ -1070,7 +1049,7 @@ class WorkflowController(
                     WorkflowState.PASSENGER_MEAL_SELECTED
 
                 else ->
-                    currentState
+                    workflowState
             }
 
         val targetId =
@@ -1107,7 +1086,7 @@ class WorkflowController(
                         ignoreCase = true
                     )
             }
-            ?: return null
+                ?: return null
 
         val targetId =
             target.id.takeIf {
@@ -1157,15 +1136,16 @@ class WorkflowController(
                         ignoreCase = true
                     )
             }
-            ?: return null
+                ?: return null
 
         /*
          * Review / Proceed-to-Pay is a hard user boundary.
          *
-         * The controller may produce the boundary action,
-         * but it must NOT continue beyond it automatically.
+         * The controller may return the boundary action,
+         * but it will never generate another automatic action
+         * after entering USER_BOUNDARY.
          */
-        currentState =
+        workflowState =
             WorkflowState.USER_BOUNDARY
 
         lastSuggestedAction = null
@@ -1187,7 +1167,7 @@ class WorkflowController(
     // -------------------------------------------------------------------------
 
     /**
-     * Finds an editable UI element using hint/text/contentDescription.
+     * Finds an editable element by hint, text, or content description.
      */
     private fun findEditableByLabel(
         elements: List<UIElement>,
@@ -1225,7 +1205,7 @@ class WorkflowController(
     }
 
     /**
-     * Finds a clickable UI element using hint/text/contentDescription.
+     * Finds a clickable element by hint, text, or content description.
      */
     private fun findClickableByLabel(
         elements: List<UIElement>,
@@ -1266,7 +1246,7 @@ class WorkflowController(
      * Calculates the center point of a UI element.
      *
      * Coordinates are only an execution hint.
-     * The platform action executor decides how they are used.
+     * The platform execution layer decides how they are used.
      */
     private fun getCoordinates(
         element: UIElement
@@ -1286,8 +1266,8 @@ class WorkflowController(
 /**
  * Platform-independent action generated by WorkflowController.
  *
- * The controller never executes these actions directly.
- * The execution layer is responsible for actually performing them.
+ * WorkflowController never executes these actions directly.
+ * The execution layer performs the actual operation.
  */
 sealed class WorkflowAction {
 
