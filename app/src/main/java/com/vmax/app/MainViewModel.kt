@@ -17,6 +17,7 @@ class MainViewModel : ViewModel() {
     private val workflowController = WorkflowController.getInstance()
 
     // ---- UI States ----
+
     private val _trainNumber = MutableStateFlow("")
     val trainNumber: StateFlow<String> = _trainNumber.asStateFlow()
 
@@ -55,22 +56,55 @@ class MainViewModel : ViewModel() {
 
     val workflowState: StateFlow<WorkflowState> = workflowController.state
 
+    // ---- Update Methods ----
+
     fun updateTrainNumber(value: String) {
         if (value.all { it.isDigit() }) {
             _trainNumber.value = value
         }
     }
 
-    fun updateTrainName(value: String) { /* Read-only, no-op */ }
-    fun updateClassType(value: String) { _classType.value = value }
-    fun updateQuota(value: Quota?) { _quota.value = value }
-    fun updateFromStation(value: String) { _fromStation.value = value }
-    fun updateToStation(value: String) { _toStation.value = value }
-    fun updateJourneyDate(value: String) { _journeyDate.value = value }
-    fun updatePassengerName(value: String) { _passengerName.value = value }
-    fun updatePassengerAge(value: String) { _passengerAge.value = value }
-    fun updatePassengerGender(value: String) { _passengerGender.value = value }
-    fun updatePassengerMobile(value: String) { _passengerMobile.value = value }
+    fun updateTrainName(value: String) {
+        // Read-only, no-op
+    }
+
+    fun updateClassType(value: String) {
+        _classType.value = value
+    }
+
+    fun updateQuota(value: Quota?) {
+        _quota.value = value
+    }
+
+    fun updateFromStation(value: String) {
+        _fromStation.value = value
+    }
+
+    fun updateToStation(value: String) {
+        _toStation.value = value
+    }
+
+    fun updateJourneyDate(value: String) {
+        _journeyDate.value = value
+    }
+
+    fun updatePassengerName(value: String) {
+        _passengerName.value = value
+    }
+
+    fun updatePassengerAge(value: String) {
+        _passengerAge.value = value
+    }
+
+    fun updatePassengerGender(value: String) {
+        _passengerGender.value = value
+    }
+
+    fun updatePassengerMobile(value: String) {
+        _passengerMobile.value = value
+    }
+
+    // ---- Workflow ----
 
     fun startWorkflow() {
         _validationError.value = null
@@ -79,41 +113,65 @@ class MainViewModel : ViewModel() {
             _validationError.value = "Train Number is required."
             return
         }
+
         if (!trainNumber.value.matches(Regex("^\\d{4,5}$"))) {
-            _validationError.value = "Train Number must be 4 or 5 digits."
+            _validationError.value =
+                "Train Number must be 4 or 5 digits."
             return
         }
+
         if (classType.value.isBlank()) {
-            _validationError.value = "Class Type is required."
+            _validationError.value =
+                "Class Type is required."
             return
         }
+
         if (quota.value == null) {
-            _validationError.value = "Quota is required."
+            _validationError.value =
+                "Quota is required."
             return
         }
+
         if (fromStation.value.isBlank()) {
-            _validationError.value = "From Station is required."
+            _validationError.value =
+                "From Station is required."
             return
         }
+
         if (toStation.value.isBlank()) {
-            _validationError.value = "To Station is required."
+            _validationError.value =
+                "To Station is required."
             return
         }
+
         if (journeyDate.value.isBlank()) {
-            _validationError.value = "Journey Date is required."
+            _validationError.value =
+                "Journey Date is required."
             return
         }
+
         if (passengerName.value.isBlank()) {
-            _validationError.value = "Passenger Name is required."
+            _validationError.value =
+                "Passenger Name is required."
             return
         }
+
         val ageInt = passengerAge.value.toIntOrNull()
+
         if (ageInt == null || ageInt !in 1..120) {
-            _validationError.value = "Valid Age (1-120) is required."
+            _validationError.value =
+                "Valid Age (1-120) is required."
             return
         }
-        if (passengerMobile.value.isNotBlank() && !passengerMobile.value.matches(Regex("^[6-9]\\d{9}$"))) {
-            _validationError.value = "Mobile must be exactly 10 digits starting with 6-9."
+
+        if (
+            passengerMobile.value.isNotBlank() &&
+            !passengerMobile.value.matches(
+                Regex("^[6-9]\\d{9}$")
+            )
+        ) {
+            _validationError.value =
+                "Mobile must be exactly 10 digits starting with 6-9."
             return
         }
 
@@ -123,14 +181,23 @@ class MainViewModel : ViewModel() {
             classType = classType.value,
             quota = quota.value?.name ?: "GENERAL"
         )
-        val fromStation = Station(fromStation.value, fromStation.value)
-        val toStation = Station(toStation.value, toStation.value)
+
+        val fromStation = Station(
+            fromStation.value,
+            fromStation.value
+        )
+
+        val toStation = Station(
+            toStation.value,
+            toStation.value
+        )
 
         val passenger = Passenger(
             name = passengerName.value,
             age = ageInt,
             gender = passengerGender.value,
-            mobile = passengerMobile.value.takeIf { it.isNotBlank() }
+            mobile = passengerMobile.value
+                .takeIf { it.isNotBlank() }
         )
 
         val profileId = UUID.randomUUID().toString()
@@ -151,20 +218,25 @@ class MainViewModel : ViewModel() {
             updatedTime = LocalDateTime.now()
         )
 
-        // ✅ FIX: Suspend function called inside viewModelScope.launch
         viewModelScope.launch {
-            workflowController.start(bookingRequest, passengerProfile)
+            workflowController.start(
+                bookingRequest,
+                passengerProfile
+            )
         }
     }
 
     fun stopWorkflow() {
-        // ✅ FIX: Suspend function called inside viewModelScope.launch
         viewModelScope.launch {
             workflowController.stop()
         }
     }
 
+    // IMPORTANT:
+    // WorkflowState is an enum.
+    // Therefore use ==, NOT "is".
+
     fun isWorkflowActive(): Boolean =
-        workflowState.value is WorkflowState.RUNNING ||
-        workflowState.value is WorkflowState.CONFIGURED
+        workflowState.value == WorkflowState.RUNNING ||
+        workflowState.value == WorkflowState.CONFIGURED
 }
