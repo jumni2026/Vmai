@@ -7,21 +7,21 @@ plugins {
 
 android {
     namespace = "com.vmax.runtime"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 24
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
+        jvmTarget.set(JvmTarget.JVM_21)
     }
 }
 
