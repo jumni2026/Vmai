@@ -124,6 +124,11 @@ class WorkflowController(
     val state: StateFlow<WorkflowState> =
         _state.asStateFlow()
 
+    /**
+     * Do not rename to currentState.
+     *
+     * getCurrentState() is retained for Java/UI compatibility.
+     */
     private var workflowState: WorkflowState
         get() = _state.value
         set(value) {
@@ -138,6 +143,9 @@ class WorkflowController(
 
     private var passengerDetails: PassengerDetails? = null
 
+    /**
+     * Tracks only an action that was actually produced.
+     */
     private var lastSuggestedAction:
         ScreenAnalyzer.SuggestedAction? = null
 
@@ -164,14 +172,51 @@ class WorkflowController(
 
         val details =
             PassengerDetails(
-                from = bookingRequest.fromStation.code.trim(),
-                to = bookingRequest.toStation.code.trim(),
-                date = bookingRequest.date.trim(),
-                train = bookingRequest.train.number.trim(),
-                trainClass = bookingRequest.train.classType.trim(),
-                name = passenger.name.trim(),
-                age = passenger.age.toString().trim(),
-                gender = passenger.gender.trim(),
+                from =
+                    bookingRequest
+                        .fromStation
+                        .code
+                        .trim(),
+
+                to =
+                    bookingRequest
+                        .toStation
+                        .code
+                        .trim(),
+
+                date =
+                    bookingRequest
+                        .date
+                        .trim(),
+
+                train =
+                    bookingRequest
+                        .train
+                        .number
+                        .trim(),
+
+                trainClass =
+                    bookingRequest
+                        .train
+                        .classType
+                        .trim(),
+
+                name =
+                    passenger
+                        .name
+                        .trim(),
+
+                age =
+                    passenger
+                        .age
+                        .toString()
+                        .trim(),
+
+                gender =
+                    passenger
+                        .gender
+                        .trim(),
+
                 meal = ""
             )
 
@@ -359,16 +404,19 @@ class WorkflowController(
 
         /*
          * Canonical OcrResult contract:
-         * - screenId
-         * - timestamp
-         * - fullText
-         * - textBlocks
-         * - language
+         *
+         * screenId
+         * timestamp
+         * fullText
+         * textBlocks
+         * language
+         *
+         * timestamp and language have defaults,
+         * so only the required values are supplied here.
          */
         val ocrResult =
             OcrResult(
                 screenId = sessionId,
-                timestamp = System.currentTimeMillis(),
                 fullText = ocrText,
                 textBlocks = ocrBlocks
             )
@@ -436,11 +484,10 @@ class WorkflowController(
     ): WorkflowAction? {
 
         /*
-         * Analysis is intentionally kept conservative.
+         * This controller deliberately does not execute
+         * transactional/booking/payment operations.
          *
-         * The controller does not directly execute
-         * transactional, booking, payment, CAPTCHA,
-         * or OTP operations.
+         * Runtime/execution layers own actual execution.
          */
         return when (suggestedAction) {
 
@@ -567,10 +614,14 @@ class WorkflowController(
                 }
 
                 val text =
-                    normalize(element.text)
+                    normalize(
+                        element.text
+                    )
 
                 text == normalizedTarget ||
-                    text.contains(normalizedTarget)
+                    text.contains(
+                        normalizedTarget
+                    )
             }
                 ?: return null
 
@@ -616,12 +667,23 @@ class WorkflowController(
 
             try {
 
+                /*
+                 * IMPORTANT:
+                 *
+                 * Current ExecutionEvent.SessionError contract uses:
+                 * - sessionId
+                 * - errorCode
+                 * - errorMessage
+                 *
+                 * NOT:
+                 * - code
+                 * - message
+                 */
                 recorder.recordEvent(
                     ExecutionEvent.SessionError(
                         sessionId = sessionId,
-                        timestamp = System.currentTimeMillis(),
-                        code = "SECURITY_BOUNDARY",
-                        message = reason
+                        errorCode = "SECURITY_BOUNDARY",
+                        errorMessage = reason
                     )
                 )
 
@@ -703,13 +765,19 @@ class WorkflowController(
             }
 
             val hint =
-                normalize(element.hint.orEmpty())
+                normalize(
+                    element.hint.orEmpty()
+                )
 
             val text =
-                normalize(element.text)
+                normalize(
+                    element.text
+                )
 
             val description =
-                normalize(element.contentDescription.orEmpty())
+                normalize(
+                    element.contentDescription.orEmpty()
+                )
 
             hint.contains(normalizedLabel) ||
                 text.contains(normalizedLabel) ||
@@ -736,13 +804,19 @@ class WorkflowController(
             }
 
             val hint =
-                normalize(element.hint.orEmpty())
+                normalize(
+                    element.hint.orEmpty()
+                )
 
             val text =
-                normalize(element.text)
+                normalize(
+                    element.text
+                )
 
             val description =
-                normalize(element.contentDescription.orEmpty())
+                normalize(
+                    element.contentDescription.orEmpty()
+                )
 
             hint.contains(normalizedLabel) ||
                 text.contains(normalizedLabel) ||
