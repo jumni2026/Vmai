@@ -6,6 +6,7 @@ on:
       - main
       - master
       - develop
+
   pull_request:
     branches:
       - main
@@ -18,30 +19,70 @@ env:
 
 jobs:
   build:
-    name: Build
+    name: Android Build
     runs-on: ubuntu-latest
 
     steps:
+      # ------------------------------------------------------------
+      # 1. Checkout source code
+      # ------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ------------------------------------------------------------
+      # 2. Validate Gradle Wrapper
+      # ------------------------------------------------------------
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      # ------------------------------------------------------------
+      # 3. Setup JDK 21
+      # ------------------------------------------------------------
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
 
+      # ------------------------------------------------------------
+      # 4. Make Gradle wrapper executable
+      # ------------------------------------------------------------
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Compile and Test
-        run: ./gradlew build
+      # ------------------------------------------------------------
+      # 5. Clean previous build outputs
+      # ------------------------------------------------------------
+      - name: Clean
+        run: ./gradlew clean --no-daemon
 
-      - name: Build APK (Debug)
-        run: ./gradlew assembleDebug
+      # ------------------------------------------------------------
+      # 6. Build + Test
+      # ------------------------------------------------------------
+      - name: Build and Test
+        run: ./gradlew build --no-daemon
 
+      # ------------------------------------------------------------
+      # 7. Build Debug APK
+      # ------------------------------------------------------------
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      # ------------------------------------------------------------
+      # 8. Verify APK exists
+      # ------------------------------------------------------------
+      - name: Verify Debug APK
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          echo "Debug APK created successfully."
+
+      # ------------------------------------------------------------
+      # 9. Upload APK
+      # ------------------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: VMAX-Enterprise-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
