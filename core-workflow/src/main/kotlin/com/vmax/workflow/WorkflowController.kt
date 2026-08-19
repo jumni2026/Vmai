@@ -37,7 +37,7 @@ import java.util.UUID
  * Runtime/execution layers are responsible for actual platform
  * interaction.
  *
- * This controller also stops at explicit user/security boundaries.
+ * This controller stops at explicit user/security boundaries.
  */
 class WorkflowController(
     @Suppress("UNUSED_PARAMETER")
@@ -124,12 +124,6 @@ class WorkflowController(
     val state: StateFlow<WorkflowState> =
         _state.asStateFlow()
 
-    /**
-     * Do not rename to currentState.
-     *
-     * getCurrentState() is explicitly retained for Java/UI
-     * compatibility and avoiding JVM getter collision.
-     */
     private var workflowState: WorkflowState
         get() = _state.value
         set(value) {
@@ -144,11 +138,6 @@ class WorkflowController(
 
     private var passengerDetails: PassengerDetails? = null
 
-    /**
-     * Tracks only an action that was actually produced.
-     *
-     * Failed target resolution must never update this value.
-     */
     private var lastSuggestedAction:
         ScreenAnalyzer.SuggestedAction? = null
 
@@ -156,9 +145,6 @@ class WorkflowController(
     // LIFECYCLE
     // =========================================================================
 
-    /**
-     * Starts workflow from application-level contract.
-     */
     fun start(
         bookingRequest: BookingRequest,
         passengerProfile: PassengerProfile
@@ -178,51 +164,14 @@ class WorkflowController(
 
         val details =
             PassengerDetails(
-                from =
-                    bookingRequest
-                        .fromStation
-                        .code
-                        .trim(),
-
-                to =
-                    bookingRequest
-                        .toStation
-                        .code
-                        .trim(),
-
-                date =
-                    bookingRequest
-                        .date
-                        .trim(),
-
-                train =
-                    bookingRequest
-                        .train
-                        .number
-                        .trim(),
-
-                trainClass =
-                    bookingRequest
-                        .train
-                        .classType
-                        .trim(),
-
-                name =
-                    passenger
-                        .name
-                        .trim(),
-
-                age =
-                    passenger
-                        .age
-                        .toString()
-                        .trim(),
-
-                gender =
-                    passenger
-                        .gender
-                        .trim(),
-
+                from = bookingRequest.fromStation.code.trim(),
+                to = bookingRequest.toStation.code.trim(),
+                date = bookingRequest.date.trim(),
+                train = bookingRequest.train.number.trim(),
+                trainClass = bookingRequest.train.classType.trim(),
+                name = passenger.name.trim(),
+                age = passenger.age.toString().trim(),
+                gender = passenger.gender.trim(),
                 meal = ""
             )
 
@@ -235,16 +184,10 @@ class WorkflowController(
         )
     }
 
-    /**
-     * Public stop API.
-     */
     fun stop() {
         stopWorkflow()
     }
 
-    /**
-     * Starts a new workflow session.
-     */
     fun startWorkflow(
         details: PassengerDetails,
         sessionId: String
@@ -300,9 +243,6 @@ class WorkflowController(
         return true
     }
 
-    /**
-     * Stops the current workflow.
-     */
     fun stopWorkflow() {
 
         if (
@@ -333,9 +273,6 @@ class WorkflowController(
             WorkflowState.STOPPED
     }
 
-    /**
-     * Resets a completed, stopped, error, or user-boundary session.
-     */
     fun reset(): Boolean {
 
         if (isActive()) {
@@ -343,9 +280,7 @@ class WorkflowController(
         }
 
         currentSessionId = ""
-
         passengerDetails = null
-
         lastSuggestedAction = null
 
         workflowState =
@@ -364,9 +299,6 @@ class WorkflowController(
     fun getSessionId(): String =
         currentSessionId
 
-    /**
-     * Returns true only for states where workflow processing is allowed.
-     */
     fun isActive(): Boolean {
 
         return when (workflowState) {
@@ -388,9 +320,6 @@ class WorkflowController(
         }
     }
 
-    /**
-     * Updates canonical workflow state.
-     */
     fun updateState(
         newState: WorkflowState
     ) {
@@ -411,11 +340,6 @@ class WorkflowController(
     // SCREEN ANALYSIS
     // =========================================================================
 
-    /**
-     * Converts screen intelligence into a platform-independent action.
-     *
-     * No Android UI operation is performed here.
-     */
     fun handleScreenAnalysis(
         analysis: ScreenAnalyzer.AnalysisResult,
         ocrText: String,
@@ -434,24 +358,17 @@ class WorkflowController(
         }
 
         /*
-         * IMPORTANT:
-         *
-         * OcrResult now uses:
+         * Canonical OcrResult contract:
          * - screenId
+         * - timestamp
          * - fullText
          * - textBlocks
-         *
-         * The old constructor names:
-         * - sessionId
-         * - timestamp
-         * - text
-         * - blocks
-         *
-         * must not be used.
+         * - language
          */
         val ocrResult =
             OcrResult(
                 screenId = sessionId,
+                timestamp = System.currentTimeMillis(),
                 fullText = ocrText,
                 textBlocks = ocrBlocks
             )
@@ -487,9 +404,6 @@ class WorkflowController(
             return null
         }
 
-        /*
-         * Prevent identical action generation.
-         */
         if (
             suggestedAction ==
             lastSuggestedAction
@@ -497,22 +411,13 @@ class WorkflowController(
             return null
         }
 
-        /*
-         * Only safe, non-transactional action conversion
-         * is permitted here.
-         */
         val action =
             createSafeAction(
                 analysis = analysis,
                 suggestedAction = suggestedAction
             )
 
-        /*
-         * Only remember a suggestion after an action
-         * has actually been produced.
-         */
         if (action != null) {
-
             lastSuggestedAction =
                 suggestedAction
         }
@@ -524,12 +429,6 @@ class WorkflowController(
     // SAFE ACTION CONVERSION
     // =========================================================================
 
-    /**
-     * Converts intelligence into a platform-independent action.
-     *
-     * Transactional/booking/payment execution is deliberately not
-     * performed by this controller.
-     */
     private fun createSafeAction(
         analysis: ScreenAnalyzer.AnalysisResult,
         suggestedAction:
@@ -537,10 +436,11 @@ class WorkflowController(
     ): WorkflowAction? {
 
         /*
-         * Keep the controller conservative.
+         * Analysis is intentionally kept conservative.
          *
-         * The actual platform execution layer must decide whether
-         * and how an action may be executed.
+         * The controller does not directly execute
+         * transactional, booking, payment, CAPTCHA,
+         * or OTP operations.
          */
         return when (suggestedAction) {
 
@@ -569,11 +469,6 @@ class WorkflowController(
             return null
         }
 
-        /*
-         * Do not process a state that is different from the
-         * controller's canonical state unless it is a harmless
-         * externally-observed snapshot.
-         */
         if (
             state != workflowState &&
             state !in setOf(
@@ -672,21 +567,15 @@ class WorkflowController(
                 }
 
                 val text =
-                    normalize(
-                        element.text
-                    )
+                    normalize(element.text)
 
                 text == normalizedTarget ||
-                    text.contains(
-                        normalizedTarget
-                    )
+                    text.contains(normalizedTarget)
             }
                 ?: return null
 
         val action =
-            buildClickAction(
-                target
-            )
+            buildClickAction(target)
                 ?: return null
 
         workflowState =
@@ -729,9 +618,10 @@ class WorkflowController(
 
                 recorder.recordEvent(
                     ExecutionEvent.SessionError(
-                        sessionId,
-                        "SECURITY_BOUNDARY",
-                        reason
+                        sessionId = sessionId,
+                        timestamp = System.currentTimeMillis(),
+                        code = "SECURITY_BOUNDARY",
+                        message = reason
                     )
                 )
 
@@ -813,19 +703,13 @@ class WorkflowController(
             }
 
             val hint =
-                normalize(
-                    element.hint.orEmpty()
-                )
+                normalize(element.hint.orEmpty())
 
             val text =
-                normalize(
-                    element.text
-                )
+                normalize(element.text)
 
             val description =
-                normalize(
-                    element.contentDescription.orEmpty()
-                )
+                normalize(element.contentDescription.orEmpty())
 
             hint.contains(normalizedLabel) ||
                 text.contains(normalizedLabel) ||
@@ -852,19 +736,13 @@ class WorkflowController(
             }
 
             val hint =
-                normalize(
-                    element.hint.orEmpty()
-                )
+                normalize(element.hint.orEmpty())
 
             val text =
-                normalize(
-                    element.text
-                )
+                normalize(element.text)
 
             val description =
-                normalize(
-                    element.contentDescription.orEmpty()
-                )
+                normalize(element.contentDescription.orEmpty())
 
             hint.contains(normalizedLabel) ||
                 text.contains(normalizedLabel) ||
