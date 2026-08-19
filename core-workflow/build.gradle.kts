@@ -3,7 +3,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {
@@ -12,8 +12,15 @@ dependencies {
     implementation(project(":core-validation"))
     implementation(project(":core-intelligence"))
     implementation(project(":core-action"))
-    // runtime dependency removed - no longer needed
+
+    // Runtime dependency intentionally removed.
+    // This module remains platform-independent.
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+
     testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
