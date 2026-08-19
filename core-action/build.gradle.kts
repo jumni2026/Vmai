@@ -3,7 +3,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {
@@ -13,4 +13,8 @@ dependencies {
     implementation(project(":core-intelligence"))
 
     testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
