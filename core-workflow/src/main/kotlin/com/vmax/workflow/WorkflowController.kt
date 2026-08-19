@@ -403,20 +403,24 @@ class WorkflowController(
         }
 
         /*
-         * Canonical OcrResult contract:
+         * Keep the parameter explicit because the timestamp belongs
+         * to the OCR observation itself.
+         *
+         * Current OcrResult contract:
          *
          * screenId
          * timestamp
          * fullText
          * textBlocks
          * language
-         *
-         * timestamp and language have defaults,
-         * so only the required values are supplied here.
          */
+        val ocrTimestamp =
+            System.currentTimeMillis()
+
         val ocrResult =
             OcrResult(
                 screenId = sessionId,
+                timestamp = ocrTimestamp,
                 fullText = ocrText,
                 textBlocks = ocrBlocks
             )
@@ -477,18 +481,21 @@ class WorkflowController(
     // SAFE ACTION CONVERSION
     // =========================================================================
 
+    /**
+     * Converts intelligence into a platform-independent action.
+     *
+     * Actual execution belongs to the runtime/execution layer.
+     */
     private fun createSafeAction(
         analysis: ScreenAnalyzer.AnalysisResult,
         suggestedAction:
             ScreenAnalyzer.SuggestedAction
     ): WorkflowAction? {
 
-        /*
-         * This controller deliberately does not execute
-         * transactional/booking/payment operations.
-         *
-         * Runtime/execution layers own actual execution.
-         */
+        @Suppress("UNUSED_VARIABLE")
+        val analyzedResult =
+            analysis
+
         return when (suggestedAction) {
 
             ScreenAnalyzer.SuggestedAction.NONE ->
@@ -667,18 +674,6 @@ class WorkflowController(
 
             try {
 
-                /*
-                 * IMPORTANT:
-                 *
-                 * Current ExecutionEvent.SessionError contract uses:
-                 * - sessionId
-                 * - errorCode
-                 * - errorMessage
-                 *
-                 * NOT:
-                 * - code
-                 * - message
-                 */
                 recorder.recordEvent(
                     ExecutionEvent.SessionError(
                         sessionId = sessionId,
