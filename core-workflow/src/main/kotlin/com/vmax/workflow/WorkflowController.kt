@@ -25,16 +25,16 @@ import java.util.UUID
  * - Own workflow session identity.
  * - Validate workflow configuration.
  * - Consume screen-intelligence results.
- * - Enforce user/security boundaries.
+ * - Enforce security/user boundaries.
  * - Coordinate metrics/history.
  * - Produce platform-independent WorkflowAction intents.
  *
  * IMPORTANT:
- * This class NEVER directly executes Android UI operations.
+ * This class NEVER executes Android UI operations.
  *
  * Runtime layer is responsible for execution.
  *
- * HARD USER / SECURITY BOUNDARIES:
+ * SECURITY BOUNDARIES:
  * - Sensitive screens
  * - CAPTCHA
  * - OTP
@@ -60,66 +60,38 @@ class WorkflowController(
         @Volatile
         private var instance: WorkflowController? = null
 
-        /**
-         * Strict accessor.
-         *
-         * Use only when initialization is guaranteed.
-         */
         @JvmStatic
         fun getInstance(): WorkflowController {
-
             return instance
                 ?: throw IllegalStateException(
                     "WorkflowController has not been initialized."
                 )
         }
 
-        /**
-         * Safe accessor.
-         *
-         * Returns null instead of crashing when controller
-         * has not yet been initialized.
-         */
         @JvmStatic
         fun getInstanceOrNull(): WorkflowController? {
             return instance
         }
 
-        /**
-         * Initializes controller exactly once.
-         *
-         * This method intentionally rejects accidental
-         * double initialization.
-         */
         @JvmStatic
         fun initialize(
             controller: WorkflowController
         ) {
-
             requireNotNull(controller) {
                 "WorkflowController cannot be null."
             }
 
             synchronized(this) {
-
-                if (instance != null) {
-                    return
+                if (instance == null) {
+                    instance = controller
                 }
-
-                instance = controller
             }
         }
 
-        /**
-         * Explicit replacement.
-         *
-         * Intended for controlled application/test setup.
-         */
         @JvmStatic
         fun replaceInstance(
             controller: WorkflowController
         ) {
-
             requireNotNull(controller) {
                 "WorkflowController cannot be null."
             }
@@ -129,12 +101,8 @@ class WorkflowController(
             }
         }
 
-        /**
-         * Clears singleton reference.
-         */
         @JvmStatic
         fun clearInstance() {
-
             synchronized(this) {
                 instance = null
             }
@@ -169,9 +137,6 @@ class WorkflowController(
     val state: StateFlow<WorkflowState> =
         _state.asStateFlow()
 
-    /**
-     * Canonical workflow state.
-     */
     private var workflowState: WorkflowState
         get() = _state.value
         set(value) {
@@ -189,17 +154,24 @@ class WorkflowController(
     private var passengerDetails: PassengerDetails? = null
 
     /**
-     * Last action that was ACTUALLY produced.
+     * Last successfully produced analyzer suggestion.
      *
-     * It is not updated merely because an analyzer suggested
-     * something.
+     * This is deliberately NOT updated when an action could
+     * not be produced.
      */
     @Volatile
-    private var lastSuggestedAction:
+    private var lastProducedSuggestion:
         ScreenAnalyzer.SuggestedAction? = null
 
     // ========================================================================
-    // LIFECYCLE
+    // LIFECYCLE LOCK
+    // ========================================================================
+
+    private val lifecycleLock =
+        Any()
+
+    // ========================================================================
+    // START
     // ========================================================================
 
     /**
@@ -212,110 +184,124 @@ class WorkflowController(
         passengerProfile: PassengerProfile
     ): Boolean {
 
-        if (workflowState != WorkflowState.IDLE) {
-            return false
-        }
+        synchronized(lifecycleLock) {
 
-        /*
-         * Validate passenger profile first.
-         */
-        if (passengerProfile.passengers.isEmpty()) {
-            return false
-        }
-
-        /*
-         * Use the first requested passenger.
-         */
-        val passenger =
-            bookingRequest.passengers.firstOrNull()
-                ?: return false
-
-        val details =
-            try {
-
-                PassengerDetails(
-
-                    from =
-                        bookingRequest
-                            .fromStation
-                            .code
-                            .trim(),
-
-                    to =
-                        bookingRequest
-                            .toStation
-                            .code
-                            .trim(),
-
-                    date =
-                        bookingRequest
-                            .date
-                            .trim(),
-
-                    train =
-                        bookingRequest
-                            .train
-                            .number
-                            .trim(),
-
-                    trainClass =
-                        bookingRequest
-                            .train
-                            .classType
-                            .trim(),
-
-                    name =
-                        passenger
-                            .name
-                            .trim(),
-
-                    age =
-                        passenger
-                            .age
-                            .toString()
-                            .trim(),
-
-                    gender =
-                        passenger
-                            .gender
-                            .trim(),
-
-                    meal = ""
-                )
-
-            } catch (_: Throwable) {
-
-                /*
-                 * Invalid model contract must never crash
-                 * the workflow layer.
-                 */
+            if (workflowState != WorkflowState.IDLE) {
                 return false
             }
 
-        return startWorkflow(
-            details = details,
-            sessionId = UUID.randomUUID().toString()
-        )
+            /*
+             * Validate profile contract.
+             */
+            if (passengerProfile.passengers.isEmpty()) {
+                return false
+            }
+
+            /*
+             * Use the first passenger from the request.
+             *
+             * The complete multi-passenger orchestration belongs
+             * outside this controller.
+             */
+            val passenger =
+                bookingRequest.passengers.firstOrNull()
+                    ?: return false
+
+            val details =
+                try {
+
+                    PassengerDetails(
+
+                        from =
+                            bookingRequest
+                                .fromStation
+                                .code
+                                .trim(),
+
+                        to =
+                            bookingRequest
+                                .toStation
+                                .code
+                                .trim(),
+
+                        date =
+                            bookingRequest
+                                .date
+                                .trim(),
+
+                        train =
+                            bookingRequest
+                                .train
+                                .number
+                                .trim(),
+
+                        trainClass =
+                            bookingRequest
+                                .train
+                                .classType
+                                .trim(),
+
+                        name =
+                            passenger
+                                .name
+                                .trim(),
+
+                        age =
+                            passenger
+                                .age
+                                .toString()
+                                .trim(),
+
+                        gender =
+                            passenger
+                                .gender
+                                .trim(),
+
+                        meal = ""
+                    )
+
+                } catch (_: Exception) {
+
+                    return false
+                }
+
+            return startWorkflowLocked(
+                details = details,
+                sessionId = UUID.randomUUID().toString()
+            )
+        }
     }
 
-    /**
-     * Public stop API.
-     */
+    // ========================================================================
+    // PUBLIC STOP
+    // ========================================================================
+
     fun stop() {
         stopWorkflow()
     }
 
-    /**
-     * Starts explicit workflow session.
-     */
+    // ========================================================================
+    // EXPLICIT START
+    // ========================================================================
+
     fun startWorkflow(
         details: PassengerDetails,
         sessionId: String
     ): Boolean {
 
-        /*
-         * Never start a second workflow over an existing one.
-         */
+        synchronized(lifecycleLock) {
+            return startWorkflowLocked(
+                details = details,
+                sessionId = sessionId
+            )
+        }
+    }
+
+    private fun startWorkflowLocked(
+        details: PassengerDetails,
+        sessionId: String
+    ): Boolean {
+
         if (workflowState != WorkflowState.IDLE) {
             return false
         }
@@ -327,40 +313,14 @@ class WorkflowController(
             return false
         }
 
-        if (!isValidPassengerDetails(details)) {
+        val normalizedDetails =
+            normalizePassengerDetails(
+                details
+            )
+
+        if (!isValidPassengerDetails(normalizedDetails)) {
             return false
         }
-
-        val normalizedDetails =
-            details.copy(
-
-                from =
-                    details.from.trim(),
-
-                to =
-                    details.to.trim(),
-
-                date =
-                    details.date.trim(),
-
-                train =
-                    details.train.trim(),
-
-                trainClass =
-                    details.trainClass.trim(),
-
-                name =
-                    details.name.trim(),
-
-                age =
-                    details.age.trim(),
-
-                gender =
-                    details.gender.trim(),
-
-                meal =
-                    details.meal.trim()
-            )
 
         passengerDetails =
             normalizedDetails
@@ -368,17 +328,18 @@ class WorkflowController(
         currentSessionId =
             normalizedSessionId
 
-        lastSuggestedAction =
+        lastProducedSuggestion =
             null
 
         /*
-         * Configuration phase.
+         * Enter configuration state first.
          */
         workflowState =
             WorkflowState.CONFIGURED
 
         /*
-         * Observational systems must never block startup.
+         * Metrics/history are observational.
+         * Their failures must not crash startup.
          */
         startMetricsSafely(
             normalizedSessionId
@@ -389,8 +350,7 @@ class WorkflowController(
         )
 
         /*
-         * Only after bookkeeping succeeds/fails safely,
-         * enter RUNNING.
+         * Session is now active.
          */
         workflowState =
             WorkflowState.RUNNING
@@ -398,64 +358,75 @@ class WorkflowController(
         return true
     }
 
-    /**
-     * Stops current workflow safely.
-     */
+    // ========================================================================
+    // STOP
+    // ========================================================================
+
     fun stopWorkflow() {
 
-        if (
-            workflowState == WorkflowState.IDLE ||
-            workflowState == WorkflowState.STOPPED
-        ) {
-            return
+        synchronized(lifecycleLock) {
+
+            if (
+                workflowState == WorkflowState.IDLE ||
+                workflowState == WorkflowState.STOPPED
+            ) {
+                return
+            }
+
+            val sessionId =
+                currentSessionId
+
+            lastProducedSuggestion =
+                null
+
+            if (sessionId.isNotBlank()) {
+
+                recordSessionStoppedSafely(
+                    sessionId
+                )
+
+                stopMetricsSafely(
+                    sessionId,
+                    "STOPPED"
+                )
+            }
+
+            workflowState =
+                WorkflowState.STOPPED
         }
-
-        val sessionId =
-            currentSessionId
-
-        lastSuggestedAction =
-            null
-
-        if (sessionId.isNotBlank()) {
-
-            recordSessionStoppedSafely(
-                sessionId
-            )
-
-            stopMetricsSafely(
-                sessionId,
-                "STOPPED"
-            )
-        }
-
-        workflowState =
-            WorkflowState.STOPPED
     }
 
+    // ========================================================================
+    // RESET
+    // ========================================================================
+
     /**
-     * Resets inactive workflow.
+     * Resets only an inactive workflow.
      *
-     * Active workflow cannot be silently reset.
+     * Active workflow cannot be silently destroyed.
      */
     fun reset(): Boolean {
 
-        if (isActive()) {
-            return false
+        synchronized(lifecycleLock) {
+
+            if (isActive()) {
+                return false
+            }
+
+            currentSessionId =
+                ""
+
+            passengerDetails =
+                null
+
+            lastProducedSuggestion =
+                null
+
+            workflowState =
+                WorkflowState.IDLE
+
+            return true
         }
-
-        currentSessionId =
-            ""
-
-        passengerDetails =
-            null
-
-        lastSuggestedAction =
-            null
-
-        workflowState =
-            WorkflowState.IDLE
-
-        return true
     }
 
     // ========================================================================
@@ -496,24 +467,34 @@ class WorkflowController(
         }
     }
 
+    // ========================================================================
+    // STATE UPDATE
+    // ========================================================================
+
     /**
      * Updates canonical state.
+     *
+     * Terminal/security states invalidate any pending
+     * analyzer suggestion.
      */
     fun updateState(
         newState: WorkflowState
     ) {
 
-        if (
-            newState == WorkflowState.USER_BOUNDARY ||
-            newState == WorkflowState.STOPPED ||
-            newState == WorkflowState.ERROR
-        ) {
-            lastSuggestedAction =
-                null
-        }
+        synchronized(lifecycleLock) {
 
-        workflowState =
-            newState
+            if (
+                newState == WorkflowState.USER_BOUNDARY ||
+                newState == WorkflowState.STOPPED ||
+                newState == WorkflowState.ERROR
+            ) {
+                lastProducedSuggestion =
+                    null
+            }
+
+            workflowState =
+                newState
+        }
     }
 
     // ========================================================================
@@ -521,9 +502,9 @@ class WorkflowController(
     // ========================================================================
 
     /**
-     * Consumes screen analysis and produces an intent.
+     * Consumes screen analysis and produces a platform-independent intent.
      *
-     * No Android operation is performed here.
+     * This method NEVER performs Android UI operations.
      */
     fun handleScreenAnalysis(
         analysis: ScreenAnalyzer.AnalysisResult,
@@ -558,11 +539,8 @@ class WorkflowController(
                     textBlocks = safeOcrBlocks
                 )
 
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
 
-                /*
-                 * Malformed OCR data must not crash workflow.
-                 */
                 return null
             }
 
@@ -577,12 +555,8 @@ class WorkflowController(
                     ocrResult
                 )
 
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
 
-                /*
-                 * If security classification fails,
-                 * safest behavior is to stop.
-                 */
                 enterUserBoundary(
                     "Screen classification failed"
                 )
@@ -599,19 +573,20 @@ class WorkflowController(
             return null
         }
 
-        /*
-         * Never continue after a boundary.
-         */
         if (isHardBoundary()) {
             return null
         }
+
+        // ====================================================================
+        // ANALYZER RESULT
+        // ====================================================================
 
         val suggestedAction =
             try {
 
                 analysis.suggestedAction
 
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
 
                 return null
             }
@@ -624,11 +599,12 @@ class WorkflowController(
         }
 
         /*
-         * Prevent duplicate action generation.
+         * Suppress the same suggestion only after a previous
+         * action was actually produced.
          */
         if (
             suggestedAction ==
-            lastSuggestedAction
+            lastProducedSuggestion
         ) {
             return null
         }
@@ -641,24 +617,20 @@ class WorkflowController(
                     suggestedAction = suggestedAction
                 )
 
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
 
-                /*
-                 * Never allow analyzer/action conversion
-                 * to crash the service.
-                 */
                 null
             }
 
         /*
          * IMPORTANT:
          *
-         * Only remember an action when an actual action
-         * object was produced.
+         * A suggestion is remembered only when it resulted
+         * in a real WorkflowAction.
          */
         if (action != null) {
 
-            lastSuggestedAction =
+            lastProducedSuggestion =
                 suggestedAction
         }
 
@@ -670,18 +642,27 @@ class WorkflowController(
     // ========================================================================
 
     /**
-     * Converts intelligence into platform-independent intent.
+     * Converts analyzer output into a platform-independent intent.
      *
-     * Actual execution is outside this class.
+     * IMPORTANT:
+     * No Android operation belongs here.
      *
-     * Unsupported analyzer suggestions intentionally return null.
+     * The exact SuggestedAction -> WorkflowAction mapping
+     * must be added only after ScreenAnalyzer's exact contract
+     * is verified.
+     *
+     * Returning null for unsupported suggestions is intentional.
      */
     private fun createSafeAction(
         analysis: ScreenAnalyzer.AnalysisResult,
-        suggestedAction:
-            ScreenAnalyzer.SuggestedAction
+        suggestedAction: ScreenAnalyzer.SuggestedAction
     ): WorkflowAction? {
 
+        /*
+         * Keep the parameter contract explicit so this method
+         * can later consume exact analyzer evidence without
+         * inventing fields that may not exist.
+         */
         @Suppress("UNUSED_VARIABLE")
         val analyzedResult =
             analysis
@@ -716,6 +697,12 @@ class WorkflowController(
         val elements =
             uiElements.toList()
 
+        /*
+         * Normally caller state must match canonical state.
+         *
+         * Dropdown states are allowed because the visible UI
+         * can remain in a transient selection state.
+         */
         if (
             state != workflowState &&
             state !in setOf(
@@ -738,9 +725,7 @@ class WorkflowController(
                         .trim()
 
                 if (gender.isBlank()) {
-
                     null
-
                 } else {
 
                     selectDropdownOption(
@@ -763,7 +748,7 @@ class WorkflowController(
                     workflowState =
                         WorkflowState.PASSENGER_MEAL_SELECTED
 
-                    lastSuggestedAction =
+                    lastProducedSuggestion =
                         null
 
                     null
@@ -779,7 +764,7 @@ class WorkflowController(
 
             WorkflowState.PASSENGER_MEAL_SELECTED -> {
 
-                lastSuggestedAction =
+                lastProducedSuggestion =
                     null
 
                 workflowState =
@@ -803,7 +788,9 @@ class WorkflowController(
     ): WorkflowAction? {
 
         val normalizedTarget =
-            normalize(targetText)
+            normalize(
+                targetText
+            )
 
         if (normalizedTarget.isBlank()) {
             return null
@@ -827,7 +814,9 @@ class WorkflowController(
                 ?: return null
 
         val action =
-            buildClickAction(target)
+            buildClickAction(
+                target
+            )
                 ?: return null
 
         workflowState =
@@ -854,52 +843,89 @@ class WorkflowController(
         reason: String
     ) {
 
-        if (
-            workflowState ==
-            WorkflowState.USER_BOUNDARY
-        ) {
-            return
-        }
+        synchronized(lifecycleLock) {
 
-        val sessionId =
-            currentSessionId
-
-        if (sessionId.isNotBlank()) {
-
-            try {
-
-                recorder.recordEvent(
-                    ExecutionEvent.SessionError(
-                        sessionId = sessionId,
-                        errorCode = "SECURITY_BOUNDARY",
-                        errorMessage = reason
-                    )
-                )
-
-            } catch (_: Throwable) {
-
-                /*
-                 * History failure must never bypass
-                 * a security boundary.
-                 */
+            if (
+                workflowState ==
+                WorkflowState.USER_BOUNDARY
+            ) {
+                return
             }
 
-            stopMetricsSafely(
-                sessionId,
-                "USER_BOUNDARY"
-            )
+            val sessionId =
+                currentSessionId
+
+            if (sessionId.isNotBlank()) {
+
+                try {
+
+                    recorder.recordEvent(
+                        ExecutionEvent.SessionError(
+                            sessionId = sessionId,
+                            errorCode = "SECURITY_BOUNDARY",
+                            errorMessage = reason
+                        )
+                    )
+
+                } catch (_: Exception) {
+                    /*
+                     * History failure must never bypass
+                     * the security boundary.
+                     */
+                }
+
+                stopMetricsSafely(
+                    sessionId,
+                    "USER_BOUNDARY"
+                )
+            }
+
+            lastProducedSuggestion =
+                null
+
+            workflowState =
+                WorkflowState.USER_BOUNDARY
         }
-
-        lastSuggestedAction =
-            null
-
-        workflowState =
-            WorkflowState.USER_BOUNDARY
     }
 
     // ========================================================================
     // VALIDATION
     // ========================================================================
+
+    private fun normalizePassengerDetails(
+        details: PassengerDetails
+    ): PassengerDetails {
+
+        return details.copy(
+
+            from =
+                details.from.trim(),
+
+            to =
+                details.to.trim(),
+
+            date =
+                details.date.trim(),
+
+            train =
+                details.train.trim(),
+
+            trainClass =
+                details.trainClass.trim(),
+
+            name =
+                details.name.trim(),
+
+            age =
+                details.age.trim(),
+
+            gender =
+                details.gender.trim(),
+
+            meal =
+                details.meal.trim()
+        )
+    }
 
     private fun isValidPassengerDetails(
         details: PassengerDetails
@@ -1156,11 +1182,9 @@ class WorkflowController(
                 sessionId
             )
 
-        } catch (_: Throwable) {
-
+        } catch (_: Exception) {
             /*
              * Metrics are observational.
-             * They must never crash workflow startup.
              */
         }
     }
@@ -1181,10 +1205,9 @@ class WorkflowController(
                 reason
             )
 
-        } catch (_: Throwable) {
-
+        } catch (_: Exception) {
             /*
-             * Metrics failure must never break state safety.
+             * Metrics must never break state safety.
              */
         }
     }
@@ -1209,8 +1232,7 @@ class WorkflowController(
                 )
             )
 
-        } catch (_: Throwable) {
-
+        } catch (_: Exception) {
             /*
              * History failure must not prevent startup.
              */
@@ -1233,10 +1255,9 @@ class WorkflowController(
                 )
             )
 
-        } catch (_: Throwable) {
-
+        } catch (_: Exception) {
             /*
-             * History failure must not prevent safe shutdown.
+             * History failure must not prevent shutdown.
              */
         }
     }
@@ -1246,12 +1267,14 @@ class WorkflowController(
  * Platform-independent workflow action.
  *
  * This class only represents an intent.
- * It does not execute anything.
+ * It does not execute Android operations.
  */
 sealed class WorkflowAction {
 
     /**
      * UI click intent.
+     *
+     * Runtime decides how/if this intent is executed.
      */
     data class Click(
         val targetId: String? = null,
