@@ -15,69 +15,119 @@ import java.util.UUID
 
 class MainViewModel : ViewModel() {
 
+    // =========================================================
+    // WORKFLOW CONTROLLER
+    // =========================================================
+
     /*
-     * Keep existing singleton contract.
-     * Do not change WorkflowController architecture here.
+     * IMPORTANT:
+     *
+     * Controller को ViewModel creation के समय initialize नहीं करते।
+     * इससे WorkflowController के अंदर initialization problem होने पर
+     * MainActivity launch-time crash नहीं करेगी।
      */
-    private val workflowController = WorkflowController.getInstance()
+    private var workflowController: WorkflowController? = null
 
-    // ---- UI States ----
+    private val _workflowState =
+        MutableStateFlow(WorkflowState.IDLE)
 
-    private val _trainNumber = MutableStateFlow("")
-    val trainNumber: StateFlow<String> = _trainNumber.asStateFlow()
+    val workflowState: StateFlow<WorkflowState> =
+        _workflowState.asStateFlow()
 
-    private val _trainName = MutableStateFlow("")
-    val trainName: StateFlow<String> = _trainName.asStateFlow()
+    // =========================================================
+    // UI STATES
+    // =========================================================
 
-    private val _classType = MutableStateFlow("")
-    val classType: StateFlow<String> = _classType.asStateFlow()
+    private val _trainNumber =
+        MutableStateFlow("")
 
-    private val _quota = MutableStateFlow<Quota?>(null)
-    val quota: StateFlow<Quota?> = _quota.asStateFlow()
+    val trainNumber: StateFlow<String> =
+        _trainNumber.asStateFlow()
 
-    private val _fromStation = MutableStateFlow("")
-    val fromStation: StateFlow<String> = _fromStation.asStateFlow()
+    private val _trainName =
+        MutableStateFlow("")
 
-    private val _toStation = MutableStateFlow("")
-    val toStation: StateFlow<String> = _toStation.asStateFlow()
+    val trainName: StateFlow<String> =
+        _trainName.asStateFlow()
 
-    private val _journeyDate = MutableStateFlow("")
-    val journeyDate: StateFlow<String> = _journeyDate.asStateFlow()
+    private val _classType =
+        MutableStateFlow("")
 
-    private val _passengerName = MutableStateFlow("")
-    val passengerName: StateFlow<String> = _passengerName.asStateFlow()
+    val classType: StateFlow<String> =
+        _classType.asStateFlow()
 
-    private val _passengerAge = MutableStateFlow("")
-    val passengerAge: StateFlow<String> = _passengerAge.asStateFlow()
+    private val _quota =
+        MutableStateFlow<Quota?>(null)
 
-    private val _passengerGender = MutableStateFlow("MALE")
-    val passengerGender: StateFlow<String> = _passengerGender.asStateFlow()
+    val quota: StateFlow<Quota?> =
+        _quota.asStateFlow()
 
-    private val _passengerMobile = MutableStateFlow("")
-    val passengerMobile: StateFlow<String> = _passengerMobile.asStateFlow()
+    private val _fromStation =
+        MutableStateFlow("")
 
-    private val _validationError = MutableStateFlow<String?>(null)
+    val fromStation: StateFlow<String> =
+        _fromStation.asStateFlow()
+
+    private val _toStation =
+        MutableStateFlow("")
+
+    val toStation: StateFlow<String> =
+        _toStation.asStateFlow()
+
+    private val _journeyDate =
+        MutableStateFlow("")
+
+    val journeyDate: StateFlow<String> =
+        _journeyDate.asStateFlow()
+
+    private val _passengerName =
+        MutableStateFlow("")
+
+    val passengerName: StateFlow<String> =
+        _passengerName.asStateFlow()
+
+    private val _passengerAge =
+        MutableStateFlow("")
+
+    val passengerAge: StateFlow<String> =
+        _passengerAge.asStateFlow()
+
+    private val _passengerGender =
+        MutableStateFlow("MALE")
+
+    val passengerGender: StateFlow<String> =
+        _passengerGender.asStateFlow()
+
+    private val _passengerMobile =
+        MutableStateFlow("")
+
+    val passengerMobile: StateFlow<String> =
+        _passengerMobile.asStateFlow()
+
+    private val _validationError =
+        MutableStateFlow<String?>(null)
+
     val validationError: StateFlow<String?> =
         _validationError.asStateFlow()
 
-    val workflowState: StateFlow<WorkflowState> =
-        workflowController.state
-
-    // ---- Update Methods ----
+    // =========================================================
+    // UPDATE METHODS
+    // =========================================================
 
     fun updateTrainNumber(value: String) {
+
         val cleaned = value.trim()
 
-        if (cleaned.all { it.isDigit() }) {
+        if (
+            cleaned.isEmpty() ||
+            cleaned.all { it.isDigit() }
+        ) {
             _trainNumber.value = cleaned
         }
     }
 
     fun updateTrainName(value: String) {
-        /*
-         * Train name is currently read-only / auto-populated.
-         * Keep this method for existing UI/API compatibility.
-         */
+        _trainName.value = value.trim()
     }
 
     fun updateClassType(value: String) {
@@ -89,121 +139,171 @@ class MainViewModel : ViewModel() {
     }
 
     fun updateFromStation(value: String) {
-        _fromStation.value = value.trim().uppercase()
+        _fromStation.value =
+            value.trim().uppercase()
     }
 
     fun updateToStation(value: String) {
-        _toStation.value = value.trim().uppercase()
+        _toStation.value =
+            value.trim().uppercase()
     }
 
     fun updateJourneyDate(value: String) {
-        _journeyDate.value = value.trim()
+        _journeyDate.value =
+            value.trim()
     }
 
     fun updatePassengerName(value: String) {
-        _passengerName.value = value.trim()
+        _passengerName.value =
+            value.trim()
     }
 
     fun updatePassengerAge(value: String) {
-        val cleaned = value.trim()
 
-        if (cleaned.all { it.isDigit() }) {
-            _passengerAge.value = cleaned
+        val cleaned =
+            value.trim()
+
+        if (
+            cleaned.isEmpty() ||
+            cleaned.all { it.isDigit() }
+        ) {
+            _passengerAge.value =
+                cleaned
         }
     }
 
     fun updatePassengerGender(value: String) {
-        _passengerGender.value = value.trim().uppercase()
+        _passengerGender.value =
+            value.trim().uppercase()
     }
 
     fun updatePassengerMobile(value: String) {
-        val cleaned = value.trim()
 
-        if (cleaned.all { it.isDigit() }) {
-            _passengerMobile.value = cleaned
+        val cleaned =
+            value.trim()
+
+        if (
+            cleaned.isEmpty() ||
+            cleaned.all { it.isDigit() }
+        ) {
+            _passengerMobile.value =
+                cleaned
         }
     }
 
-    // ---- Validation ----
+    // =========================================================
+    // VALIDATION
+    // =========================================================
 
     private fun validateInputs(): Boolean {
 
         _validationError.value = null
 
-        val trainNumberValue = trainNumber.value.trim()
-        val classTypeValue = classType.value.trim()
-        val fromStationValue = fromStation.value.trim()
-        val toStationValue = toStation.value.trim()
-        val journeyDateValue = journeyDate.value.trim()
-        val passengerNameValue = passengerName.value.trim()
-        val passengerAgeValue = passengerAge.value.trim()
-        val passengerMobileValue = passengerMobile.value.trim()
+        val trainNumberValue =
+            trainNumber.value.trim()
+
+        val classTypeValue =
+            classType.value.trim()
+
+        val fromStationValue =
+            fromStation.value.trim()
+
+        val toStationValue =
+            toStation.value.trim()
+
+        val journeyDateValue =
+            journeyDate.value.trim()
+
+        val passengerNameValue =
+            passengerName.value.trim()
+
+        val passengerAgeValue =
+            passengerAge.value.trim()
+
+        val passengerMobileValue =
+            passengerMobile.value.trim()
 
         if (trainNumberValue.isBlank()) {
-            _validationError.value =
+            return validationError(
                 "Train Number is required."
-            return false
+            )
         }
 
-        if (!trainNumberValue.matches(Regex("^\\d{4,5}$"))) {
-            _validationError.value =
+        if (
+            !trainNumberValue.matches(
+                Regex("^\\d{4,5}$")
+            )
+        ) {
+            return validationError(
                 "Train Number must be 4 or 5 digits."
-            return false
+            )
         }
 
         if (classTypeValue.isBlank()) {
-            _validationError.value =
+            return validationError(
                 "Class Type is required."
-            return false
+            )
         }
 
         if (quota.value == null) {
-            _validationError.value =
+            return validationError(
                 "Quota is required."
-            return false
+            )
         }
 
         if (fromStationValue.isBlank()) {
-            _validationError.value =
+            return validationError(
                 "From Station is required."
-            return false
+            )
         }
 
         if (toStationValue.isBlank()) {
-            _validationError.value =
+            return validationError(
                 "To Station is required."
-            return false
+            )
+        }
+
+        if (
+            fromStationValue.length < 2 ||
+            toStationValue.length < 2
+        ) {
+            return validationError(
+                "Station codes are invalid."
+            )
         }
 
         if (journeyDateValue.isBlank()) {
-            _validationError.value =
+            return validationError(
                 "Journey Date is required."
-            return false
+            )
         }
 
-        /*
-         * Validate the date instead of accepting arbitrary text.
-         */
         try {
-            LocalDate.parse(journeyDateValue)
+            LocalDate.parse(
+                journeyDateValue
+            )
         } catch (_: Exception) {
-            _validationError.value =
+            return validationError(
                 "Journey Date must be in YYYY-MM-DD format."
-            return false
+            )
         }
 
         if (passengerNameValue.isBlank()) {
-            _validationError.value =
+            return validationError(
                 "Passenger Name is required."
-            return false
+            )
         }
 
-        val ageInt = passengerAgeValue.toIntOrNull()
+        val age =
+            passengerAgeValue.toIntOrNull()
 
-        if (ageInt == null || ageInt !in 1..120) {
-            _validationError.value =
+        if (
+            age == null ||
+            age !in 1..120
+        ) {
+            return validationError(
                 "Valid Age (1-120) is required."
-            return false
+            )
         }
 
         if (
@@ -212,21 +312,94 @@ class MainViewModel : ViewModel() {
                 Regex("^[6-9]\\d{9}$")
             )
         ) {
-            _validationError.value =
+            return validationError(
                 "Mobile must be exactly 10 digits starting with 6-9."
-            return false
+            )
         }
 
         return true
     }
 
-    // ---- Workflow ----
+    private fun validationError(
+        message: String
+    ): Boolean {
+
+        _validationError.value =
+            message
+
+        return false
+    }
+
+    // =========================================================
+    // CONTROLLER INITIALIZATION
+    // =========================================================
+
+    private fun getWorkflowController():
+        WorkflowController? {
+
+        workflowController?.let {
+            return it
+        }
+
+        return try {
+
+            val controller =
+                WorkflowController.getInstance()
+
+            workflowController =
+                controller
+
+            /*
+             * Forward controller state to the UI.
+             */
+            viewModelScope.launch {
+
+                try {
+
+                    controller.state.collect { state ->
+
+                        _workflowState.value =
+                            state
+                    }
+
+                } catch (error: Throwable) {
+
+                    _workflowState.value =
+                        WorkflowState.ERROR
+
+                    _validationError.value =
+                        error.message
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: "Workflow state observer failed."
+                }
+            }
+
+            controller
+
+        } catch (error: Throwable) {
+
+            _workflowState.value =
+                WorkflowState.ERROR
+
+            _validationError.value =
+                error.message
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
+                    ?: "Workflow controller initialization failed."
+
+            null
+        }
+    }
+
+    // =========================================================
+    // START WORKFLOW
+    // =========================================================
 
     fun startWorkflow() {
 
-        /*
-         * Prevent accidental duplicate start.
-         */
         if (isWorkflowActive()) {
             return
         }
@@ -235,80 +408,138 @@ class MainViewModel : ViewModel() {
             return
         }
 
+        val controller =
+            getWorkflowController()
+                ?: return
+
         try {
 
-            val train = Train(
-                number = trainNumber.value.trim(),
-                name = trainName.value.trim(),
-                classType = classType.value.trim(),
-                quota = quota.value?.name ?: "GENERAL"
-            )
+            val passenger =
+                Passenger(
+                    name =
+                        passengerName.value.trim(),
 
-            val fromStationModel = Station(
-                fromStation.value.trim(),
-                fromStation.value.trim()
-            )
+                    age =
+                        passengerAge.value
+                            .trim()
+                            .toInt(),
 
-            val toStationModel = Station(
-                toStation.value.trim(),
-                toStation.value.trim()
-            )
+                    gender =
+                        passengerGender.value
+                            .trim()
+                            .uppercase(),
 
-            val passenger = Passenger(
-                name = passengerName.value.trim(),
-                age = passengerAge.value.trim().toInt(),
-                gender = passengerGender.value.trim().uppercase(),
-                mobile = passengerMobile.value
-                    .trim()
-                    .takeIf { it.isNotBlank() }
-            )
+                    mobile =
+                        passengerMobile.value
+                            .trim()
+                            .takeIf {
+                                it.isNotBlank()
+                            }
+                )
 
-            val profileId = UUID.randomUUID().toString()
+            val train =
+                Train(
+                    number =
+                        trainNumber.value.trim(),
 
-            val bookingRequest = BookingRequest(
-                train = train,
-                fromStation = fromStationModel,
-                toStation = toStationModel,
-                date = journeyDate.value.trim(),
-                passengers = listOf(passenger),
-                quota = quota.value?.name ?: "GENERAL"
-            )
+                    name =
+                        trainName.value.trim(),
 
-            val now = LocalDateTime.now()
+                    classType =
+                        classType.value.trim(),
 
-            val passengerProfile = PassengerProfile(
-                profileId = profileId,
-                passengers = listOf(passenger),
-                createdTime = now,
-                updatedTime = now
-            )
+                    quota =
+                        quota.value?.name
+                            ?: "GENERAL"
+                )
+
+            val fromStationModel =
+                Station(
+                    fromStation.value.trim(),
+                    fromStation.value.trim()
+                )
+
+            val toStationModel =
+                Station(
+                    toStation.value.trim(),
+                    toStation.value.trim()
+                )
+
+            val bookingRequest =
+                BookingRequest(
+                    train = train,
+                    fromStation =
+                        fromStationModel,
+                    toStation =
+                        toStationModel,
+                    date =
+                        journeyDate.value.trim(),
+                    passengers =
+                        listOf(passenger),
+                    quota =
+                        quota.value?.name
+                            ?: "GENERAL"
+                )
+
+            val now =
+                LocalDateTime.now()
+
+            val passengerProfile =
+                PassengerProfile(
+                    profileId =
+                        UUID.randomUUID()
+                            .toString(),
+
+                    passengers =
+                        listOf(passenger),
+
+                    createdTime =
+                        now,
+
+                    updatedTime =
+                        now
+                )
 
             viewModelScope.launch {
 
                 try {
 
-                    workflowController.start(
+                    controller.start(
                         bookingRequest,
                         passengerProfile
                     )
 
-                } catch (error: Exception) {
+                } catch (error: Throwable) {
+
+                    _workflowState.value =
+                        WorkflowState.ERROR
 
                     _validationError.value =
                         error.message
-                            ?.takeIf { it.isNotBlank() }
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
                             ?: "Unable to start workflow."
                 }
             }
 
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
+
+            _workflowState.value =
+                WorkflowState.ERROR
 
             _validationError.value =
                 error.message
-                    ?.takeIf { it.isNotBlank() }
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
                     ?: "Invalid workflow configuration."
         }
     }
+
+    // =========================================================
+    // STOP WORKFLOW
+    // =========================================================
 
     fun stopWorkflow() {
 
@@ -316,25 +547,65 @@ class MainViewModel : ViewModel() {
             return
         }
 
+        val controller =
+            workflowController
+                ?: return
+
         viewModelScope.launch {
 
             try {
 
-                workflowController.stop()
+                controller.stop()
 
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
+
+                _workflowState.value =
+                    WorkflowState.ERROR
 
                 _validationError.value =
                     error.message
-                        ?.takeIf { it.isNotBlank() }
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
                         ?: "Unable to stop workflow."
             }
         }
     }
 
-    // ---- Workflow State ----
+    // =========================================================
+    // WORKFLOW STATE
+    // =========================================================
 
-    fun isWorkflowActive(): Boolean =
-        workflowState.value == WorkflowState.RUNNING ||
-        workflowState.value == WorkflowState.CONFIGURED
+    fun isWorkflowActive(): Boolean {
+
+        return when (
+            _workflowState.value
+        ) {
+
+            WorkflowState.RUNNING,
+            WorkflowState.CONFIGURED ->
+                true
+
+            else ->
+                false
+        }
+    }
+
+    // =========================================================
+    // VIEWMODEL CLEANUP
+    // =========================================================
+
+    override fun onCleared() {
+
+        /*
+         * Do not automatically stop or destroy the global
+         * WorkflowController here.
+         *
+         * Its lifecycle is owned by the workflow architecture.
+         */
+
+        workflowController = null
+
+        super.onCleared()
+    }
 }
