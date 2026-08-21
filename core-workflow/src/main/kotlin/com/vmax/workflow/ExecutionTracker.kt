@@ -16,16 +16,6 @@ import java.util.concurrent.atomic.AtomicLong
  * - Track action dispatch/success/failure.
  * - Maintain session execution timeline.
  * - Remain platform independent.
- *
- * IMPORTANT:
- * - No Android dependencies.
- * - No action execution.
- * - No retry logic.
- * - No parallel execution logic.
- * - No SLF4J.
- * - No duplicate ExecutionEvent.
- * - No duplicate recorder/metrics contracts.
- * - Does not decide workflow recovery.
  */
 class ExecutionTracker(
     private val logger: Logger
@@ -35,15 +25,8 @@ class ExecutionTracker(
     // SESSION STORAGE
     // ========================================================================
 
-    /**
-     * Complete execution timeline for every session.
-     * All mutations are protected by synchronized blocks.
-     */
     private val sessionEvents = ConcurrentHashMap<String, MutableList<ExecutionEvent>>()
     
-    /**
-     * Currently active session ID.
-     */
     @Volatile
     private var activeSession: String? = null
 
@@ -51,12 +34,6 @@ class ExecutionTracker(
     // SESSION LIFECYCLE
     // ========================================================================
 
-    /**
-     * Starts a new execution session.
-     *
-     * If the same session is already active, returns existing SessionStarted event.
-     * If another session is active, the new session is ignored.
-     */
     fun startSession(sessionId: String): ExecutionEvent.SessionStarted {
         val normalized = normalizeSessionId(sessionId)
         
@@ -91,10 +68,6 @@ class ExecutionTracker(
         }
     }
 
-    /**
-     * Stops an active session.
-     * The session timeline is retained for history.
-     */
     fun stopSession(sessionId: String): ExecutionEvent.SessionStopped {
         val normalized = normalizeSessionId(sessionId)
         
@@ -235,9 +208,6 @@ class ExecutionTracker(
     // READ APIs
     // ========================================================================
 
-    /**
-     * Returns a snapshot of the session timeline.
-     */
     fun getSessionTimeline(sessionId: String): List<ExecutionEvent> {
         val normalized = normalizeSessionId(sessionId)
         
@@ -246,36 +216,21 @@ class ExecutionTracker(
         }
     }
 
-    /**
-     * Returns all known session IDs.
-     */
     fun getAllSessionIds(): Set<String> {
         synchronized(sessionEvents) {
             return sessionEvents.keys.toSet()
         }
     }
 
-    /**
-     * Returns the currently active session ID.
-     */
     fun getActiveSessionId(): String? = activeSession
 
-    /**
-     * Returns events for a session (simplified API).
-     */
     fun getEvents(sessionId: String? = null): List<ExecutionEvent> {
         val target = sessionId ?: activeSession ?: return emptyList()
         return getSessionTimeline(target)
     }
 
-    /**
-     * Returns all session IDs (alias for getAllSessionIds).
-     */
     fun getAllSessions(): Set<String> = getAllSessionIds()
 
-    /**
-     * Returns event count for a session.
-     */
     fun getEventCount(sessionId: String? = null): Int {
         val target = sessionId ?: activeSession ?: return 0
         return getSessionTimeline(target).size
@@ -285,9 +240,6 @@ class ExecutionTracker(
     // MAINTENANCE
     // ========================================================================
 
-    /**
-     * Removes one session from memory.
-     */
     fun clearSession(sessionId: String) {
         val normalized = normalizeSessionId(sessionId)
         
@@ -301,10 +253,6 @@ class ExecutionTracker(
         logger.info("ExecutionTracker", "Session cleared: $normalized")
     }
 
-    /**
-     * Removes a session (alias for clearSession).
-     * If no sessionId provided, clears the active session.
-     */
     fun clear(sessionId: String? = null) {
         val target = sessionId ?: activeSession
         if (target != null) {
@@ -312,9 +260,6 @@ class ExecutionTracker(
         }
     }
 
-    /**
-     * Removes all session timelines.
-     */
     fun clearAllSessions() {
         synchronized(sessionEvents) {
             sessionEvents.clear()
@@ -323,53 +268,29 @@ class ExecutionTracker(
         logger.warn("ExecutionTracker", "All execution sessions cleared")
     }
 
-    /**
-     * Clears all (alias for clearAllSessions).
-     */
     fun clearAll() = clearAllSessions()
 
     // ========================================================================
     // INTERNAL HELPERS
     // ========================================================================
 
-    /**
-     * Normalizes and validates a session ID.
-     * 
-     * @param sessionId Raw session ID
-     * @return Trimmed session ID
-     * @throws IllegalArgumentException if sessionId is blank
-     */
     private fun normalizeSessionId(sessionId: String): String {
         val normalized = sessionId.trim()
         require(normalized.isNotEmpty()) { "sessionId must not be blank" }
         return normalized
     }
 
-    /**
-     * Returns an existing timeline or creates one.
-     *
-     * IMPORTANT:
-     * This method must only be called while sessionEvents
-     * is already synchronized.
-     * 
-     * @param sessionId Normalized session ID
-     * @return Mutable list of ExecutionEvent for the session
-     */
     private fun getOrCreateSessionEvents(sessionId: String): MutableList<ExecutionEvent> {
         return sessionEvents.getOrPut(sessionId) { mutableListOf() }
     }
 
     // ========================================================================
-    // COMPANION: ACTION ID GENERATOR
+    // COMPANION
     // ========================================================================
 
     companion object {
         private val actionCounter = AtomicLong(0L)
 
-        /**
-         * Generates a unique action ID.
-         * Format: action-{timestamp}-{counter}
-         */
         @JvmStatic
         fun nextActionId(): String {
             return "action-${System.currentTimeMillis()}-${actionCounter.incrementAndGet()}"
