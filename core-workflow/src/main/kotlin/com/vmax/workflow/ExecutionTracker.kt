@@ -37,11 +37,12 @@ class ExecutionTracker(
 
     /**
      * Complete execution timeline for every session.
+     * All mutations are protected by synchronized blocks.
      */
     private val sessionEvents = ConcurrentHashMap<String, MutableList<ExecutionEvent>>()
     
     /**
-     * Currently active session.
+     * Currently active session ID.
      */
     @Volatile
     private var activeSession: String? = null
@@ -52,6 +53,9 @@ class ExecutionTracker(
 
     /**
      * Starts a new execution session.
+     *
+     * If the same session is already active, returns existing SessionStarted event.
+     * If another session is active, the new session is ignored.
      */
     fun startSession(sessionId: String): ExecutionEvent.SessionStarted {
         val normalized = normalizeSessionId(sessionId)
@@ -62,7 +66,7 @@ class ExecutionTracker(
             if (existingActive != null) {
                 if (existingActive == normalized) {
                     logger.warn("ExecutionTracker", "Session already active: $normalized")
-                    val events = sessionEvents.getOrPut(normalized) { mutableListOf() }
+                    val events = getOrCreateSessionEvents(normalized)
                     for (event in events) {
                         if (event is ExecutionEvent.SessionStarted) {
                             return event
@@ -78,9 +82,8 @@ class ExecutionTracker(
             }
             
             val event = ExecutionEvent.SessionStarted(normalized)
-            val timeline = mutableListOf<ExecutionEvent>()
+            val timeline = getOrCreateSessionEvents(normalized)
             timeline.add(event)
-            sessionEvents[normalized] = timeline
             activeSession = normalized
             
             logger.info("ExecutionTracker", "Session started: $normalized")
@@ -90,6 +93,7 @@ class ExecutionTracker(
 
     /**
      * Stops an active session.
+     * The session timeline is retained for history.
      */
     fun stopSession(sessionId: String): ExecutionEvent.SessionStopped {
         val normalized = normalizeSessionId(sessionId)
@@ -265,7 +269,7 @@ class ExecutionTracker(
     }
 
     /**
-     * Returns all sessions.
+     * Returns all session IDs (alias for getAllSessionIds).
      */
     fun getAllSessions(): Set<String> = getAllSessionIds()
 
@@ -299,6 +303,7 @@ class ExecutionTracker(
 
     /**
      * Removes a session (alias for clearSession).
+     * If no sessionId provided, clears the active session.
      */
     fun clear(sessionId: String? = null) {
         val target = sessionId ?: activeSession
@@ -329,6 +334,10 @@ class ExecutionTracker(
 
     /**
      * Normalizes and validates a session ID.
+     * 
+     * @param sessionId Raw session ID
+     * @return Trimmed session ID
+     * @throws IllegalArgumentException if sessionId is blank
      */
     private fun normalizeSessionId(sessionId: String): String {
         val normalized = sessionId.trim()
@@ -342,6 +351,9 @@ class ExecutionTracker(
      * IMPORTANT:
      * This method must only be called while sessionEvents
      * is already synchronized.
+     * 
+     * @param sessionId Normalized session ID
+     * @return Mutable list of ExecutionEvent for the session
      */
     private fun getOrCreateSessionEvents(sessionId: String): MutableList<ExecutionEvent> {
         return sessionEvents.getOrPut(sessionId) { mutableListOf() }
@@ -356,6 +368,7 @@ class ExecutionTracker(
 
         /**
          * Generates a unique action ID.
+         * Format: action-{timestamp}-{counter}
          */
         @JvmStatic
         fun nextActionId(): String {
