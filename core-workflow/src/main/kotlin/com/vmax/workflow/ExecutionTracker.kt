@@ -9,167 +9,194 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * VMAX Enterprise v2.6.1
  *
- * File:
- * ExecutionTracker.kt
- *
- * Module:
- * core-workflow
+ * File: ExecutionTracker.kt
  *
  * Responsibility:
- * - Track workflow sessions.
- * - Track workflow state transitions.
- * - Track dispatched actions.
- * - Track successful actions.
- * - Track failed actions.
- * - Track session errors.
- * - Maintain in-memory execution timelines.
+ * - Track workflow session lifecycle.
+ * - Track action dispatch/success/failure.
+ * - Maintain session execution timeline.
+ * - Remain platform independent.
  *
- * This class:
- * - Has no Android dependency.
- * - Does not execute actions.
- * - Does not retry actions.
- * - Does not perform recovery.
- * - Does not persist data.
- * - Does not own metrics.
- * - Does not own ExecutionRecorder.
+ * IMPORTANT:
+ * - No Android dependencies.
+ * - No action execution.
+ * - No retry logic.
+ * - No parallel execution logic.
+ * - No SLF4J.
+ * - No duplicate ExecutionEvent.
+ * - No duplicate recorder/metrics contracts.
+ * - Does not decide workflow recovery.
  */
 class ExecutionTracker(
     private val logger: Logger
 ) {
 
     // ========================================================================
-    // STORAGE
+    // SESSION STORAGE
     // ========================================================================
 
+    /**
+     * Complete execution timeline for every session.
+     *
+     * All mutations are protected by sessionLock.
+     */
     private val sessions:
         ConcurrentHashMap<String, MutableList<ExecutionEvent>> =
         ConcurrentHashMap()
 
+    /**
+     * Single lock protecting session timeline mutations.
+     */
     private val sessionLock: Any =
         Any()
 
+    /**
+     * Currently active session.
+     */
     @Volatile
     private var activeSessionId: String? =
         null
 
     // ========================================================================
-    // SESSION START
+    // SESSION LIFECYCLE
     // ========================================================================
 
+    /**
+     * Starts a new execution session.
+     *
+     * If the same session is already active, the existing
+     * SessionStarted event is returned.
+     *
+     * If another session is active, the new session is ignored
+     * and a SessionStarted event is returned without registering it.
+     */
     fun startSession(
         sessionId: String
     ): ExecutionEvent.SessionStarted {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         synchronized(sessionLock) {
 
-            val activeId = activeSessionId
+            val existingSessionId =
+                activeSessionId
 
-            if (activeId != null) {
+            if (existingSessionId != null) {
 
-                if (activeId == id) {
+                if (
+                    existingSessionId ==
+                    normalizedSessionId
+                ) {
 
                     logger.warn(
                         "ExecutionTracker",
-                        "Session already active: $id"
+                        "Session already active: $normalizedSessionId"
                     )
 
-                    val existing =
-                        sessions[id]
+                    val existingEvents:
+                        MutableList<ExecutionEvent> =
+                        sessions[normalizedSessionId]
+                            ?: mutableListOf()
 
-                    if (existing != null) {
-
-                        for (event in existing) {
-
-                            if (
-                                event is
-                                ExecutionEvent.SessionStarted
-                            ) {
-                                return event
-                            }
+                    for (event in existingEvents) {
+                        if (
+                            event is
+                            ExecutionEvent.SessionStarted
+                        ) {
+                            return event
                         }
                     }
 
-                    val fallback =
-                        ExecutionEvent.SessionStarted(id)
+                    val fallbackEvent =
+                        ExecutionEvent.SessionStarted(
+                            normalizedSessionId
+                        )
 
-                    if (existing != null) {
-                        existing.add(fallback)
-                    }
+                    existingEvents.add(
+                        fallbackEvent
+                    )
 
-                    return fallback
+                    sessions[normalizedSessionId] =
+                        existingEvents
+
+                    return fallbackEvent
                 }
 
                 logger.warn(
                     "ExecutionTracker",
-                    "Session start ignored. Active session: $activeId"
+                    "Session start ignored. " +
+                        "Active session: $existingSessionId"
                 )
 
-                return ExecutionEvent.SessionStarted(id)
+                return ExecutionEvent.SessionStarted(
+                    normalizedSessionId
+                )
             }
 
             val event =
-                ExecutionEvent.SessionStarted(id)
+                ExecutionEvent.SessionStarted(
+                    normalizedSessionId
+                )
 
-            val timeline =
-                mutableListOf<ExecutionEvent>()
+            val timeline:
+                MutableList<ExecutionEvent> =
+                mutableListOf()
 
             timeline.add(event)
 
-            sessions[id] =
+            sessions[normalizedSessionId] =
                 timeline
 
             activeSessionId =
-                id
+                normalizedSessionId
 
             logger.info(
                 "ExecutionTracker",
-                "Session started: $id"
+                "Session started: $normalizedSessionId"
             )
 
             return event
         }
     }
 
-    // ========================================================================
-    // SESSION STOP
-    // ========================================================================
-
+    /**
+     * Stops an active session.
+     *
+     * The session timeline is retained for history.
+     */
     fun stopSession(
         sessionId: String
     ): ExecutionEvent.SessionStopped {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
-                    ?: throw IllegalStateException(
-                        "Session not found: $id"
-                    )
+            val timeline:
+                MutableList<ExecutionEvent> =
+                getOrCreateSessionEvents(
+                    normalizedSessionId
+                )
 
             val event =
-                ExecutionEvent.SessionStopped(id)
+                ExecutionEvent.SessionStopped(
+                    normalizedSessionId
+                )
 
             timeline.add(event)
 
-            if (activeSessionId == id) {
+            if (
+                activeSessionId ==
+                normalizedSessionId
+            ) {
                 activeSessionId = null
             }
 
             logger.info(
                 "ExecutionTracker",
-                "Session stopped: $id"
+                "Session stopped: $normalizedSessionId"
             )
 
             return event
@@ -177,7 +204,7 @@ class ExecutionTracker(
     }
 
     // ========================================================================
-    // STATE TRANSITION
+    // WORKFLOW STATE TRANSITION
     // ========================================================================
 
     fun recordStateTransition(
@@ -186,26 +213,23 @@ class ExecutionTracker(
         toState: String
     ): ExecutionEvent.WorkflowStateChanged {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         val event =
             ExecutionEvent.WorkflowStateChanged(
-                id,
+                normalizedSessionId,
                 fromState,
                 toState
             )
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
-                    ?: throw IllegalStateException(
-                        "Session not found: $id"
-                    )
+            val timeline:
+                MutableList<ExecutionEvent> =
+                getOrCreateSessionEvents(
+                    normalizedSessionId
+                )
 
             timeline.add(event)
         }
@@ -229,15 +253,12 @@ class ExecutionTracker(
         targetText: String?
     ): ExecutionEvent.ActionDispatched {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         val event =
             ExecutionEvent.ActionDispatched(
-                id,
+                normalizedSessionId,
                 actionType,
                 targetId,
                 targetText
@@ -245,11 +266,11 @@ class ExecutionTracker(
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
-                    ?: throw IllegalStateException(
-                        "Session not found: $id"
-                    )
+            val timeline:
+                MutableList<ExecutionEvent> =
+                getOrCreateSessionEvents(
+                    normalizedSessionId
+                )
 
             timeline.add(event)
         }
@@ -274,26 +295,23 @@ class ExecutionTracker(
         resultMessage: String?
     ): ExecutionEvent.ActionSucceeded {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         val event =
             ExecutionEvent.ActionSucceeded(
-                id,
+                normalizedSessionId,
                 actionType,
                 resultMessage
             )
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
-                    ?: throw IllegalStateException(
-                        "Session not found: $id"
-                    )
+            val timeline:
+                MutableList<ExecutionEvent> =
+                getOrCreateSessionEvents(
+                    normalizedSessionId
+                )
 
             timeline.add(event)
         }
@@ -318,15 +336,12 @@ class ExecutionTracker(
         errorMessage: String
     ): ExecutionEvent.ActionFailed {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         val event =
             ExecutionEvent.ActionFailed(
-                id,
+                normalizedSessionId,
                 actionType,
                 errorCode,
                 errorMessage
@@ -334,11 +349,11 @@ class ExecutionTracker(
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
-                    ?: throw IllegalStateException(
-                        "Session not found: $id"
-                    )
+            val timeline:
+                MutableList<ExecutionEvent> =
+                getOrCreateSessionEvents(
+                    normalizedSessionId
+                )
 
             timeline.add(event)
         }
@@ -362,26 +377,23 @@ class ExecutionTracker(
         errorMessage: String
     ): ExecutionEvent.SessionError {
 
-        val id = sessionId.trim()
-
-        require(id.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         val event =
             ExecutionEvent.SessionError(
-                id,
+                normalizedSessionId,
                 errorCode,
                 errorMessage
             )
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
-                    ?: throw IllegalStateException(
-                        "Session not found: $id"
-                    )
+            val timeline:
+                MutableList<ExecutionEvent> =
+                getOrCreateSessionEvents(
+                    normalizedSessionId
+                )
 
             timeline.add(event)
         }
@@ -395,23 +407,24 @@ class ExecutionTracker(
     }
 
     // ========================================================================
-    // READ
+    // READ APIs
     // ========================================================================
 
+    /**
+     * Returns a snapshot of the session timeline.
+     */
     fun getSessionTimeline(
         sessionId: String
     ): List<ExecutionEvent> {
 
-        val id = sessionId.trim()
-
-        if (id.isEmpty()) {
-            return emptyList()
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         synchronized(sessionLock) {
 
-            val timeline =
-                sessions[id]
+            val timeline:
+                MutableList<ExecutionEvent>? =
+                sessions[normalizedSessionId]
 
             return if (timeline == null) {
                 emptyList()
@@ -421,6 +434,9 @@ class ExecutionTracker(
         }
     }
 
+    /**
+     * Returns all known session IDs.
+     */
     fun getAllSessionIds(): Set<String> {
 
         synchronized(sessionLock) {
@@ -428,77 +444,58 @@ class ExecutionTracker(
         }
     }
 
+    /**
+     * Returns the currently active session ID.
+     */
     fun getActiveSessionId(): String? {
         return activeSessionId
     }
 
-    fun hasSession(
-        sessionId: String
-    ): Boolean {
-
-        val id = sessionId.trim()
-
-        if (id.isEmpty()) {
-            return false
-        }
-
-        synchronized(sessionLock) {
-            return sessions.containsKey(id)
-        }
-    }
-
-    fun isSessionActive(
-        sessionId: String
-    ): Boolean {
-
-        val id = sessionId.trim()
-
-        if (id.isEmpty()) {
-            return false
-        }
-
-        return activeSessionId == id
-    }
-
     // ========================================================================
-    // CLEAR ONE
+    // MAINTENANCE
     // ========================================================================
 
+    /**
+     * Removes one session from memory.
+     */
     fun clearSession(
         sessionId: String
     ) {
 
-        val id = sessionId.trim()
-
-        if (id.isEmpty()) {
-            return
-        }
+        val normalizedSessionId =
+            normalizeSessionId(sessionId)
 
         synchronized(sessionLock) {
 
-            sessions.remove(id)
+            sessions.remove(
+                normalizedSessionId
+            )
 
-            if (activeSessionId == id) {
+            if (
+                activeSessionId ==
+                normalizedSessionId
+            ) {
                 activeSessionId = null
             }
         }
 
         logger.info(
             "ExecutionTracker",
-            "Session cleared: $id"
+            "Session cleared: $normalizedSessionId"
         )
     }
 
-    // ========================================================================
-    // CLEAR ALL
-    // ========================================================================
-
+    /**
+     * Removes all session timelines.
+     */
     fun clearAllSessions() {
 
         synchronized(sessionLock) {
 
             sessions.clear()
-            activeSessionId = null
+
+            activeSessionId =
+                null
         }
 
         logger.warn(
@@ -508,14 +505,70 @@ class ExecutionTracker(
     }
 
     // ========================================================================
+    // INTERNAL HELPERS
+    // ========================================================================
+
+    /**
+     * Normalizes and validates a session ID.
+     */
+    private fun normalizeSessionId(
+        sessionId: String
+    ): String {
+
+        val normalized =
+            sessionId.trim()
+
+        require(
+            normalized.isNotEmpty()
+        ) {
+            "sessionId must not be blank"
+        }
+
+        return normalized
+    }
+
+    /**
+     * Returns an existing timeline or creates one.
+     *
+     * IMPORTANT:
+     * This method must only be called while sessionLock
+     * is already held.
+     */
+    private fun getOrCreateSessionEvents(
+        sessionId: String
+    ): MutableList<ExecutionEvent> {
+
+        val existing:
+            MutableList<ExecutionEvent>? =
+            sessions[sessionId]
+
+        if (existing != null) {
+            return existing
+        }
+
+        val created:
+            MutableList<ExecutionEvent> =
+            mutableListOf()
+
+        sessions[sessionId] =
+            created
+
+        return created
+    }
+
+    // ========================================================================
     // ACTION ID
     // ========================================================================
 
     companion object {
 
-        private val actionCounter =
+        private val actionCounter:
+            AtomicLong =
             AtomicLong(0L)
 
+        /**
+         * Generates a unique action ID.
+         */
         @JvmStatic
         fun nextActionId(): String {
 
