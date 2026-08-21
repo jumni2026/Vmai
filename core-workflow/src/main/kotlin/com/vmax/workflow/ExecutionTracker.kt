@@ -6,33 +6,14 @@ import com.vmax.common.Logger
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * VMAX Enterprise v2.6.1
- *
- * File: ExecutionTracker.kt
- *
- * Responsibility:
- * - Track workflow session lifecycle.
- * - Track action dispatch/success/failure.
- * - Maintain session execution timeline.
- * - Remain platform independent.
- */
 class ExecutionTracker(
     private val logger: Logger
 ) {
-
-    // ========================================================================
-    // SESSION STORAGE - MUST BE AT TOP
-    // ========================================================================
 
     private val sessionEvents = ConcurrentHashMap<String, MutableList<ExecutionEvent>>()
     
     @Volatile
     private var activeSession: String? = null
-
-    // ========================================================================
-    // SESSION LIFECYCLE
-    // ========================================================================
 
     fun startSession(sessionId: String): ExecutionEvent.SessionStarted {
         val normalized = normalizeSessionId(sessionId)
@@ -184,10 +165,6 @@ class ExecutionTracker(
         return event
     }
 
-    // ========================================================================
-    // READ APIs
-    // ========================================================================
-
     fun getSessionTimeline(sessionId: String): List<ExecutionEvent> {
         val normalized = normalizeSessionId(sessionId)
         
@@ -215,10 +192,6 @@ class ExecutionTracker(
         val target = sessionId ?: activeSession ?: return 0
         return getSessionTimeline(target).size
     }
-
-    // ========================================================================
-    // MAINTENANCE
-    // ========================================================================
 
     fun clearSession(sessionId: String) {
         val normalized = normalizeSessionId(sessionId)
@@ -250,10 +223,6 @@ class ExecutionTracker(
 
     fun clearAll() = clearAllSessions()
 
-    // ========================================================================
-    // INTERNAL HELPERS - MUST BE DEFINED
-    // ========================================================================
-
     private fun normalizeSessionId(sessionId: String): String {
         val normalized = sessionId.trim()
         require(normalized.isNotEmpty()) { "sessionId must not be blank" }
@@ -263,10 +232,6 @@ class ExecutionTracker(
     private fun getOrCreateSessionEvents(sessionId: String): MutableList<ExecutionEvent> {
         return sessionEvents.getOrPut(sessionId) { mutableListOf() }
     }
-
-    // ========================================================================
-    // COMPANION
-    // ========================================================================
 
     companion object {
         private val actionCounter = AtomicLong(0L)
