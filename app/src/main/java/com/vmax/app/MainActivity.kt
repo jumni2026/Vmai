@@ -19,23 +19,33 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vmax.model.*
 import com.vmax.workflow.WorkflowState
+import com.vmax.runtime.AndroidExecutionHistoryStore
+import com.vmax.runtime.AndroidMetricsCollector
+import com.vmax.runtime.AndroidExecutionHistoryRepository
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Create runtime objects once for this Activity.
+        val historyStore = AndroidExecutionHistoryStore(this)
+        val metricsCollector = AndroidMetricsCollector()
+        val historyRepository =
+            AndroidExecutionHistoryRepository(
+                historyStore,
+                metricsCollector
+            )
+
         setContent {
             VMAXTheme {
-                var showHistory by remember { mutableStateOf(false) }
 
-                val historyStore = AndroidExecutionHistoryStore(this)
-                val metricsCollector = AndroidMetricsCollector()
-                val historyRepository =
-                    AndroidExecutionHistoryRepository(
-                        historyStore,
-                        metricsCollector
-                    )
+                var showHistory by remember {
+                    mutableStateOf(false)
+                }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -44,11 +54,15 @@ class MainActivity : ComponentActivity() {
                     if (showHistory) {
                         HistoryScreen(
                             repository = historyRepository,
-                            onBack = { showHistory = false }
+                            onBack = {
+                                showHistory = false
+                            }
                         )
                     } else {
                         VMAXDashboard(
-                            onHistoryClick = { showHistory = true }
+                            onHistoryClick = {
+                                showHistory = true
+                            }
                         )
                     }
                 }
@@ -69,8 +83,13 @@ fun VMAXDashboard(
     val classType by viewModel.classType.collectAsState()
     val quota by viewModel.quota.collectAsState()
 
-    var fromStationInput by remember { mutableStateOf("") }
-    var toStationInput by remember { mutableStateOf("") }
+    var fromStationInput by remember {
+        mutableStateOf("")
+    }
+
+    var toStationInput by remember {
+        mutableStateOf("")
+    }
 
     val journeyDate by viewModel.journeyDate.collectAsState()
 
@@ -82,24 +101,53 @@ fun VMAXDashboard(
     val validationError by viewModel.validationError.collectAsState()
     val workflowState by viewModel.workflowState.collectAsState()
 
-    var showPassengerDialog by remember { mutableStateOf(false) }
-    var quotaExpanded by remember { mutableStateOf(false) }
+    var showPassengerDialog by remember {
+        mutableStateOf(false)
+    }
+
+    var showDatePicker by remember {
+        mutableStateOf(false)
+    }
+
+    var quotaExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    var classExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    var mealExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    // Kept local because MainViewModel currently has no passengerMeal state.
+    var passengerMeal by remember {
+        mutableStateOf("NO PREFERENCE")
+    }
 
     val classOptions =
-        listOf("1A", "2A", "3A", "SL", "CC", "EC", "3E", "2S", "FC")
+        listOf(
+            "1A",
+            "2A",
+            "3A",
+            "SL",
+            "CC",
+            "EC",
+            "3E",
+            "2S",
+            "FC"
+        )
 
-    var classExpanded by remember { mutableStateOf(false) }
+    val mealOptions =
+        listOf(
+            "VEG",
+            "NON-VEG",
+            "NO PREFERENCE"
+        )
 
     val currentWorkflowState = workflowState
 
-    /*
-     * WorkflowState is an enum.
-     *
-     * Therefore enum entries are compared with ==.
-     * Do NOT use:
-     * is WorkflowState.RUNNING
-     * is WorkflowState.ERROR
-     */
     val statusText = when (currentWorkflowState) {
 
         WorkflowState.CONFIGURED ->
@@ -107,7 +155,9 @@ fun VMAXDashboard(
 
         WorkflowState.RUNNING ->
             "RUNNING (Target: ${
-                trainNumber.takeIf { it.isNotBlank() } ?: "N/A"
+                trainNumber.takeIf {
+                    it.isNotBlank()
+                } ?: "N/A"
             })"
 
         WorkflowState.ERROR ->
@@ -146,8 +196,13 @@ fun VMAXDashboard(
             ) {
                 Button(
                     onClick = {
-                        viewModel.updateFromStation(fromStationInput)
-                        viewModel.updateToStation(toStationInput)
+                        viewModel.updateFromStation(
+                            fromStationInput
+                        )
+
+                        viewModel.updateToStation(
+                            toStationInput
+                        )
 
                         if (viewModel.isWorkflowActive()) {
                             viewModel.stopWorkflow()
@@ -155,6 +210,7 @@ fun VMAXDashboard(
                             viewModel.startWorkflow()
                         }
                     },
+
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
@@ -166,6 +222,7 @@ fun VMAXDashboard(
                             bottom = 8.dp
                         )
                         .height(50.dp),
+
                     colors = ButtonDefaults.buttonColors(
                         containerColor =
                             if (workflowActive) {
@@ -194,7 +251,9 @@ fun VMAXDashboard(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(
+                    rememberScrollState()
+                )
                 .imePadding()
                 .padding(
                     start = 16.dp,
@@ -217,7 +276,9 @@ fun VMAXDashboard(
                 fontSize = 12.sp
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(
+                modifier = Modifier.height(24.dp)
+            )
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -225,6 +286,7 @@ fun VMAXDashboard(
                     defaultElevation = 4.dp
                 )
             ) {
+
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
@@ -235,7 +297,9 @@ fun VMAXDashboard(
                         fontSize = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
 
                     OutlinedTextField(
                         value = trainNumber,
@@ -249,19 +313,24 @@ fun VMAXDashboard(
                             Text("e.g., 20503")
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        isError = validationError
-                            ?.contains("Train Number") == true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        ),
+                        isError =
+                            validationError
+                                ?.contains("Train Number") == true,
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType =
+                                    KeyboardType.Number
+                            ),
                         singleLine = true
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(
+                        modifier = Modifier.height(4.dp)
+                    )
 
                     OutlinedTextField(
                         value = trainName,
-                        onValueChange = { },
+                        onValueChange = {},
                         label = {
                             Text("Train Name")
                         },
@@ -270,12 +339,15 @@ fun VMAXDashboard(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         readOnly = true,
-                        isError = validationError
-                            ?.contains("Train Name") == true,
+                        isError =
+                            validationError
+                                ?.contains("Train Name") == true,
                         singleLine = true
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(
+                        modifier = Modifier.height(4.dp)
+                    )
 
                     ExposedDropdownMenuBox(
                         expanded = classExpanded,
@@ -283,6 +355,7 @@ fun VMAXDashboard(
                             classExpanded = it
                         }
                     ) {
+
                         OutlinedTextField(
                             value = classType,
                             onValueChange = {},
@@ -301,8 +374,9 @@ fun VMAXDashboard(
                                     expanded = classExpanded
                                 )
                             },
-                            isError = validationError
-                                ?.contains("Class Type") == true,
+                            isError =
+                                validationError
+                                    ?.contains("Class Type") == true,
                             singleLine = true
                         )
 
@@ -312,13 +386,19 @@ fun VMAXDashboard(
                                 classExpanded = false
                             }
                         ) {
+
                             classOptions.forEach { option ->
+
                                 DropdownMenuItem(
                                     text = {
                                         Text(option)
                                     },
                                     onClick = {
-                                        viewModel.updateClassType(option)
+                                        viewModel
+                                            .updateClassType(
+                                                option
+                                            )
+
                                         classExpanded = false
                                     }
                                 )
@@ -326,7 +406,9 @@ fun VMAXDashboard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(
+                        modifier = Modifier.height(4.dp)
+                    )
 
                     Text(
                         text = "Quota",
@@ -345,7 +427,9 @@ fun VMAXDashboard(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = quota?.name ?: "Select Quota"
+                                text =
+                                    quota?.name
+                                        ?: "Select Quota"
                             )
                         }
 
@@ -355,13 +439,17 @@ fun VMAXDashboard(
                                 quotaExpanded = false
                             }
                         ) {
+
                             Quota.values().forEach { q ->
+
                                 DropdownMenuItem(
                                     text = {
                                         Text(q.name)
                                     },
                                     onClick = {
-                                        viewModel.updateQuota(q)
+                                        viewModel
+                                            .updateQuota(q)
+
                                         quotaExpanded = false
                                     }
                                 )
@@ -369,7 +457,9 @@ fun VMAXDashboard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(
+                        modifier = Modifier.height(4.dp)
+                    )
 
                     Row(
                         modifier = Modifier.fillMaxWidth()
@@ -387,8 +477,9 @@ fun VMAXDashboard(
                                 Text("e.g., NDLS")
                             },
                             modifier = Modifier.weight(1f),
-                            isError = validationError
-                                ?.contains("From Station") == true,
+                            isError =
+                                validationError
+                                    ?.contains("From Station") == true,
                             singleLine = true
                         )
 
@@ -408,29 +499,42 @@ fun VMAXDashboard(
                                 Text("e.g., MUMBAI")
                             },
                             modifier = Modifier.weight(1f),
-                            isError = validationError
-                                ?.contains("To Station") == true,
+                            isError =
+                                validationError
+                                    ?.contains("To Station") == true,
                             singleLine = true
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(
+                        modifier = Modifier.height(4.dp)
+                    )
 
+                    // Calendar-based date selection.
                     OutlinedTextField(
                         value = journeyDate,
-                        onValueChange = {
-                            viewModel.updateJourneyDate(it)
-                        },
+                        onValueChange = {},
+                        readOnly = true,
                         label = {
-                            Text("Journey Date (YYYY-MM-DD)")
+                            Text("Journey Date")
                         },
                         placeholder = {
-                            Text("e.g., 2026-08-10")
+                            Text("Select Journey Date")
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        isError = validationError
-                            ?.contains("Date") == true,
-                        singleLine = true
+                        isError =
+                            validationError
+                                ?.contains("Date") == true,
+                        singleLine = true,
+                        trailingIcon = {
+                            TextButton(
+                                onClick = {
+                                    showDatePicker = true
+                                }
+                            ) {
+                                Text("📅")
+                            }
+                        }
                     )
 
                     if (validationError != null) {
@@ -441,7 +545,10 @@ fun VMAXDashboard(
 
                         Text(
                             text = validationError!!,
-                            color = MaterialTheme.colorScheme.error,
+                            color =
+                                MaterialTheme
+                                    .colorScheme
+                                    .error,
                             fontSize = 14.sp
                         )
                     }
@@ -458,6 +565,7 @@ fun VMAXDashboard(
                     defaultElevation = 4.dp
                 )
             ) {
+
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
@@ -497,19 +605,27 @@ fun VMAXDashboard(
             )
 
             Text(
-                text = "Automation Status: $statusText",
+                text =
+                    "Automation Status: $statusText",
                 fontWeight = FontWeight.Bold,
-                color = when (currentWorkflowState) {
+                color =
+                    when (currentWorkflowState) {
 
-                    WorkflowState.RUNNING ->
-                        MaterialTheme.colorScheme.primary
+                        WorkflowState.RUNNING ->
+                            MaterialTheme
+                                .colorScheme
+                                .primary
 
-                    WorkflowState.ERROR ->
-                        MaterialTheme.colorScheme.error
+                        WorkflowState.ERROR ->
+                            MaterialTheme
+                                .colorScheme
+                                .error
 
-                    else ->
-                        MaterialTheme.colorScheme.onBackground
-                }
+                        else ->
+                            MaterialTheme
+                                .colorScheme
+                                .onBackground
+                    }
             )
 
             Spacer(
@@ -517,6 +633,75 @@ fun VMAXDashboard(
             )
         }
     }
+
+    // ---------------------------------------------------------
+    // DATE PICKER
+    // ---------------------------------------------------------
+
+    if (showDatePicker) {
+
+        val datePickerState =
+            rememberDatePickerState()
+
+        DatePickerDialog(
+            onDismissRequest = {
+                showDatePicker = false
+            },
+
+            confirmButton = {
+
+                TextButton(
+                    onClick = {
+
+                        datePickerState
+                            .selectedDateMillis
+                            ?.let { millis ->
+
+                                val formatter =
+                                    SimpleDateFormat(
+                                        "yyyy-MM-dd",
+                                        Locale.US
+                                    )
+
+                                val selectedDate =
+                                    formatter.format(
+                                        Date(millis)
+                                    )
+
+                                viewModel
+                                    .updateJourneyDate(
+                                        selectedDate
+                                    )
+                            }
+
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+
+            dismissButton = {
+
+                TextButton(
+                    onClick = {
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+
+            DatePicker(
+                state = datePickerState
+            )
+        }
+    }
+
+    // ---------------------------------------------------------
+    // PASSENGER DIALOG
+    // ---------------------------------------------------------
 
     if (showPassengerDialog) {
 
@@ -526,9 +711,7 @@ fun VMAXDashboard(
             },
 
             title = {
-                Text(
-                    text = "Add Passenger Data"
-                )
+                Text("Add Passenger Data")
             },
 
             text = {
@@ -538,7 +721,8 @@ fun VMAXDashboard(
                     OutlinedTextField(
                         value = passengerName,
                         onValueChange = {
-                            viewModel.updatePassengerName(it)
+                            viewModel
+                                .updatePassengerName(it)
                         },
                         label = {
                             Text("Passenger Name")
@@ -554,16 +738,19 @@ fun VMAXDashboard(
                     OutlinedTextField(
                         value = passengerAge,
                         onValueChange = {
-                            viewModel.updatePassengerAge(it)
+                            viewModel
+                                .updatePassengerAge(it)
                         },
                         label = {
                             Text("Age")
                         },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        )
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType =
+                                    KeyboardType.Number
+                            )
                     )
 
                     Spacer(
@@ -590,7 +777,11 @@ fun VMAXDashboard(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(passengerGender)
+                            Text(
+                                passengerGender.ifBlank {
+                                    "Select Gender"
+                                }
+                            )
                         }
 
                         DropdownMenu(
@@ -611,9 +802,12 @@ fun VMAXDashboard(
                                         Text(gender)
                                     },
                                     onClick = {
-                                        viewModel.updatePassengerGender(
-                                            gender
-                                        )
+
+                                        viewModel
+                                            .updatePassengerGender(
+                                                gender
+                                            )
+
                                         genderExpanded = false
                                     }
                                 )
@@ -628,21 +822,70 @@ fun VMAXDashboard(
                     OutlinedTextField(
                         value = passengerMobile,
                         onValueChange = {
-                            viewModel.updatePassengerMobile(it)
+                            viewModel
+                                .updatePassengerMobile(it)
                         },
                         label = {
                             Text("Mobile (10 digits)")
                         },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Phone
-                        )
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType =
+                                    KeyboardType.Phone
+                            )
                     )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text = "Meal Preference",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+
+                        Button(
+                            onClick = {
+                                mealExpanded = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(passengerMeal)
+                        }
+
+                        DropdownMenu(
+                            expanded = mealExpanded,
+                            onDismissRequest = {
+                                mealExpanded = false
+                            }
+                        ) {
+
+                            mealOptions.forEach { meal ->
+
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(meal)
+                                    },
+                                    onClick = {
+                                        passengerMeal = meal
+                                        mealExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             },
 
             confirmButton = {
+
                 Button(
                     onClick = {
                         showPassengerDialog = false
@@ -653,6 +896,7 @@ fun VMAXDashboard(
             },
 
             dismissButton = {
+
                 TextButton(
                     onClick = {
                         showPassengerDialog = false
