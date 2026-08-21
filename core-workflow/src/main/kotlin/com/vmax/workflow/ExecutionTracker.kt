@@ -11,7 +11,7 @@ class ExecutionTracker(
 ) {
 
     // ========================================================================
-    // SESSION STORAGE - THESE MUST BE AT TOP
+    // SESSION STORAGE
     // ========================================================================
 
     private val sessionEvents = ConcurrentHashMap<String, MutableList<ExecutionEvent>>()
@@ -20,7 +20,7 @@ class ExecutionTracker(
     private var activeSession: String? = null
 
     // ========================================================================
-    // SESSION LIFECYCLE
+    // PUBLIC API
     // ========================================================================
 
     fun startSession(sessionId: String): ExecutionEvent.SessionStarted {
@@ -173,10 +173,6 @@ class ExecutionTracker(
         return event
     }
 
-    // ========================================================================
-    // READ APIs
-    // ========================================================================
-
     fun getSessionTimeline(sessionId: String): List<ExecutionEvent> {
         val normalized = normalizeSessionId(sessionId)
         
@@ -204,10 +200,6 @@ class ExecutionTracker(
         val target = sessionId ?: activeSession ?: return 0
         return getSessionTimeline(target).size
     }
-
-    // ========================================================================
-    // MAINTENANCE
-    // ========================================================================
 
     fun clearSession(sessionId: String) {
         val normalized = normalizeSessionId(sessionId)
@@ -240,7 +232,7 @@ class ExecutionTracker(
     fun clearAll() = clearAllSessions()
 
     // ========================================================================
-    // INTERNAL HELPERS
+    // PRIVATE HELPERS
     // ========================================================================
 
     private fun normalizeSessionId(sessionId: String): String {
