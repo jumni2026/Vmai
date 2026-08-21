@@ -22,7 +22,7 @@ class ExecutionTracker(
 ) {
 
     // ========================================================================
-    // SESSION STORAGE
+    // SESSION STORAGE - MUST BE AT TOP
     // ========================================================================
 
     private val sessionEvents = ConcurrentHashMap<String, MutableList<ExecutionEvent>>()
@@ -85,10 +85,6 @@ class ExecutionTracker(
         }
     }
 
-    // ========================================================================
-    // WORKFLOW STATE TRANSITION
-    // ========================================================================
-
     fun recordStateTransition(
         sessionId: String,
         fromState: String,
@@ -105,10 +101,6 @@ class ExecutionTracker(
         logger.debug("ExecutionTracker", "State changed: $fromState -> $toState")
         return event
     }
-
-    // ========================================================================
-    // ACTION DISPATCH
-    // ========================================================================
 
     fun recordActionDispatched(
         sessionId: String,
@@ -131,10 +123,6 @@ class ExecutionTracker(
         return event
     }
 
-    // ========================================================================
-    // ACTION SUCCESS
-    // ========================================================================
-
     fun recordActionSucceeded(
         sessionId: String,
         actionType: ActionExecutor.ActionType,
@@ -154,10 +142,6 @@ class ExecutionTracker(
         )
         return event
     }
-
-    // ========================================================================
-    // ACTION FAILURE
-    // ========================================================================
 
     fun recordActionFailed(
         sessionId: String,
@@ -179,10 +163,6 @@ class ExecutionTracker(
         )
         return event
     }
-
-    // ========================================================================
-    // SESSION ERROR
-    // ========================================================================
 
     fun recordSessionError(
         sessionId: String,
@@ -271,7 +251,7 @@ class ExecutionTracker(
     fun clearAll() = clearAllSessions()
 
     // ========================================================================
-    // INTERNAL HELPERS
+    // INTERNAL HELPERS - MUST BE DEFINED
     // ========================================================================
 
     private fun normalizeSessionId(sessionId: String): String {
