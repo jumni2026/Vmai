@@ -45,3 +45,29 @@ enum class Gender {
     FEMALE,
     OTHER
 }
+
+// ============================================
+// नई जोड़ी गई Enums (PassengerProfile के लिए)
+// ============================================
+
+enum class BerthPreference {
+    NO_PREFERENCE,
+    LOWER,
+    MIDDLE,
+    UPPER,
+    SIDE_LOWER,
+    SIDE_UPPER
+}
+
+enum class MealPreference {
+    NO_MEAL,
+    VEG,
+    NON_VEG,
+    VEG_JAIN
+}
+
+enum class Concession {
+    NONE,
+    SENIOR_CITIZEN,
+    DISABLED
+}
