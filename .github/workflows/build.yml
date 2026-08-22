@@ -13,11 +13,10 @@ on:
       - master
       - develop
 
-  # Manual trigger for cache clearing
   workflow_dispatch:
 
 env:
-  JAVA_VERSION: '17'
+  JAVA_VERSION: '21'
   JAVA_DISTRIBUTION: 'temurin'
 
 jobs:
@@ -35,20 +34,23 @@ jobs:
           fetch-depth: 0
 
       # ------------------------------------------------------------
-      # 2. Validate Gradle Wrapper
+      # 2. Setup JDK 21
       # ------------------------------------------------------------
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@v4
-
-      # ------------------------------------------------------------
-      # 3. Setup JDK
-      # ------------------------------------------------------------
-      - name: Set up JDK
-        uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
         with:
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
+
+      # ------------------------------------------------------------
+      # 3. Setup Gradle
+      #    Uses Gradle Wrapper version from the repository.
+      #    Also provides Gradle caching and wrapper validation.
+      # ------------------------------------------------------------
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
 
       # ------------------------------------------------------------
       # 4. Make Gradle wrapper executable
@@ -57,32 +59,28 @@ jobs:
         run: chmod +x ./gradlew
 
       # ------------------------------------------------------------
-      # 5. Clear Gradle Cache (to fix unresolved reference errors)
+      # 5. Show Java and Gradle versions
       # ------------------------------------------------------------
-      - name: Clear Gradle Cache
+      - name: Show build environment
         run: |
-          echo "Clearing Gradle cache to fix unresolved reference errors..."
-          rm -rf ~/.gradle/caches/
-          rm -rf ~/.gradle/wrapper/
-          echo "Cache cleared successfully."
+          java -version
+          ./gradlew --version
 
       # ------------------------------------------------------------
-      # 6. Clean previous build outputs
+      # 6. Clean build outputs
       # ------------------------------------------------------------
       - name: Clean
-        run: ./gradlew clean --no-daemon
+        run: ./gradlew clean --no-daemon --stacktrace
 
       # ------------------------------------------------------------
-      # 7. Build with no cache and rerun tasks
+      # 7. Compile and test
       # ------------------------------------------------------------
       - name: Build and Test
         run: |
           ./gradlew build \
-            --no-build-cache \
-            --rerun-tasks \
             --no-daemon \
-            --stacktrace
-        continue-on-error: false
+            --stacktrace \
+            --warning-mode all
 
       # ------------------------------------------------------------
       # 8. Build Debug APK
@@ -90,21 +88,20 @@ jobs:
       - name: Build Debug APK
         run: |
           ./gradlew assembleDebug \
-            --no-build-cache \
-            --rerun-tasks \
-            --no-daemon
-        continue-on-error: false
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all
 
       # ------------------------------------------------------------
-      # 9. Verify APK exists
+      # 9. Verify APK
       # ------------------------------------------------------------
       - name: Verify Debug APK
         run: |
           if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            echo "✅ Debug APK created successfully."
-            ls -lh app/build/outputs/apk/debug/
+            echo "Debug APK created successfully."
+            ls -lh app/build/outputs/apk/debug/app-debug.apk
           else
-            echo "❌ Debug APK not found!"
+            echo "Debug APK not found!"
             exit 1
           fi
 
@@ -119,7 +116,7 @@ jobs:
           if-no-files-found: error
 
       # ------------------------------------------------------------
-      # 11. Upload Test Results (if any)
+      # 11. Upload test results
       # ------------------------------------------------------------
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
@@ -132,7 +129,7 @@ jobs:
           if-no-files-found: ignore
 
       # ------------------------------------------------------------
-      # 12. Upload Build Reports
+      # 12. Upload build reports
       # ------------------------------------------------------------
       - name: Upload Build Reports
         uses: actions/upload-artifact@v4
