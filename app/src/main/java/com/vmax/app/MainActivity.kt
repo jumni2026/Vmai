@@ -17,23 +17,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vmax.model.*
 import com.vmax.workflow.WorkflowState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
-            VMAXTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+            // VMAXTheme की जगह सीधे MaterialTheme use किया है
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     VMAXDashboard()
                 }
             }
@@ -44,35 +39,27 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VMAXDashboard() {
-
     val viewModel: MainViewModel = viewModel()
-
     val trainNumber by viewModel.trainNumber.collectAsState()
     val trainName by viewModel.trainName.collectAsState()
     val classType by viewModel.classType.collectAsState()
-    val quota by viewModel.quota.collectAsState()
-
+    val quota by viewModel.quota.collectAsState() // यह अब String है
     val journeyDate by viewModel.journeyDate.collectAsState()
-
     val passengerName by viewModel.passengerName.collectAsState()
     val passengerAge by viewModel.passengerAge.collectAsState()
     val passengerGender by viewModel.passengerGender.collectAsState()
     val passengerMobile by viewModel.passengerMobile.collectAsState()
-
     val validationError by viewModel.validationError.collectAsState()
     val workflowState by viewModel.workflowState.collectAsState()
 
     var fromStationInput by rememberSaveable { mutableStateOf("") }
     var toStationInput by rememberSaveable { mutableStateOf("") }
-
     var showPassengerDialog by rememberSaveable { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-
     var quotaExpanded by rememberSaveable { mutableStateOf(false) }
     var classExpanded by rememberSaveable { mutableStateOf(false) }
     var genderExpanded by rememberSaveable { mutableStateOf(false) }
     var mealExpanded by rememberSaveable { mutableStateOf(false) }
-
     var passengerMeal by rememberSaveable { mutableStateOf("NO PREFERENCE") }
 
     val classOptions = listOf("1A", "2A", "3A", "SL", "CC", "EC", "3E", "2S", "FC")
@@ -89,30 +76,19 @@ fun VMAXDashboard() {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(title = { Text("VMAX Enterprise") })
-        },
+        topBar = { TopAppBar(title = { Text("VMAX Enterprise") }) },
         bottomBar = {
             Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 4.dp) {
                 Button(
                     onClick = {
                         viewModel.updateFromStation(fromStationInput.trim())
                         viewModel.updateToStation(toStationInput.trim())
-
-                        if (viewModel.isWorkflowActive()) {
-                            viewModel.stopWorkflow()
-                        } else {
-                            viewModel.startWorkflow()
-                        }
+                        if (viewModel.isWorkflowActive()) viewModel.stopWorkflow() else viewModel.startWorkflow()
                     },
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 8.dp).height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = if (workflowActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 ) {
-                    Text(
-                        text = if (workflowActive) "STOP WORKFLOW ENGINE" else "CONFIGURE & START ENGINE",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text(text = if (workflowActive) "STOP WORKFLOW ENGINE" else "CONFIGURE & START ENGINE", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -138,19 +114,15 @@ fun VMAXDashboard() {
                     ExposedDropdownMenuBox(expanded = classExpanded, onExpandedChange = { classExpanded = !classExpanded }) {
                         OutlinedTextField(value = classType, onValueChange = {}, readOnly = true, label = { Text("Class Type") }, placeholder = { Text("e.g., 3A") }, modifier = Modifier.fillMaxWidth().menuAnchor(), trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = classExpanded) }, isError = validationError?.contains("Class Type", ignoreCase = true) == true, singleLine = true)
                         ExposedDropdownMenu(expanded = classExpanded, onDismissRequest = { classExpanded = false }) {
-                            classOptions.forEach { option ->
-                                DropdownMenuItem(text = { Text(option) }, onClick = { viewModel.updateClassType(option); classExpanded = false })
-                            }
+                            classOptions.forEach { option -> DropdownMenuItem(text = { Text(option) }, onClick = { viewModel.updateClassType(option); classExpanded = false }) }
                         }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // QUOTA (Ab Safe String Use kar rahe hain)
+                    // Quota (Pure String - No Enum Dependency)
                     Text(text = "Quota", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        Button(onClick = { quotaExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(quota?.ifBlank { "Select Quota" } ?: "Select Quota")
-                        }
+                        Button(onClick = { quotaExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text(quota?.ifBlank { "Select Quota" } ?: "Select Quota") }
                         DropdownMenu(expanded = quotaExpanded, onDismissRequest = { quotaExpanded = false }) {
                             listOf("GENERAL", "TATKAL", "LADIES", "SENIOR CITIZEN", "DEFENCE", "YOUTH", "FOREIGN TOURIST").forEach { q ->
                                 DropdownMenuItem(text = { Text(q) }, onClick = { viewModel.updateQuota(q); quotaExpanded = false })
@@ -167,15 +139,11 @@ fun VMAXDashboard() {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     OutlinedTextField(value = journeyDate, onValueChange = {}, readOnly = true, label = { Text("Journey Date") }, placeholder = { Text("Select Journey Date") }, modifier = Modifier.fillMaxWidth(), isError = validationError?.contains("Date", ignoreCase = true) == true, singleLine = true, trailingIcon = { TextButton(onClick = { showDatePicker = true }) { Text("📅") } })
-                    validationError?.let { error ->
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = error, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
-                    }
+                    validationError?.let { error -> Spacer(modifier = Modifier.height(8.dp)); Text(text = error, color = MaterialTheme.colorScheme.error, fontSize = 14.sp) }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(text = "👤 Passenger Data Notebook", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -184,9 +152,7 @@ fun VMAXDashboard() {
                     Button(onClick = { showPassengerDialog = true }, modifier = Modifier.padding(top = 8.dp)) { Text("Configure via Pop-up") }
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
             Text(text = "Automation Status: $statusText", fontWeight = FontWeight.Bold, color = when (workflowState) { WorkflowState.RUNNING -> MaterialTheme.colorScheme.primary; WorkflowState.ERROR -> MaterialTheme.colorScheme.error; else -> MaterialTheme.colorScheme.onBackground })
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -198,18 +164,12 @@ fun VMAXDashboard() {
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                        val selectedDate = formatter.format(Date(millis))
-                        viewModel.updateJourneyDate(selectedDate)
-                    }
+                    datePickerState.selectedDateMillis?.let { millis -> val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US); val selectedDate = formatter.format(Date(millis)); viewModel.updateJourneyDate(selectedDate) }
                     showDatePicker = false
                 }) { Text("OK") }
             },
             dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+        ) { DatePicker(state = datePickerState) }
     }
 
     if (showPassengerDialog) {
@@ -227,9 +187,7 @@ fun VMAXDashboard() {
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Button(onClick = { genderExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text(passengerGender.ifBlank { "Select Gender" }) }
                         DropdownMenu(expanded = genderExpanded, onDismissRequest = { genderExpanded = false }) {
-                            listOf("MALE", "FEMALE", "OTHER").forEach { gender ->
-                                DropdownMenuItem(text = { Text(gender) }, onClick = { viewModel.updatePassengerGender(gender); genderExpanded = false })
-                            }
+                            listOf("MALE", "FEMALE", "OTHER").forEach { gender -> DropdownMenuItem(text = { Text(gender) }, onClick = { viewModel.updatePassengerGender(gender); genderExpanded = false }) }
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -240,9 +198,7 @@ fun VMAXDashboard() {
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Button(onClick = { mealExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text(passengerMeal) }
                         DropdownMenu(expanded = mealExpanded, onDismissRequest = { mealExpanded = false }) {
-                            mealOptions.forEach { meal ->
-                                DropdownMenuItem(text = { Text(meal) }, onClick = { passengerMeal = meal; mealExpanded = false })
-                            }
+                            mealOptions.forEach { meal -> DropdownMenuItem(text = { Text(meal) }, onClick = { passengerMeal = meal; mealExpanded = false }) }
                         }
                     }
                 }
