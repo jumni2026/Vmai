@@ -1,36 +1,19 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    kotlin("jvm")
 }
 
-android {
-    namespace = "com.vmax.payment.engine"
-    compileSdk = 35
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-
-    kotlinOptions {
-        jvmTarget = "21"
-    }
+kotlin {
+    jvmToolchain(21)
 }
 
 dependencies {
     implementation(project(":common"))
     implementation(project(":core-model"))
     implementation(project(":core-validation"))
-    implementation(project(":core-intelligence"))
-    implementation(project(":core-workflow"))
-    implementation(project(":core-action"))
-    implementation(project(":core-security"))
 
-    implementation("androidx.core:core-ktx:1.15.0")
+    testImplementation(kotlin("test"))
+}
 
-    testImplementation("junit:junit:4.13.2")
+tasks.test {
+    useJUnitPlatform()
 }
