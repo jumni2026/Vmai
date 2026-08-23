@@ -25,7 +25,7 @@ class MainViewModel : ViewModel() {
     private val _classType = MutableStateFlow("")
     val classType: StateFlow<String> = _classType.asStateFlow()
     
-    // ⚠️ यहाँ Quota String है
+    // Quota अब String है
     private val _quota = MutableStateFlow<String?>(null)
     val quota: StateFlow<String?> = _quota.asStateFlow()
 
