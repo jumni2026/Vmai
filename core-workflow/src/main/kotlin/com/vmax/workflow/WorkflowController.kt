@@ -1,11 +1,5 @@
 package com.vmax.workflow
 
-import com.vmax.action.ExecutionEvent
-import com.vmax.action.ExecutionRecorder
-import com.vmax.action.MetricsCollector
-import com.vmax.core_intelligence.OcrResult
-import com.vmax.core_intelligence.ScreenAnalyzer
-import com.vmax.core_intelligence.TextClassifier
 import com.vmax.model.BookingRequest
 import com.vmax.model.PassengerProfile
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,10 +9,13 @@ import java.util.UUID
 
 class WorkflowController(
     @Suppress("UNUSED_PARAMETER")
-    private val analyzer: ScreenAnalyzer,
-    private val classifier: TextClassifier,
-    private val metrics: MetricsCollector,
-    private val recorder: ExecutionRecorder
+    private val analyzer: Any? = null,
+    @Suppress("UNUSED_PARAMETER")
+    private val classifier: Any? = null,
+    @Suppress("UNUSED_PARAMETER")
+    private val metrics: Any? = null,
+    @Suppress("UNUSED_PARAMETER")
+    private val recorder: Any? = null
 ) {
 
     companion object {
@@ -89,7 +86,6 @@ class WorkflowController(
     fun start(bookingRequest: BookingRequest, passengerProfile: PassengerProfile): Boolean {
         synchronized(lifecycleLock) {
             if (workflowState != WorkflowState.IDLE) return false
-
             if (passengerProfile.passengers.isEmpty()) return false
 
             val passenger = bookingRequest.passengers.firstOrNull() ?: return false
@@ -136,9 +132,6 @@ class WorkflowController(
 
         workflowState = WorkflowState.CONFIGURED
 
-        startMetricsSafely(normalizedSessionId)
-        recordSessionStartedSafely(normalizedSessionId)
-
         workflowState = WorkflowState.RUNNING
         return true
     }
@@ -146,12 +139,6 @@ class WorkflowController(
     fun stopWorkflow() {
         synchronized(lifecycleLock) {
             if (workflowState == WorkflowState.IDLE || workflowState == WorkflowState.STOPPED) return
-
-            val sessionId = currentSessionId
-            if (sessionId.isNotBlank()) {
-                recordSessionStoppedSafely(sessionId)
-                stopMetricsSafely(sessionId, "STOPPED")
-            }
             workflowState = WorkflowState.STOPPED
         }
     }
@@ -181,42 +168,8 @@ class WorkflowController(
 
     fun updateState(newState: WorkflowState) {
         synchronized(lifecycleLock) {
-            if (newState == WorkflowState.USER_BOUNDARY || newState == WorkflowState.STOPPED || newState == WorkflowState.ERROR) {
-                // Intentional no-op placeholder for safe future logic
-            }
             workflowState = newState
         }
-    }
-
-    fun handleScreenAnalysis(
-        analysis: ScreenAnalyzer.AnalysisResult,
-        ocrText: String,
-        ocrBlocks: List<OcrResult.TextBlock>
-    ): WorkflowAction? {
-        if (!isActive()) return null
-        val sessionId = currentSessionId
-        if (sessionId.isBlank()) return null
-
-        val ocrResult = try {
-            OcrResult(screenId = sessionId, timestamp = System.currentTimeMillis(), fullText = ocrText.trim(), textBlocks = ocrBlocks)
-        } catch (_: Exception) {
-            return null
-        }
-
-        val sensitive = try {
-            classifier.isSensitiveScreen(ocrResult)
-        } catch (_: Exception) {
-            return null
-        }
-
-        if (sensitive) return null
-
-        return null // Safe fallback if analyzers are missing
-    }
-
-    fun handleStateAction(state: WorkflowState): WorkflowAction? {
-        if (isHardBoundary()) return null
-        return null
     }
 
     private fun normalizePassengerDetails(details: PassengerDetails): PassengerDetails {
@@ -232,33 +185,6 @@ class WorkflowController(
         return details.from.isNotBlank() && details.to.isNotBlank() && details.date.isNotBlank() &&
             details.train.isNotBlank() && details.trainClass.isNotBlank() &&
             details.name.isNotBlank() && details.age.isNotBlank() && details.gender.isNotBlank()
-    }
-
-    private fun isHardBoundary(): Boolean {
-        return when (workflowState) {
-            WorkflowState.USER_BOUNDARY, WorkflowState.STOPPED, WorkflowState.ERROR -> true
-            else -> false
-        }
-    }
-
-    private fun startMetricsSafely(sessionId: String) {
-        if (sessionId.isBlank()) return
-        try { metrics.startMetrics(sessionId) } catch (_: Exception) { }
-    }
-
-    private fun stopMetricsSafely(sessionId: String, reason: String) {
-        if (sessionId.isBlank()) return
-        try { metrics.stopMetrics(sessionId, reason) } catch (_: Exception) { }
-    }
-
-    private fun recordSessionStartedSafely(sessionId: String) {
-        if (sessionId.isBlank()) return
-        try { recorder.recordEvent(ExecutionEvent.SessionStarted(sessionId)) } catch (_: Exception) { }
-    }
-
-    private fun recordSessionStoppedSafely(sessionId: String) {
-        if (sessionId.isBlank()) return
-        try { recorder.recordEvent(ExecutionEvent.SessionStopped(sessionId)) } catch (_: Exception) { }
     }
 }
 
