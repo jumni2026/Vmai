@@ -1,5 +1,5 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm")
+    kotlin("jvm")
 }
 
 kotlin {
@@ -8,8 +8,6 @@ kotlin {
 
 dependencies {
     implementation(project(":common"))
-
-    testImplementation(kotlin("test"))
 }
 
 tasks.test {
