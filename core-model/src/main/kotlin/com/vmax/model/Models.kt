@@ -40,6 +40,19 @@ data class BookingRequest(
     val quota: String
 )
 
+// ============================================
+// सबसे जरूरी Enum (MainActivity के लिए)
+// ============================================
+enum class Quota {
+    GENERAL,
+    TATKAL,
+    LADIES,
+    SENIOR_CITIZEN,
+    DEFENCE,
+    YOUTH,
+    FOREIGN_TOURIST
+}
+
 enum class Gender {
     MALE,
     FEMALE,
