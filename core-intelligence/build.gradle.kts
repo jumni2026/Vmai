@@ -1,5 +1,5 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm")
+    kotlin("jvm")
 }
 
 kotlin {
@@ -7,9 +7,8 @@ kotlin {
 }
 
 dependencies {
+    // यह लाइन जोड़ना बहुत जरूरी है, क्योंकि Logger यहाँ से आता है
     implementation(project(":common"))
-    implementation(project(":core-model"))
-    implementation(project(":core-validation"))
 
     testImplementation(kotlin("test"))
 }
