@@ -5,43 +5,22 @@ import com.vmax.action.ActionExecutor
 import com.vmax.common.Result
 
 class ActionOrchestrator(
-    private val actionExecutor: ActionExecutor,
-    private val executionTracker: ExecutionTracker
+    private val actionExecutor: ActionExecutor
 ) {
 
     fun dispatchAndTrack(
         request: ActionExecutor.ActionRequest
     ): Result<Unit, ActionError> {
 
-        // ActionError हमेशा उपलब्ध रहेगा, इसलिए सीधे null-safe कोड लिखते हैं
-        return try {
-            val result = actionExecutor.executeAction(request)
-
-            if (result.success) {
-                executionTracker.recordActionSucceeded(
-                    sessionId = "N/A",
-                    actionType = request.type,
-                    resultMessage = result.message
-                )
-                Result.Success(Unit)
-            } else {
-                val error = ActionError(
-                    code = "EXECUTION_FAILED",
-                    message = result.message ?: "Action failed"
-                )
-                executionTracker.recordActionFailed(
-                    sessionId = "N/A",
-                    actionType = request.type,
-                    errorCode = error.code,
-                    errorMessage = error.message
-                )
-                Result.Error(error)
-            }
-        } catch (t: Throwable) {
-            Result.Error(
+        val result = actionExecutor.executeAction(request)
+        
+        // सीधे रिज़ल्ट को map करते हैं (सफलता या असफलता)
+        return when (result) {
+            is Result.Success -> Result.Success(Unit)
+            is Result.Error -> Result.Error(
                 ActionError(
-                    code = "ORCHESTRATION_ERROR",
-                    message = t.message ?: "Unknown error"
+                    code = "EXECUTION_FAILED",
+                    message = result.error.message ?: "Action failed"
                 )
             )
         }
