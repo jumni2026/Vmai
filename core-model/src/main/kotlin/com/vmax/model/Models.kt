@@ -40,15 +40,6 @@ data class PassengerProfile(
 )
 
 enum class Gender { MALE, FEMALE, OTHER }
-
-enum class BerthPreference {
-    NO_PREFERENCE, LOWER, MIDDLE, UPPER, SIDE_LOWER, SIDE_UPPER
-}
-
-enum class MealPreference {
-    NO_MEAL, VEG, NON_VEG, VEG_JAIN
-}
-
-enum class Concession {
-    NONE, SENIOR_CITIZEN, DISABLED
-}
+enum class BerthPreference { NO_PREFERENCE, LOWER, MIDDLE, UPPER, SIDE_LOWER, SIDE_UPPER }
+enum class MealPreference { NO_MEAL, VEG, NON_VEG, VEG_JAIN }
+enum class Concession { NONE, SENIOR_CITIZEN, DISABLED }
