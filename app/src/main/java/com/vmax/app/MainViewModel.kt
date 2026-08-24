@@ -25,14 +25,16 @@ class MainViewModel : ViewModel() {
     private val _classType = MutableStateFlow("")
     val classType: StateFlow<String> = _classType.asStateFlow()
 
-    // ✅ Quota Enum
+    // Quota Enum
     private val _quota = MutableStateFlow<Quota?>(null)
     val quota: StateFlow<Quota?> = _quota.asStateFlow()
 
+    // From/To Station (ये जरूरी हैं)
     private val _fromStation = MutableStateFlow("")
     val fromStation: StateFlow<String> = _fromStation.asStateFlow()
     private val _toStation = MutableStateFlow("")
     val toStation: StateFlow<String> = _toStation.asStateFlow()
+
     private val _journeyDate = MutableStateFlow("")
     val journeyDate: StateFlow<String> = _journeyDate.asStateFlow()
     private val _passengerName = MutableStateFlow("")
@@ -46,10 +48,11 @@ class MainViewModel : ViewModel() {
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError: StateFlow<String?> = _validationError.asStateFlow()
 
+    // Update Methods
     fun updateTrainNumber(value: String) { val cleaned = value.trim(); if (cleaned.isEmpty() || cleaned.all { it.isDigit() }) _trainNumber.value = cleaned }
     fun updateTrainName(value: String) { _trainName.value = value.trim() }
     fun updateClassType(value: String) { _classType.value = value.trim() }
-    fun updateQuota(value: Quota?) { _quota.value = value } // ✅ Enum
+    fun updateQuota(value: Quota?) { _quota.value = value }
     fun updateFromStation(value: String) { _fromStation.value = value.trim().uppercase() }
     fun updateToStation(value: String) { _toStation.value = value.trim().uppercase() }
     fun updateJourneyDate(value: String) { _journeyDate.value = value.trim() }
@@ -58,6 +61,7 @@ class MainViewModel : ViewModel() {
     fun updatePassengerGender(value: String) { _passengerGender.value = value.trim().uppercase() }
     fun updatePassengerMobile(value: String) { val cleaned = value.trim(); if (cleaned.isEmpty() || cleaned.all { it.isDigit() }) _passengerMobile.value = cleaned }
 
+    // Validation
     private fun validateInputs(): Boolean {
         _validationError.value = null
         val trainNumberValue = trainNumber.value.trim()
@@ -107,7 +111,7 @@ class MainViewModel : ViewModel() {
         val controller = getWorkflowController() ?: return
         try {
             val passenger = Passenger(name = passengerName.value.trim(), age = passengerAge.value.trim().toInt(), gender = passengerGender.value.trim().uppercase(), mobile = passengerMobile.value.trim().takeIf { it.isNotBlank() })
-            val train = Train(number = trainNumber.value.trim(), name = trainName.value.trim(), classType = classType.value.trim(), quota = quota.value?.name) // ✅ Enum का name
+            val train = Train(number = trainNumber.value.trim(), name = trainName.value.trim(), classType = classType.value.trim(), quota = quota.value?.name)
             val fromStationModel = Station(fromStation.value.trim(), fromStation.value.trim())
             val toStationModel = Station(toStation.value.trim(), toStation.value.trim())
             val bookingRequest = BookingRequest(train = train, fromStation = fromStationModel, toStation = toStationModel, date = journeyDate.value.trim(), passengers = listOf(passenger), quota = quota.value?.name ?: "GENERAL")
