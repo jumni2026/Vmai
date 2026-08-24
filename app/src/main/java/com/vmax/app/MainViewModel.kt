@@ -25,9 +25,9 @@ class MainViewModel : ViewModel() {
     private val _classType = MutableStateFlow("")
     val classType: StateFlow<String> = _classType.asStateFlow()
 
-    // Quota String (Enum नहीं)
-    private val _quota = MutableStateFlow<String?>(null)
-    val quota: StateFlow<String?> = _quota.asStateFlow()
+    // Quota Enum
+    private val _quota = MutableStateFlow<Quota?>(null)
+    val quota: StateFlow<Quota?> = _quota.asStateFlow()
 
     private val _fromStation = MutableStateFlow("")
     val fromStation: StateFlow<String> = _fromStation.asStateFlow()
@@ -50,7 +50,7 @@ class MainViewModel : ViewModel() {
     fun updateTrainNumber(value: String) { val cleaned = value.trim(); if (cleaned.isEmpty() || cleaned.all { it.isDigit() }) _trainNumber.value = cleaned }
     fun updateTrainName(value: String) { _trainName.value = value.trim() }
     fun updateClassType(value: String) { _classType.value = value.trim() }
-    fun updateQuota(value: String?) { _quota.value = value }
+    fun updateQuota(value: Quota?) { _quota.value = value }
     fun updateFromStation(value: String) { _fromStation.value = value.trim().uppercase() }
     fun updateToStation(value: String) { _toStation.value = value.trim().uppercase() }
     fun updateJourneyDate(value: String) { _journeyDate.value = value.trim() }
@@ -73,7 +73,7 @@ class MainViewModel : ViewModel() {
         if (trainNumberValue.isBlank()) return validationError("Train Number is required.")
         if (!trainNumberValue.matches(Regex("^\\d{4,5}$"))) return validationError("Train Number must be 4 or 5 digits.")
         if (classTypeValue.isBlank()) return validationError("Class Type is required.")
-        if (quota.value.isNullOrBlank()) return validationError("Quota is required.")
+        if (quota.value == null) return validationError("Quota is required.")
         if (fromStationValue.isBlank()) return validationError("From Station is required.")
         if (toStationValue.isBlank()) return validationError("To Station is required.")
         if (fromStationValue.length < 2 || toStationValue.length < 2) return validationError("Station codes are invalid.")
@@ -108,10 +108,10 @@ class MainViewModel : ViewModel() {
         val controller = getWorkflowController() ?: return
         try {
             val passenger = Passenger(name = passengerName.value.trim(), age = passengerAge.value.trim().toInt(), gender = passengerGender.value.trim().uppercase(), mobile = passengerMobile.value.trim().takeIf { it.isNotBlank() })
-            val train = Train(number = trainNumber.value.trim(), name = trainName.value.trim(), classType = classType.value.trim(), quota = quota.value)
+            val train = Train(number = trainNumber.value.trim(), name = trainName.value.trim(), classType = classType.value.trim(), quota = quota.value?.name)
             val fromStationModel = Station(fromStation.value.trim(), fromStation.value.trim())
             val toStationModel = Station(toStation.value.trim(), toStation.value.trim())
-            val bookingRequest = BookingRequest(train = train, fromStation = fromStationModel, toStation = toStationModel, date = journeyDate.value.trim(), passengers = listOf(passenger), quota = quota.value ?: "GENERAL")
+            val bookingRequest = BookingRequest(train = train, fromStation = fromStationModel, toStation = toStationModel, date = journeyDate.value.trim(), passengers = listOf(passenger), quota = quota.value ?: Quota.GENERAL)
             val now = LocalDateTime.now()
             val passengerProfile = PassengerProfile(profileId = UUID.randomUUID().toString(), passengers = listOf(passenger), createdTime = now, updatedTime = now)
             viewModelScope.launch { try { controller.start(bookingRequest, passengerProfile) } catch (error: Throwable) { _workflowState.value = WorkflowState.ERROR; _validationError.value = error.message?.takeIf { it.isNotBlank() } ?: "Unable to start workflow." } }
