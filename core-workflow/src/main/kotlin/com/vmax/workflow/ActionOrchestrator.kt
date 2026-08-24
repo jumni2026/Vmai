@@ -13,28 +13,32 @@ class ActionOrchestrator(
         request: ActionExecutor.ActionRequest
     ): Result<Unit, ActionError> {
 
+        // ActionError हमेशा उपलब्ध रहेगा, इसलिए सीधे null-safe कोड लिखते हैं
         return try {
-            when (val result = actionExecutor.executeAction(request)) {
-                is Result.Success -> {
-                    executionTracker.recordActionSucceeded(
-                        sessionId = "N/A",
-                        actionType = request.type,
-                        resultMessage = result.data.message
-                    )
-                    Result.Success(Unit)
-                }
-                is Result.Failure -> {
-                    executionTracker.recordActionFailed(
-                        sessionId = "N/A",
-                        actionType = request.type,
-                        errorCode = "EXECUTION_FAILED",
-                        errorMessage = result.error.message
-                    )
-                    Result.Failure(result.error)
-                }
+            val result = actionExecutor.executeAction(request)
+
+            if (result.success) {
+                executionTracker.recordActionSucceeded(
+                    sessionId = "N/A",
+                    actionType = request.type,
+                    resultMessage = result.message
+                )
+                Result.Success(Unit)
+            } else {
+                val error = ActionError(
+                    code = "EXECUTION_FAILED",
+                    message = result.message ?: "Action failed"
+                )
+                executionTracker.recordActionFailed(
+                    sessionId = "N/A",
+                    actionType = request.type,
+                    errorCode = error.code,
+                    errorMessage = error.message
+                )
+                Result.Error(error)
             }
         } catch (t: Throwable) {
-            Result.Failure(
+            Result.Error(
                 ActionError(
                     code = "ORCHESTRATION_ERROR",
                     message = t.message ?: "Unknown error"
@@ -63,7 +67,7 @@ class ActionOrchestrator(
 
     fun setText(targetId: String, text: String): Result<Unit, ActionError> {
         if (text.isEmpty()) {
-            return Result.Failure(
+            return Result.Error(
                 ActionError(code = "INVALID_REQUEST", message = "Text must not be empty")
             )
         }
@@ -97,7 +101,7 @@ class ActionOrchestrator(
 
     fun wait(durationMs: Long): Result<Unit, ActionError> {
         if (durationMs < 0L) {
-            return Result.Failure(
+            return Result.Error(
                 ActionError(code = "INVALID_REQUEST", message = "Wait duration must not be negative")
             )
         }
