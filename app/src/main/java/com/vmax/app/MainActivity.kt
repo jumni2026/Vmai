@@ -17,7 +17,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vmax.model.*
 import com.vmax.workflow.WorkflowState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,7 +42,7 @@ fun VMAXDashboard() {
     val trainNumber by viewModel.trainNumber.collectAsState()
     val trainName by viewModel.trainName.collectAsState()
     val classType by viewModel.classType.collectAsState()
-    val quota by viewModel.quota.collectAsState() // यह String है
+    val quota by viewModel.quota.collectAsState() // String
     val journeyDate by viewModel.journeyDate.collectAsState()
     val passengerName by viewModel.passengerName.collectAsState()
     val passengerAge by viewModel.passengerAge.collectAsState()
