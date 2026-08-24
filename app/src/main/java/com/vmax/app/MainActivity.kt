@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vmax.model.*
 import com.vmax.workflow.WorkflowState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -26,7 +27,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // VMAXTheme की जगह सीधे MaterialTheme use किया है
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     VMAXDashboard()
@@ -43,7 +43,7 @@ fun VMAXDashboard() {
     val trainNumber by viewModel.trainNumber.collectAsState()
     val trainName by viewModel.trainName.collectAsState()
     val classType by viewModel.classType.collectAsState()
-    val quota by viewModel.quota.collectAsState() // यह अब String है
+    val quota by viewModel.quota.collectAsState() // ✅ Enum
     val journeyDate by viewModel.journeyDate.collectAsState()
     val passengerName by viewModel.passengerName.collectAsState()
     val passengerAge by viewModel.passengerAge.collectAsState()
@@ -119,13 +119,13 @@ fun VMAXDashboard() {
                     }
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Quota (Pure String - No Enum Dependency)
+                    // ✅ Quota Enum Dropdown
                     Text(text = "Quota", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        Button(onClick = { quotaExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text(quota?.ifBlank { "Select Quota" } ?: "Select Quota") }
+                        Button(onClick = { quotaExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text(quota?.name ?: "Select Quota") }
                         DropdownMenu(expanded = quotaExpanded, onDismissRequest = { quotaExpanded = false }) {
-                            listOf("GENERAL", "TATKAL", "LADIES", "SENIOR CITIZEN", "DEFENCE", "YOUTH", "FOREIGN TOURIST").forEach { q ->
-                                DropdownMenuItem(text = { Text(q) }, onClick = { viewModel.updateQuota(q); quotaExpanded = false })
+                            Quota.values().forEach { q ->
+                                DropdownMenuItem(text = { Text(q.name) }, onClick = { viewModel.updateQuota(q); quotaExpanded = false })
                             }
                         }
                     }
