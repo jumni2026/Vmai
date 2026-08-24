@@ -3,15 +3,12 @@ package com.vmax.security
 import com.vmax.common.Result
 
 /**
- * VMAX Enterprise v2.6
+ * VMAX Enterprise v2.6.1
  *
- * Stage 1 — Skeleton
  * File 17 — DocumentVault
  *
- * Secure storage for sensitive documents like Aadhaar, PAN, Photo.
- * Platform-independent — no Android dependencies.
- * No external dependencies.
- * No business logic.
+ * Contract for secure document storage.
+ * Platform-independent, no Android dependencies.
  */
 interface DocumentVault {
 
@@ -19,22 +16,28 @@ interface DocumentVault {
         val id: String,
         val type: DocumentType,
         val name: String,
-        val data: String, // Encrypted data
+        val data: String,
         val metadata: Map<String, String> = emptyMap(),
-        val timestamp: Long = System.currentTimeMillis()
+        val size: Long = data.toByteArray().size.toLong(),
+        val mimeType: String? = null,
+        val createdAt: Long = System.currentTimeMillis(),
+        val updatedAt: Long = createdAt
     )
 
     enum class DocumentType {
         AADHAAR,
         PAN,
         PHOTO,
-        OTHER
+        OTHER,
+        RECEIPT,
+        TICKET
     }
 
     data class VaultConfig(
         val encryptionEnabled: Boolean = true,
-        val maxDocuments: Int = 50,
-        val storagePath: String? = null
+        val maxDocuments: Int = 100,
+        val storagePath: String? = null,
+        val allowedTypes: Set<DocumentType> = DocumentType.entries.toSet()
     )
 
     fun storeDocument(document: Document): Result<Unit, VaultError>
@@ -43,7 +46,9 @@ interface DocumentVault {
 
     fun deleteDocument(id: String): Result<Unit, VaultError>
 
-    fun listDocuments(type: DocumentType? = null): Result<List<Document>, VaultError>
+    fun listDocuments(
+        type: DocumentType? = null
+    ): Result<List<Document>, VaultError>
 
     fun containsDocument(id: String): Boolean
 
