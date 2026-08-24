@@ -20,10 +20,8 @@ class MainViewModel : ViewModel() {
 
     private val _trainNumber = MutableStateFlow("")
     val trainNumber: StateFlow<String> = _trainNumber.asStateFlow()
-
     private val _trainName = MutableStateFlow("")
     val trainName: StateFlow<String> = _trainName.asStateFlow()
-
     private val _classType = MutableStateFlow("")
     val classType: StateFlow<String> = _classType.asStateFlow()
 
@@ -33,25 +31,18 @@ class MainViewModel : ViewModel() {
 
     private val _fromStation = MutableStateFlow("")
     val fromStation: StateFlow<String> = _fromStation.asStateFlow()
-
     private val _toStation = MutableStateFlow("")
     val toStation: StateFlow<String> = _toStation.asStateFlow()
-
     private val _journeyDate = MutableStateFlow("")
     val journeyDate: StateFlow<String> = _journeyDate.asStateFlow()
-
     private val _passengerName = MutableStateFlow("")
     val passengerName: StateFlow<String> = _passengerName.asStateFlow()
-
     private val _passengerAge = MutableStateFlow("")
     val passengerAge: StateFlow<String> = _passengerAge.asStateFlow()
-
     private val _passengerGender = MutableStateFlow("MALE")
     val passengerGender: StateFlow<String> = _passengerGender.asStateFlow()
-
     private val _passengerMobile = MutableStateFlow("")
     val passengerMobile: StateFlow<String> = _passengerMobile.asStateFlow()
-
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError: StateFlow<String?> = _validationError.asStateFlow()
 
