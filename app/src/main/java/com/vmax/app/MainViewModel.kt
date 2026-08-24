@@ -28,7 +28,7 @@ class MainViewModel : ViewModel() {
     private val _classType = MutableStateFlow("")
     val classType: StateFlow<String> = _classType.asStateFlow()
 
-    // क्वोटा अब String है (Enum नहीं)
+    // Quota अब String है (Enum नहीं)
     private val _quota = MutableStateFlow<String?>(null)
     val quota: StateFlow<String?> = _quota.asStateFlow()
 
