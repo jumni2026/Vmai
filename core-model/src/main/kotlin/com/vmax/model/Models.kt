@@ -16,7 +16,7 @@ data class Train(
     val number: String,
     val name: String,
     val classType: String,
-    val quota: String? = null
+    val quota: String? = null // अब यह String है, Enum नहीं
 )
 
 data class Station(
@@ -37,27 +37,18 @@ data class BookingRequest(
     val toStation: Station,
     val date: String,
     val passengers: List<Passenger>,
-    val quota: String
+    val quota: String // अब यह String है
 )
-
-// ============================================
-// सबसे जरूरी Enum (MainActivity के लिए)
-// ============================================
-enum class Quota {
-    GENERAL,
-    TATKAL,
-    LADIES,
-    SENIOR_CITIZEN,
-    DEFENCE,
-    YOUTH,
-    FOREIGN_TOURIST
-}
 
 enum class Gender {
     MALE,
     FEMALE,
     OTHER
 }
+
+// ============================================
+// Quota Enum हटा दिया गया है (क्योंकि हम String use कर रहे हैं)
+// ============================================
 
 // ============================================
 // नई जोड़ी गई Enums (PassengerProfile के लिए)
