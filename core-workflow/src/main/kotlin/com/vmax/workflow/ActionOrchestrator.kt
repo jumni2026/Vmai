@@ -17,13 +17,12 @@ class ActionOrchestrator(
             val result = actionExecutor.executeAction(request)
 
             if (result.success) {
-                // Tracker को सही sessionId चाहिए होती है, यहाँ placeholder "N/A" इस्तेमाल किया गया है।
                 executionTracker.recordActionSucceeded(
                     sessionId = "N/A",
                     actionType = request.type,
                     resultMessage = result.message
                 )
-                Result.success(Unit)
+                Result.Success(Unit)
             } else {
                 executionTracker.recordActionFailed(
                     sessionId = "N/A",
@@ -31,7 +30,7 @@ class ActionOrchestrator(
                     errorCode = "EXECUTION_FAILED",
                     errorMessage = result.message ?: "Action failed"
                 )
-                Result.failure(
+                Result.Failure(
                     ActionError(
                         code = "EXECUTION_FAILED",
                         message = result.message ?: "Action failed"
@@ -39,7 +38,7 @@ class ActionOrchestrator(
                 )
             }
         } catch (t: Throwable) {
-            Result.failure(
+            Result.Failure(
                 ActionError(
                     code = "ORCHESTRATION_ERROR",
                     message = t.message ?: "Unknown error"
@@ -68,7 +67,7 @@ class ActionOrchestrator(
 
     fun setText(targetId: String, text: String): Result<Unit, ActionError> {
         if (text.isEmpty()) {
-            return Result.failure(ActionError(code = "INVALID_REQUEST", message = "Text must not be empty"))
+            return Result.Failure(ActionError(code = "INVALID_REQUEST", message = "Text must not be empty"))
         }
         return dispatchAndTrack(
             ActionExecutor.ActionRequest(
@@ -92,7 +91,7 @@ class ActionOrchestrator(
         return dispatchAndTrack(
             ActionExecutor.ActionRequest(
                 type = ActionExecutor.ActionType.SCROLL,
-                targetClass = direction, // असली executor में scroll direction के लिए targetClass की जगह है
+                targetClass = direction,
                 durationMs = amount.toLong()
             )
         )
@@ -100,7 +99,7 @@ class ActionOrchestrator(
 
     fun wait(durationMs: Long): Result<Unit, ActionError> {
         if (durationMs < 0L) {
-            return Result.failure(ActionError(code = "INVALID_REQUEST", message = "Wait duration must not be negative"))
+            return Result.Failure(ActionError(code = "INVALID_REQUEST", message = "Wait duration must not be negative"))
         }
         return dispatchAndTrack(
             ActionExecutor.ActionRequest(
