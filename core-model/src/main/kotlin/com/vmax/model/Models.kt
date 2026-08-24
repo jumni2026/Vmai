@@ -1,22 +1,12 @@
 package com.vmax.model
 
-/**
- * VMAX Enterprise v2.6
- *
- * Stage 1 — Skeleton
- * File 4 — Models
- *
- * Core data models for VMAX Enterprise.
- * Platform-independent — no Android dependencies.
- * No external dependencies.
- * No business logic.
- */
+import java.time.LocalDateTime
 
 data class Train(
     val number: String,
     val name: String,
     val classType: String,
-    val quota: String? = null // अब यह String है, Enum नहीं
+    val quota: String? = null
 )
 
 data class Station(
@@ -37,7 +27,20 @@ data class BookingRequest(
     val toStation: Station,
     val date: String,
     val passengers: List<Passenger>,
-    val quota: String // अब यह String है
+    val quota: String
+)
+
+// ✅ यही Class गायब थी, जो सबको चाहिए थी!
+data class PassengerProfile(
+    val profileId: String,
+    val passengers: List<Passenger>,
+    val createdTime: LocalDateTime,
+    val updatedTime: LocalDateTime,
+    val version: Int = 1,
+    val berthPreference: BerthPreference = BerthPreference.NO_PREFERENCE,
+    val mealPreference: MealPreference = MealPreference.NO_MEAL,
+    val concession: Concession = Concession.NONE,
+    val bedRoll: Boolean = false
 )
 
 enum class Gender {
@@ -46,14 +49,7 @@ enum class Gender {
     OTHER
 }
 
-// ============================================
-// Quota Enum हटा दिया गया है (क्योंकि हम String use कर रहे हैं)
-// ============================================
-
-// ============================================
-// नई जोड़ी गई Enums (PassengerProfile के लिए)
-// ============================================
-
+// Quota String है, इसलिए Enum नहीं है
 enum class BerthPreference {
     NO_PREFERENCE,
     LOWER,
