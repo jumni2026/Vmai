@@ -25,7 +25,7 @@ class MainViewModel : ViewModel() {
     private val _classType = MutableStateFlow("")
     val classType: StateFlow<String> = _classType.asStateFlow()
 
-    // Quota अब String है (Enum नहीं) - यही गड़बड़ी थी!
+    // Quota अब String है (Enum नहीं)
     private val _quota = MutableStateFlow<String?>(null)
     val quota: StateFlow<String?> = _quota.asStateFlow()
 
@@ -50,7 +50,7 @@ class MainViewModel : ViewModel() {
     fun updateTrainNumber(value: String) { val cleaned = value.trim(); if (cleaned.isEmpty() || cleaned.all { it.isDigit() }) _trainNumber.value = cleaned }
     fun updateTrainName(value: String) { _trainName.value = value.trim() }
     fun updateClassType(value: String) { _classType.value = value.trim() }
-    fun updateQuota(value: String?) { _quota.value = value } // String accept कर रहा है
+    fun updateQuota(value: String?) { _quota.value = value }
     fun updateFromStation(value: String) { _fromStation.value = value.trim().uppercase() }
     fun updateToStation(value: String) { _toStation.value = value.trim().uppercase() }
     fun updateJourneyDate(value: String) { _journeyDate.value = value.trim() }
@@ -108,10 +108,10 @@ class MainViewModel : ViewModel() {
         val controller = getWorkflowController() ?: return
         try {
             val passenger = Passenger(name = passengerName.value.trim(), age = passengerAge.value.trim().toInt(), gender = passengerGender.value.trim().uppercase(), mobile = passengerMobile.value.trim().takeIf { it.isNotBlank() })
-            val train = Train(number = trainNumber.value.trim(), name = trainName.value.trim(), classType = classType.value.trim(), quota = quota.value) // String
+            val train = Train(number = trainNumber.value.trim(), name = trainName.value.trim(), classType = classType.value.trim(), quota = quota.value)
             val fromStationModel = Station(fromStation.value.trim(), fromStation.value.trim())
             val toStationModel = Station(toStation.value.trim(), toStation.value.trim())
-            val bookingRequest = BookingRequest(train = train, fromStation = fromStationModel, toStation = toStationModel, date = journeyDate.value.trim(), passengers = listOf(passenger), quota = quota.value ?: "GENERAL") // String
+            val bookingRequest = BookingRequest(train = train, fromStation = fromStationModel, toStation = toStationModel, date = journeyDate.value.trim(), passengers = listOf(passenger), quota = quota.value ?: "GENERAL")
             val now = LocalDateTime.now()
             val passengerProfile = PassengerProfile(profileId = UUID.randomUUID().toString(), passengers = listOf(passenger), createdTime = now, updatedTime = now)
             viewModelScope.launch { try { controller.start(bookingRequest, passengerProfile) } catch (error: Throwable) { _workflowState.value = WorkflowState.ERROR; _validationError.value = error.message?.takeIf { it.isNotBlank() } ?: "Unable to start workflow." } }
