@@ -30,7 +30,6 @@ data class BookingRequest(
     val quota: String
 )
 
-// ✅ यही Class गायब थी, जो सबको चाहिए थी!
 data class PassengerProfile(
     val profileId: String,
     val passengers: List<Passenger>,
@@ -43,31 +42,10 @@ data class PassengerProfile(
     val bedRoll: Boolean = false
 )
 
-enum class Gender {
-    MALE,
-    FEMALE,
-    OTHER
-}
+enum class Gender { MALE, FEMALE, OTHER }
 
-// Quota String है, इसलिए Enum नहीं है
-enum class BerthPreference {
-    NO_PREFERENCE,
-    LOWER,
-    MIDDLE,
-    UPPER,
-    SIDE_LOWER,
-    SIDE_UPPER
-}
+enum class BerthPreference { NO_PREFERENCE, LOWER, MIDDLE, UPPER, SIDE_LOWER, SIDE_UPPER }
 
-enum class MealPreference {
-    NO_MEAL,
-    VEG,
-    NON_VEG,
-    VEG_JAIN
-}
+enum class MealPreference { NO_MEAL, VEG, NON_VEG, VEG_JAIN }
 
-enum class Concession {
-    NONE,
-    SENIOR_CITIZEN,
-    DISABLED
-}
+enum class Concession { NONE, SENIOR_CITIZEN, DISABLED }
