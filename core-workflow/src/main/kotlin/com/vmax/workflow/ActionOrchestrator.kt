@@ -1,24 +1,116 @@
 package com.vmax.workflow
 
+import com.vmax.action.ActionError
 import com.vmax.action.ActionExecutor
 import com.vmax.common.Result
 
 class ActionOrchestrator(
-    private val executor: ActionExecutor
+    private val actionExecutor: ActionExecutor,
+    private val executionTracker: ExecutionTracker
 ) {
 
-    fun execute(actionType: ActionExecutor.ActionType, targetId: String? = null, text: String? = null): Result<ActionExecutor.ActionResult, ActionError> {
-        val request = ActionExecutor.ActionRequest(
-            type = actionType,
-            targetId = targetId,
-            targetText = text,
-            text = text
+    fun dispatchAndTrack(
+        request: ActionExecutor.ActionRequest
+    ): Result<Unit, ActionError> {
+
+        return try {
+            val result = actionExecutor.executeAction(request)
+
+            if (result.success) {
+                // Tracker को सही sessionId चाहिए होती है, यहाँ placeholder "N/A" इस्तेमाल किया गया है।
+                executionTracker.recordActionSucceeded(
+                    sessionId = "N/A",
+                    actionType = request.type,
+                    resultMessage = result.message
+                )
+                Result.success(Unit)
+            } else {
+                executionTracker.recordActionFailed(
+                    sessionId = "N/A",
+                    actionType = request.type,
+                    errorCode = "EXECUTION_FAILED",
+                    errorMessage = result.message ?: "Action failed"
+                )
+                Result.failure(
+                    ActionError(
+                        code = "EXECUTION_FAILED",
+                        message = result.message ?: "Action failed"
+                    )
+                )
+            }
+        } catch (t: Throwable) {
+            Result.failure(
+                ActionError(
+                    code = "ORCHESTRATION_ERROR",
+                    message = t.message ?: "Unknown error"
+                )
+            )
+        }
+    }
+
+    fun click(targetId: String): Result<Unit, ActionError> {
+        return dispatchAndTrack(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.CLICK,
+                targetId = targetId
+            )
         )
-        return executor.executeAction(request)
+    }
+
+    fun tap(targetId: String): Result<Unit, ActionError> {
+        return dispatchAndTrack(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.TAP,
+                targetId = targetId
+            )
+        )
+    }
+
+    fun setText(targetId: String, text: String): Result<Unit, ActionError> {
+        if (text.isEmpty()) {
+            return Result.failure(ActionError(code = "INVALID_REQUEST", message = "Text must not be empty"))
+        }
+        return dispatchAndTrack(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SET_TEXT,
+                targetId = targetId,
+                text = text
+            )
+        )
+    }
+
+    fun clearText(targetId: String): Result<Unit, ActionError> {
+        return dispatchAndTrack(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.CLEAR_TEXT,
+                targetId = targetId
+            )
+        )
+    }
+
+    fun scroll(direction: String, amount: Int): Result<Unit, ActionError> {
+        return dispatchAndTrack(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.SCROLL,
+                targetClass = direction, // असली executor में scroll direction के लिए targetClass की जगह है
+                durationMs = amount.toLong()
+            )
+        )
+    }
+
+    fun wait(durationMs: Long): Result<Unit, ActionError> {
+        if (durationMs < 0L) {
+            return Result.failure(ActionError(code = "INVALID_REQUEST", message = "Wait duration must not be negative"))
+        }
+        return dispatchAndTrack(
+            ActionExecutor.ActionRequest(
+                type = ActionExecutor.ActionType.WAIT,
+                durationMs = durationMs
+            )
+        )
+    }
+
+    fun execute(request: ActionExecutor.ActionRequest): Result<Unit, ActionError> {
+        return dispatchAndTrack(request)
     }
 }
-
-data class ActionError(
-    val code: String,
-    val message: String
-)
