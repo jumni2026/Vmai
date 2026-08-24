@@ -18,73 +18,28 @@ class ExecutionTracker(
 
     fun startSession(sessionId: String): ExecutionEvent.SessionStarted {
         val normalized = normalizeSessionId(sessionId)
-
+        val event = ExecutionEvent.SessionStarted(normalized)
+        val timeline = getOrCreateSessionEvents(normalized)
         synchronized(sessionEvents) {
-            val existingActive = activeSession
-
-            if (existingActive != null) {
-                if (existingActive == normalized) {
-                    logger.warn(
-                        "ExecutionTracker",
-                        "Session already active: $normalized"
-                    )
-
-                    val events = getOrCreateSessionEvents(normalized)
-
-                    for (event in events) {
-                        if (event is ExecutionEvent.SessionStarted) {
-                            return event
-                        }
-                    }
-
-                    val fallback = ExecutionEvent.SessionStarted(normalized)
-                    events.add(fallback)
-                    return fallback
-                }
-
-                logger.warn(
-                    "ExecutionTracker",
-                    "Session start ignored. Active session: $existingActive"
-                )
-
-                return ExecutionEvent.SessionStarted(normalized)
-            }
-
-            val event = ExecutionEvent.SessionStarted(normalized)
-            val timeline = getOrCreateSessionEvents(normalized)
-
             timeline.add(event)
             activeSession = normalized
-
-            logger.info(
-                "ExecutionTracker",
-                "Session started: $normalized"
-            )
-
-            return event
         }
+        logger.info("ExecutionTracker", "Session started: $normalized")
+        return event
     }
 
     fun stopSession(sessionId: String): ExecutionEvent.SessionStopped {
         val normalized = normalizeSessionId(sessionId)
-
+        val event = ExecutionEvent.SessionStopped(normalized)
         synchronized(sessionEvents) {
             val timeline = getOrCreateSessionEvents(normalized)
-            val event = ExecutionEvent.SessionStopped(normalized)
-
             timeline.add(event)
-
             if (activeSession == normalized) {
                 activeSession = null
             }
-
-            logger.info(
-                "ExecutionTracker",
-                "Session stopped: $normalized"
-            )
-
-            return event
         }
+        logger.info("ExecutionTracker", "Session stopped: $normalized")
+        return event
     }
 
     fun recordStateTransition(
@@ -93,23 +48,12 @@ class ExecutionTracker(
         toState: String
     ): ExecutionEvent.WorkflowStateChanged {
         val normalized = normalizeSessionId(sessionId)
-
-        val event = ExecutionEvent.WorkflowStateChanged(
-            normalized,
-            fromState,
-            toState
-        )
-
+        val event = ExecutionEvent.WorkflowStateChanged(normalized, fromState, toState)
         synchronized(sessionEvents) {
             val timeline = getOrCreateSessionEvents(normalized)
             timeline.add(event)
         }
-
-        logger.debug(
-            "ExecutionTracker",
-            "State changed: $fromState -> $toState"
-        )
-
+        logger.debug("ExecutionTracker", "State changed: $fromState -> $toState")
         return event
     }
 
@@ -120,26 +64,12 @@ class ExecutionTracker(
         targetText: String?
     ): ExecutionEvent.ActionDispatched {
         val normalized = normalizeSessionId(sessionId)
-
-        val event = ExecutionEvent.ActionDispatched(
-            normalized,
-            actionType,
-            targetId,
-            targetText
-        )
-
+        val event = ExecutionEvent.ActionDispatched(normalized, actionType, targetId, targetText)
         synchronized(sessionEvents) {
             val timeline = getOrCreateSessionEvents(normalized)
             timeline.add(event)
         }
-
-        logger.debug(
-            "ExecutionTracker",
-            "Action dispatched: $actionType | " +
-                "targetId=${targetId ?: "none"} | " +
-                "targetText=${targetText ?: "none"}"
-        )
-
+        logger.debug("ExecutionTracker", "Action dispatched: $actionType")
         return event
     }
 
@@ -149,24 +79,12 @@ class ExecutionTracker(
         resultMessage: String?
     ): ExecutionEvent.ActionSucceeded {
         val normalized = normalizeSessionId(sessionId)
-
-        val event = ExecutionEvent.ActionSucceeded(
-            normalized,
-            actionType,
-            resultMessage
-        )
-
+        val event = ExecutionEvent.ActionSucceeded(normalized, actionType, resultMessage)
         synchronized(sessionEvents) {
             val timeline = getOrCreateSessionEvents(normalized)
             timeline.add(event)
         }
-
-        logger.info(
-            "ExecutionTracker",
-            "Action succeeded: $actionType | " +
-                "message=${resultMessage ?: "none"}"
-        )
-
+        logger.info("ExecutionTracker", "Action succeeded: $actionType")
         return event
     }
 
@@ -177,25 +95,12 @@ class ExecutionTracker(
         errorMessage: String
     ): ExecutionEvent.ActionFailed {
         val normalized = normalizeSessionId(sessionId)
-
-        val event = ExecutionEvent.ActionFailed(
-            normalized,
-            actionType,
-            errorCode,
-            errorMessage
-        )
-
+        val event = ExecutionEvent.ActionFailed(normalized, actionType, errorCode, errorMessage)
         synchronized(sessionEvents) {
             val timeline = getOrCreateSessionEvents(normalized)
             timeline.add(event)
         }
-
-        logger.error(
-            "ExecutionTracker",
-            "Action failed: $actionType | " +
-                "$errorCode | $errorMessage"
-        )
-
+        logger.error("ExecutionTracker", "Action failed: $errorCode | $errorMessage")
         return event
     }
 
@@ -205,34 +110,19 @@ class ExecutionTracker(
         errorMessage: String
     ): ExecutionEvent.SessionError {
         val normalized = normalizeSessionId(sessionId)
-
-        val event = ExecutionEvent.SessionError(
-            normalized,
-            errorCode,
-            errorMessage
-        )
-
+        val event = ExecutionEvent.SessionError(normalized, errorCode, errorMessage)
         synchronized(sessionEvents) {
             val timeline = getOrCreateSessionEvents(normalized)
             timeline.add(event)
         }
-
-        logger.error(
-            "ExecutionTracker",
-            "Session error: $errorCode | $errorMessage"
-        )
-
+        logger.error("ExecutionTracker", "Session error: $errorCode | $errorMessage")
         return event
     }
 
-    fun getSessionTimeline(
-        sessionId: String
-    ): List<ExecutionEvent> {
+    fun getSessionTimeline(sessionId: String): List<ExecutionEvent> {
         val normalized = normalizeSessionId(sessionId)
-
         synchronized(sessionEvents) {
-            return sessionEvents[normalized]?.toList()
-                ?: emptyList()
+            return sessionEvents[normalized]?.toList() ?: emptyList()
         }
     }
 
@@ -246,47 +136,15 @@ class ExecutionTracker(
         return activeSession
     }
 
-    fun getEvents(
-        sessionId: String? = null
-    ): List<ExecutionEvent> {
-        val target = sessionId ?: activeSession ?: return emptyList()
-        return getSessionTimeline(target)
-    }
-
-    fun getAllSessions(): Set<String> {
-        return getAllSessionIds()
-    }
-
-    fun getEventCount(
-        sessionId: String? = null
-    ): Int {
-        val target = sessionId ?: activeSession ?: return 0
-        return getSessionTimeline(target).size
-    }
-
     fun clearSession(sessionId: String) {
         val normalized = normalizeSessionId(sessionId)
-
         synchronized(sessionEvents) {
             sessionEvents.remove(normalized)
-
             if (activeSession == normalized) {
                 activeSession = null
             }
         }
-
-        logger.info(
-            "ExecutionTracker",
-            "Session cleared: $normalized"
-        )
-    }
-
-    fun clear(sessionId: String? = null) {
-        val target = sessionId ?: activeSession
-
-        if (target != null) {
-            clearSession(target)
-        }
+        logger.info("ExecutionTracker", "Session cleared: $normalized")
     }
 
     fun clearAllSessions() {
@@ -294,35 +152,17 @@ class ExecutionTracker(
             sessionEvents.clear()
             activeSession = null
         }
-
-        logger.warn(
-            "ExecutionTracker",
-            "All execution sessions cleared"
-        )
+        logger.warn("ExecutionTracker", "All execution sessions cleared")
     }
 
-    fun clearAll() {
-        clearAllSessions()
-    }
-
-    private fun normalizeSessionId(
-        sessionId: String
-    ): String {
+    private fun normalizeSessionId(sessionId: String): String {
         val normalized = sessionId.trim()
-
-        require(normalized.isNotEmpty()) {
-            "sessionId must not be blank"
-        }
-
+        require(normalized.isNotEmpty()) { "sessionId must not be blank" }
         return normalized
     }
 
-    private fun getOrCreateSessionEvents(
-        sessionId: String
-    ): MutableList<ExecutionEvent> {
-        return sessionEvents.getOrPut(sessionId) {
-            mutableListOf()
-        }
+    private fun getOrCreateSessionEvents(sessionId: String): MutableList<ExecutionEvent> {
+        return sessionEvents.getOrPut(sessionId) { mutableListOf() }
     }
 
     companion object {
@@ -330,10 +170,7 @@ class ExecutionTracker(
 
         @JvmStatic
         fun nextActionId(): String {
-            return "action-" +
-                System.currentTimeMillis() +
-                "-" +
-                actionCounter.incrementAndGet()
+            return "action-" + System.currentTimeMillis() + "-" + actionCounter.incrementAndGet()
         }
     }
 }
