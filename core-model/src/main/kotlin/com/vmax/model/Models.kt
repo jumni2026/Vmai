@@ -6,7 +6,7 @@ data class Train(
     val number: String,
     val name: String,
     val classType: String,
-    val quota: String? = null
+    val quota: Quota? = null
 )
 
 data class Station(val code: String, val name: String)
@@ -24,7 +24,7 @@ data class BookingRequest(
     val toStation: Station,
     val date: String,
     val passengers: List<Passenger>,
-    val quota: String
+    val quota: Quota
 )
 
 data class PassengerProfile(
@@ -40,6 +40,10 @@ data class PassengerProfile(
 )
 
 enum class Gender { MALE, FEMALE, OTHER }
+
+// Quota Enum (यही सबसे जरूरी है)
+enum class Quota { GENERAL, TATKAL, LADIES, SENIOR_CITIZEN, DEFENCE, YOUTH, FOREIGN_TOURIST }
+
 enum class BerthPreference { NO_PREFERENCE, LOWER, MIDDLE, UPPER, SIDE_LOWER, SIDE_UPPER }
 enum class MealPreference { NO_MEAL, VEG, NON_VEG, VEG_JAIN }
 enum class Concession { NONE, SENIOR_CITIZEN, DISABLED }
