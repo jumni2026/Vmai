@@ -12,6 +12,9 @@ import com.vmax.common.Result
  */
 interface DocumentVault {
 
+    /**
+     * Document data model.
+     */
     data class Document(
         val id: String,
         val type: DocumentType,
@@ -24,6 +27,9 @@ interface DocumentVault {
         val updatedAt: Long = createdAt
     )
 
+    /**
+     * Supported document categories.
+     */
     enum class DocumentType {
         AADHAAR,
         PAN,
@@ -33,6 +39,9 @@ interface DocumentVault {
         TICKET
     }
 
+    /**
+     * Vault configuration.
+     */
     data class VaultConfig(
         val encryptionEnabled: Boolean = true,
         val maxDocuments: Int = 100,
@@ -40,27 +49,67 @@ interface DocumentVault {
         val allowedTypes: Set<DocumentType> = DocumentType.entries.toSet()
     )
 
-    fun storeDocument(document: Document): Result<Unit, VaultError>
+    /**
+     * Store a document.
+     */
+    fun storeDocument(
+        document: Document
+    ): Result<Unit, VaultError>
 
-    fun retrieveDocument(id: String): Result<Document, VaultError>
+    /**
+     * Retrieve a document.
+     */
+    fun retrieveDocument(
+        id: String
+    ): Result<Document, VaultError>
 
-    fun deleteDocument(id: String): Result<Unit, VaultError>
+    /**
+     * Delete a document.
+     */
+    fun deleteDocument(
+        id: String
+    ): Result<Unit, VaultError>
 
+    /**
+     * List documents.
+     */
     fun listDocuments(
         type: DocumentType? = null
     ): Result<List<Document>, VaultError>
 
-    fun containsDocument(id: String): Boolean
+    /**
+     * Check whether a document exists.
+     */
+    fun containsDocument(
+        id: String
+    ): Boolean
 
+    /**
+     * Return current document count.
+     */
     fun getDocumentCount(): Int
 
+    /**
+     * Clear stored documents.
+     */
     fun clearAll(): Result<Unit, VaultError>
 
+    /**
+     * Return current configuration.
+     */
     fun getConfig(): VaultConfig
 
-    fun updateConfig(config: VaultConfig)
+    /**
+     * Update configuration.
+     */
+    fun updateConfig(
+        config: VaultConfig
+    )
 }
 
+/**
+ * Document Vault error model.
+ */
 data class VaultError(
     val code: String,
     val message: String,
