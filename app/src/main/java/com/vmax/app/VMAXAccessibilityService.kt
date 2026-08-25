@@ -6,19 +6,22 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.vmax.action.AndroidActionExecutor
 import com.vmax.common.Logger
-import com.vmax.workflow.WorkflowController // ✅ 1. IMPORT: core-workflow module से असली Controller
+import com.vmax.workflow.WorkflowController
+import com.vmax.workflow.WorkflowState
+import java.util.ArrayDeque
 
 /**
  * VMAX v2.6.1 - Final Production Ready
- *
- * Responsibilities:
- * - Maintain service/session state.
- * - Observe the IRCTC accessibility tree.
- * - Detect user/security boundaries (CAPTCHA/OTP).
- * - Delegate actual automation (Click/Type) to WorkflowController.
+ * 
+ * Role: The "Eyes and Hands" of the automation.
+ * - Observes the screen.
+ * - Enforces Security Boundaries (CAPTCHA/OTP).
+ * - Coordinates between WorkflowController (Brain) and AndroidActionExecutor (Muscle).
  */
 class VMAXAccessibilityService : AccessibilityService() {
 
@@ -36,9 +39,11 @@ class VMAXAccessibilityService : AccessibilityService() {
             val enabledServices = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            )
-            if (enabledServices.isNullOrBlank()) return false
-            return enabledServices.split(':').any { it.contains(context.packageName, ignoreCase = true) }
+            ) ?: return false
+            
+            return enabledServices.split(':').any { 
+                it.contains(context.packageName, ignoreCase = true) 
+            }
         }
 
         fun openAccessibilitySettings(context: Context) {
@@ -55,19 +60,18 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var currentSessionId: String? = null
     private var currentState = ServiceState.IDLE
     
-    // मान लें कि AndroidLogger आपकी project में पहले से मौजूद है
-    private val logger: Logger = AndroidLogger() 
+    private val logger: Logger = AndroidLogger()
 
-    // ✅ 2. INITIALIZE: core-workflow वाले Controller का Reference (No duplicate class)
-    private var workflowController: WorkflowController? = null
+    // ✅ BRIDGE 1: Singleton WorkflowController (The Brain)
+    private val workflowController: WorkflowController 
+        get() = WorkflowController.getInstance()
+
+    // ✅ BRIDGE 2: AndroidActionExecutor (The Muscle)
+    private lateinit var actionExecutor: AndroidActionExecutor
 
     private enum class ServiceState {
         IDLE, OBSERVING, USER_BOUNDARY, STOPPED
     }
-
-    // ---------------------------------------------------------------------
-    // Android AccessibilityService lifecycle
-    // ---------------------------------------------------------------------
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -88,18 +92,19 @@ class VMAXAccessibilityService : AccessibilityService() {
             notificationTimeout = 100
         }
 
-        // ✅ "WorkflowController has not been initialized" ERROR FIX:
-        // यहाँ असली module को initialize करें। 
-        // (नोट: अगर आपके core-workflow में constructor अलग है, जैसे WorkflowController(), तो 'this' हटा दें)
-        workflowController = WorkflowController(this)
-        logger.info(TAG, "✅ WorkflowController successfully initialized and linked.")
+        // Initialize the Executor with the current Service context
+        actionExecutor = AndroidActionExecutor(this)
+        logger.info(TAG, "✅ AndroidActionExecutor initialized.")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
                 val sessionId = intent.getStringExtra("SESSION_ID") ?: "vmax_session_${System.currentTimeMillis()}"
-                startSession(sessionId)
+                
+                // Note: In a real scenario, you should pass PassengerDetails via Intent or a shared Repository.
+                // For now, we ensure the session starts. The actual details should be injected before calling startWorkflow.
+                startSession(sessionId) 
             }
             ACTION_STOP -> {
                 stopSession()
@@ -110,40 +115,29 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-
-        // केवल IRCTC पर काम करें
         if (event.packageName?.toString() != IRCTC_PACKAGE) return
-
-        // जब तक session start नहीं हुआ, कुछ न करें
         if (!sessionActive) return
 
         val rootNode = rootInActiveWindow ?: return
 
         try {
-            /*
-             * Security boundary: CAPTCHA / OTP / verification
-             * यह आपका original सुरक्षा कोड है, यह बिल्कुल वैसा ही रहेगा।
-             */
+            currentState = ServiceState.OBSERVING
+
+            // 🛡️ SECURITY BOUNDARY: Unchanged and fully intact
             if (containsSecurityBoundary(rootNode)) {
                 currentState = ServiceState.USER_BOUNDARY
-                logger.info(TAG, "⚠️ Security boundary detected. Automation paused. Waiting for user.")
-                
-                // Workflow को बताएं कि रुक जाए (अगर आपके controller में pause method है)
-                workflowController?.pauseAutomation() 
-                return
+                workflowController.updateState(WorkflowState.USER_BOUNDARY)
+                logger.info(TAG, "⚠️ Security boundary (CAPTCHA/OTP) detected. Automation PAUSED.")
+                return // Stop processing, wait for user
             }
-
-            // अगर user ने CAPTCHA हटा दिया, तो वापस Observing state में आ जाएं
-            currentState = ServiceState.OBSERVING
 
             when (event.eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
                 AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                    observeRoot(rootNode) // ✅ यहाँ से असली automation trigger होगा
+                    observeAndAct(rootNode) // ✅ THE MISSING LINK
                 }
             }
-
         } catch (exception: Exception) {
             logger.error(TAG, "Error processing accessibility event: ${exception.message}")
         }
@@ -159,16 +153,15 @@ class VMAXAccessibilityService : AccessibilityService() {
         isServiceRunning = false
         stopSession()
         cleanup()
-        workflowController = null // Memory cleanup
         logger.info(TAG, "VMAX Accessibility Service destroyed")
         super.onDestroy()
     }
 
     // ---------------------------------------------------------------------
-    // Session management
+    // Session Management
     // ---------------------------------------------------------------------
 
-    fun startSession(sessionId: String) {
+    fun startSession(sessionId: String, details: WorkflowController.PassengerDetails? = null) {
         if (sessionId.isBlank()) {
             logger.warn(TAG, "Ignoring empty session ID")
             return
@@ -181,18 +174,24 @@ class VMAXAccessibilityService : AccessibilityService() {
         currentSessionId = sessionId
         sessionActive = true
         currentState = ServiceState.IDLE
-        
-        // ✅ Session start होने पर WorkflowController को भी notify करें
-        workflowController?.startWorkflow(sessionId)
-        
-        logger.info(TAG, "✅ Session started: $sessionId. Automation is now ACTIVE.")
+
+        // Start the workflow in the Controller if details are provided
+        if (details != null) {
+            val success = workflowController.startWorkflow(details, sessionId)
+            if (success) {
+                logger.info(TAG, "✅ Session started & Workflow triggered: $sessionId")
+            } else {
+                logger.error(TAG, "❌ Failed to start workflow in Controller")
+            }
+        } else {
+            logger.info(TAG, "✅ Session started (Waiting for PassengerDetails): $sessionId")
+        }
     }
 
     fun stopSession() {
         if (!sessionActive && currentSessionId == null) return
 
-        workflowController?.stopWorkflow()
-        
+        workflowController.stopWorkflow()
         logger.info(TAG, "Session stopped: $currentSessionId")
         sessionActive = false
         currentSessionId = null
@@ -204,25 +203,20 @@ class VMAXAccessibilityService : AccessibilityService() {
     fun getCurrentSessionId(): String? = currentSessionId
 
     // ---------------------------------------------------------------------
-    // Security boundary detection (Original Code - Unchanged)
+    // Security boundary detection (Unchanged)
     // ---------------------------------------------------------------------
 
     private fun containsSecurityBoundary(root: AccessibilityNodeInfo): Boolean {
-        val securityTexts = listOf(
-            "CAPTCHA", "OTP", "verification code", "verify code", "enter code", "security verification"
-        )
+        val securityTexts = listOf("CAPTCHA", "OTP", "verification code", "verify code", "enter code", "security verification")
         return containsAnyText(root, securityTexts)
     }
 
     private fun containsAnyText(node: AccessibilityNodeInfo?, targets: List<String>): Boolean {
         if (node == null) return false
-
         val text = node.text?.toString()
         val description = node.contentDescription?.toString()
 
-        if (matchesTarget(text, targets) || matchesTarget(description, targets)) {
-            return true
-        }
+        if (matchesTarget(text, targets) || matchesTarget(description, targets)) return true
 
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
@@ -241,20 +235,109 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ---------------------------------------------------------------------
-    // Observation & Automation Trigger (THE MISSING LINK)
+    // 🧠 OBSERVATION & ACTION COORDINATION (THE CORE AUTOMATION)
     // ---------------------------------------------------------------------
 
-    private fun observeRoot(root: AccessibilityNodeInfo) {
+    private fun observeAndAct(root: AccessibilityNodeInfo) {
         if (!sessionActive) return
+        
+        // Check if the brain (WorkflowController) says we are allowed to act
+        if (!workflowController.isActive()) {
+            Log.d(TAG, "Workflow is not active (State: ${workflowController.getCurrentState()}). Skipping action.")
+            return
+        }
 
-        val packageName = root.packageName?.toString() ?: return
-        logger.debug(TAG, "Observing package=$packageName state=$currentState")
+        val currentWorkflowState = workflowController.getCurrentState()
+        Log.d(TAG, "Acting on screen. Workflow State: $currentWorkflowState")
 
-        // ✅ 3. EXECUTE: असली काम यहाँ होगा। 
-        // rootNode को WorkflowController को भेजें ताकि वह ActionExecutor का उपयोग करके Click/Type कर सके।
-        // (नोट: 'processScreen' वह method name है। अगर आपके core-workflow में इसका नाम 'handleNode' या 'executeStep' है, 
-        // तो कृपया यहाँ उस exact name से बदल दें)
-        workflowController?.processScreen(root)
+        when (currentWorkflowState) {
+            WorkflowState.RUNNING, WorkflowState.CONFIGURED -> {
+                // Example Step 1: Look for "Search" or "Book" or "Find Trains"
+                val searchKeywords = listOf("search", "find trains", "book")
+                val targetId = findClickableNodeIdByText(root, searchKeywords)
+
+                if (targetId != null) {
+                    logger.info(TAG, "🎯 Found target: $targetId. Executing Click...")
+                    
+                    // ✅ HANDS: Tell the Executor to click this specific ID
+                    val result = actionExecutor.executeClick(targetId)
+                    
+                    if (result is com.vmax.common.Result.Success) {
+                        logger.info(TAG, "✅ Click successful!")
+                        // Optional: Update state to next step if needed
+                        // workflowController.updateState(WorkflowState.PASSENGER_NAME_TYPED) 
+                    } else {
+                        logger.error(TAG, "❌ Click failed: ${(result as com.vmax.common.Result.Error).error.message}")
+                    }
+                }
+            }
+            
+            WorkflowState.USER_BOUNDARY -> {
+                // Do nothing, waiting for user to solve CAPTCHA
+            }
+            
+            else -> {
+                Log.d(TAG, "No action defined for state: $currentWorkflowState")
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 🔍 Helper: Find Node ID by Text (BFS Algorithm)
+    // ---------------------------------------------------------------------
+    
+    private fun findClickableNodeIdByText(root: AccessibilityNodeInfo, keywords: List<String>): String? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(AccessibilityNodeInfo.obtain(root))
+
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            
+            val text = node.text?.toString()?.lowercase() ?: ""
+            val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+            
+            val isMatch = keywords.any { keyword -> 
+                text.contains(keyword) || desc.contains(keyword) 
+            }
+
+            if (isMatch) {
+                // If the node itself is clickable, use its ID
+                if (node.isClickable && node.viewIdResourceName != null) {
+                    val id = node.viewIdResourceName
+                    node.recycle()
+                    clearQueue(queue)
+                    return id
+                }
+                
+                // If not, check if parent is clickable
+                var parent = node.parent
+                while (parent != null) {
+                    if (parent.isClickable && parent.viewIdResourceName != null) {
+                        val id = parent.viewIdResourceName
+                        parent.recycle()
+                        node.recycle()
+                        clearQueue(queue)
+                        return id
+                    }
+                    val temp = parent.parent
+                    parent.recycle()
+                    parent = temp
+                }
+            }
+
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i)
+                if (child != null) queue.addLast(child)
+            }
+            node.recycle()
+        }
+        return null
+    }
+
+    private fun clearQueue(queue: ArrayDeque<AccessibilityNodeInfo>) {
+        while (queue.isNotEmpty()) {
+            queue.removeFirst().recycle()
+        }
     }
 
     // ---------------------------------------------------------------------
