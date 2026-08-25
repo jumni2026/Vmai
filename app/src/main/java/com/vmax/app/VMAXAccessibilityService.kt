@@ -5,23 +5,16 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.common.Logger
-import com.vmax.core_intelligence.OcrResult
-import com.vmax.runtime.ocr.OcrEvidenceReader
-import kotlinx.coroutines.*
 
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "VMAXAccessibility"
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
-        private const val DEFAULT_CAPTCHA_VIEW_ID = "com.example.app:id/captcha_image"
-        private const val DEFAULT_UPI_VIEW_ID = "com.example.app:id/upi_payment_option"
-        private const val DEFAULT_CAPTCHA_INPUT_ID = "com.example.app:id/captcha_input"
 
         const val ACTION_START = "com.vmax.action.START"
         const val ACTION_STOP = "com.vmax.action.STOP"
@@ -34,18 +27,20 @@ class VMAXAccessibilityService : AccessibilityService() {
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             )
-            return enabledServices?.contains(context.packageName) == true
+
+            return enabledServices
+                ?.split(':')
+                ?.any { it.contains(context.packageName, ignoreCase = true) }
+                == true
         }
 
         fun openAccessibilitySettings(context: Context) {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             context.startActivity(intent)
         }
     }
-
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val ocrReader = OcrEvidenceReader()
 
     private var sessionActive = false
     private var currentSessionId: String? = null
@@ -62,36 +57,57 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+
         isServiceRunning = true
         currentState = ServiceState.IDLE
+
         logger.info(TAG, "VMAX Accessibility Service connected")
 
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+
+            flags =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                         AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            } else {
-                AccessibilityServiceInfo.DEFAULT
-            }
+                } else {
+                    AccessibilityServiceInfo.DEFAULT
+                }
+
             notificationTimeout = 100
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (event.packageName?.toString() != IRCTC_PACKAGE) return
-        if (!sessionActive) return
+
+        if (event.packageName?.toString() != IRCTC_PACKAGE) {
+            return
+        }
+
+        if (!sessionActive) {
+            return
+        }
 
         val rootNode = rootInActiveWindow ?: return
 
         try {
             currentState = ServiceState.OBSERVING
 
+            /*
+             * Security boundary:
+             * CAPTCHA, OTP and verification screens are user-controlled.
+             * The service deliberately stops processing when detected.
+             */
             if (containsSecurityBoundary(rootNode)) {
                 currentState = ServiceState.USER_BOUNDARY
-                logger.info(TAG, "Security boundary detected. Waiting for user.")
+
+                logger.info(
+                    TAG,
+                    "Security boundary detected. Waiting for user."
+                )
+
                 return
             }
 
@@ -99,14 +115,15 @@ class VMAXAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
                 AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                    processUiState(rootNode)
+                    observeRoot(rootNode)
                 }
             }
 
-            observeRoot(rootNode)
-
         } catch (e: Exception) {
-            logger.error(TAG, "Error processing accessibility event", e)
+            logger.error(
+                TAG,
+                "Error processing accessibility event: ${e.message}"
+            )
         } finally {
             rootNode.recycle()
         }
@@ -114,16 +131,19 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         logger.warn(TAG, "Accessibility service interrupted")
+
         stopSession()
         cleanup()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+
         isServiceRunning = false
+
         stopSession()
         cleanup()
-        serviceScope.cancel()
+
         logger.info(TAG, "VMAX Accessibility Service destroyed")
     }
 
@@ -134,102 +154,81 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
 
         if (sessionActive) {
-            logger.warn(TAG, "Session already active: $currentSessionId")
+            logger.warn(
+                TAG,
+                "Session already active: $currentSessionId"
+            )
             return
         }
 
         currentSessionId = sessionId
         sessionActive = true
         currentState = ServiceState.IDLE
+
         logger.info(TAG, "Session started: $sessionId")
     }
 
     fun stopSession() {
-        if (!sessionActive && currentSessionId == null) return
+        if (!sessionActive && currentSessionId == null) {
+            return
+        }
 
-        logger.info(TAG, "Session stopped: $currentSessionId")
+        logger.info(
+            TAG,
+            "Session stopped: $currentSessionId"
+        )
+
         sessionActive = false
         currentSessionId = null
         currentState = ServiceState.STOPPED
     }
 
-    fun isSessionActive(): Boolean = sessionActive
-
-    fun getCurrentState(): String = currentState.name
-
-    fun getCurrentSessionId(): String? = currentSessionId
-
-    private fun processUiState(rootNode: AccessibilityNodeInfo) {
-        autoFillFormFields(rootNode)
-        processCaptcha(rootNode)
-        navigatePayment(rootNode)
+    fun isSessionActive(): Boolean {
+        return sessionActive
     }
 
-    private fun autoFillFormFields(node: AccessibilityNodeInfo) {
-        val editableFields = node.findAccessibilityNodeInfosByViewId("android:id/text1")
-        for (field in editableFields) {
-            val viewId = field.viewIdResourceName
-            if (viewId != null) {
-                val value = getFieldValue(viewId)
-                if (value != null) {
-                    setTextOnNode(field, value)
-                    logger.debug(TAG, "Auto-filled field: $viewId")
-                }
-            }
-            field.recycle()
-        }
+    fun getCurrentState(): String {
+        return currentState.name
     }
 
-    private fun processCaptcha(node: AccessibilityNodeInfo) {
-        val captchaNode = node.findAccessibilityNodeInfosByViewId(DEFAULT_CAPTCHA_VIEW_ID).firstOrNull()
-        if (captchaNode == null) return
-
-        serviceScope.launch {
-            try {
-                val bitmap = takeScreenshot(captchaNode)
-                if (bitmap != null) {
-                    val result = ocrReader.readFromScreenshot(bitmap)
-                    logger.debug(TAG, "Captcha OCR result: ${result.fullText}")
-                    handleCaptchaResult(result)
-                }
-            } catch (e: Exception) {
-                logger.error(TAG, "Error processing captcha", e)
-            } finally {
-                captchaNode.recycle()
-            }
-        }
+    fun getCurrentSessionId(): String? {
+        return currentSessionId
     }
 
-    private fun navigatePayment(node: AccessibilityNodeInfo) {
-        val upiNode = node.findAccessibilityNodeInfosByViewId(DEFAULT_UPI_VIEW_ID).firstOrNull()
-        if (upiNode != null) {
-            upiNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            logger.debug(TAG, "UPI payment option selected")
-            upiNode.recycle()
-        }
-    }
-
-    private fun containsSecurityBoundary(root: AccessibilityNodeInfo): Boolean {
+    private fun containsSecurityBoundary(
+        root: AccessibilityNodeInfo
+    ): Boolean {
         val securityTexts = listOf(
-            "CAPTCHA", "captcha", "OTP", "otp",
-            "verification code", "verify code", "enter code",
-            "security", "captcha", "verification"
+            "CAPTCHA",
+            "OTP",
+            "verification code",
+            "verify code",
+            "enter code",
+            "security verification"
         )
+
         return containsAnyText(root, securityTexts)
     }
 
-    private fun containsAnyText(node: AccessibilityNodeInfo?, targets: List<String>): Boolean {
+    private fun containsAnyText(
+        node: AccessibilityNodeInfo?,
+        targets: List<String>
+    ): Boolean {
         if (node == null) return false
 
         val text = node.text?.toString()
         val description = node.contentDescription?.toString()
 
-        if (matchesTarget(text, targets) || matchesTarget(description, targets)) {
+        if (
+            matchesTarget(text, targets) ||
+            matchesTarget(description, targets)
+        ) {
             return true
         }
 
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
+
             try {
                 if (containsAnyText(child, targets)) {
                     return true
@@ -242,67 +241,40 @@ class VMAXAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun matchesTarget(value: String?, targets: List<String>): Boolean {
-        if (value.isNullOrBlank()) return false
-        return targets.any { target ->
-            value.contains(target, ignoreCase = true)
+    private fun matchesTarget(
+        value: String?,
+        targets: List<String>
+    ): Boolean {
+        if (value.isNullOrBlank()) {
+            return false
         }
-    }
 
-    private fun observeRoot(root: AccessibilityNodeInfo) {
-        val packageName = root.packageName?.toString() ?: return
-        logger.debug(TAG, "Observing package=$packageName state=$currentState")
-    }
-
-    private fun setTextOnNode(node: AccessibilityNodeInfo, text: String) {
-        val bundle = Bundle().apply {
-            putCharSequence(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                text
+        return targets.any { target ->
+            value.contains(
+                target,
+                ignoreCase = true
             )
         }
-        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)
     }
 
-    private fun getFieldValue(viewId: String): String? {
-        return when (viewId) {
-            "com.example.app:id/username" -> "your_username"
-            "com.example.app:id/password" -> "your_password"
-            "com.example.app:id/email" -> "user@example.com"
-            "com.example.app:id/phone" -> "9876543210"
-            else -> null
-        }
-    }
+    private fun observeRoot(
+        root: AccessibilityNodeInfo
+    ) {
+        val packageName =
+            root.packageName?.toString()
+                ?: return
 
-    private fun handleCaptchaResult(result: OcrResult) {
-        val rootNode = rootInActiveWindow ?: return
-        try {
-            val captchaInputs = rootNode.findAccessibilityNodeInfosByViewId(DEFAULT_CAPTCHA_INPUT_ID)
-            for (input in captchaInputs) {
-                if (input.isEditable) {
-                    setTextOnNode(input, result.fullText)
-                    logger.debug(TAG, "Captcha filled: ${result.fullText}")
-                    break
-                }
-                input.recycle()
-            }
-        } finally {
-            rootNode.recycle()
-        }
-    }
-
-    private fun takeScreenshot(node: AccessibilityNodeInfo): android.graphics.Bitmap? {
-        val rect = android.graphics.Rect()
-        node.getBoundsInScreen(rect)
-        logger.warn(TAG, "takeScreenshot not implemented yet")
-        return null
+        logger.debug(
+            TAG,
+            "Observing package=$packageName state=$currentState"
+        )
     }
 
     private fun cleanup() {
-        try {
-            ocrReader.close()
-        } catch (e: Exception) {
-            logger.error(TAG, "Error cleaning up", e)
-        }
+        /*
+         * Keep cleanup idempotent.
+         * Add non-sensitive resource cleanup here when required.
+         */
+        logger.debug(TAG, "Accessibility service cleanup completed")
     }
 }
