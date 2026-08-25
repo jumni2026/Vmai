@@ -7,7 +7,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.common.Logger
@@ -15,52 +14,21 @@ import com.vmax.core_intelligence.OcrResult
 import com.vmax.runtime.ocr.OcrEvidenceReader
 import kotlinx.coroutines.*
 
-/**
- * VMAX v2.6.1
- *
- * VMAXAccessibilityService - Main Accessibility Service for VMAX Automation.
- *
- * Responsibility:
- * - Observe target application UI (IRCTC by default)
- * - Detect security boundaries (CAPTCHA/OTP)
- * - Auto-fill form fields
- * - Process OCR on captcha/screenshots
- * - Maintain lightweight session state
- * - Remain TalkBack/accessibility friendly
- *
- * Architecture:
- * - Platform-independent core logic
- * - Coroutine-based async operations
- * - Proper resource management
- * - No automatic booking actions (CAPTCHA/OTP remain user-controlled)
- *
- * IMPORTANT:
- * This service does NOT automatically perform booking actions.
- * CAPTCHA / OTP and other security-sensitive steps remain user-controlled.
- */
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "VMAXAccessibility"
-
-        // IRCTC Package Name
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
-
-        // Default View IDs (configure based on target app)
         private const val DEFAULT_CAPTCHA_VIEW_ID = "com.example.app:id/captcha_image"
         private const val DEFAULT_UPI_VIEW_ID = "com.example.app:id/upi_payment_option"
         private const val DEFAULT_CAPTCHA_INPUT_ID = "com.example.app:id/captcha_input"
 
-        // Action Intents
         const val ACTION_START = "com.vmax.action.START"
         const val ACTION_STOP = "com.vmax.action.STOP"
 
         @Volatile
         private var isServiceRunning = false
 
-        /**
-         * Check if Accessibility Service is enabled.
-         */
         fun isAccessibilityServiceEnabled(context: Context): Boolean {
             val enabledServices = Settings.Secure.getString(
                 context.contentResolver,
@@ -69,9 +37,6 @@ class VMAXAccessibilityService : AccessibilityService() {
             return enabledServices?.contains(context.packageName) == true
         }
 
-        /**
-         * Open Accessibility Settings.
-         */
         fun openAccessibilitySettings(context: Context) {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -79,24 +44,14 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ========================================================================
-    // DEPENDENCIES
-    // ========================================================================
-
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ocrReader = OcrEvidenceReader()
-    
-    // Session State
+
     private var sessionActive = false
     private var currentSessionId: String? = null
     private var currentState = ServiceState.IDLE
 
-    // Logger (Android implementation)
     private val logger: Logger = AndroidLogger()
-
-    // ========================================================================
-    // SERVICE STATE
-    // ========================================================================
 
     private enum class ServiceState {
         IDLE,
@@ -105,23 +60,18 @@ class VMAXAccessibilityService : AccessibilityService() {
         STOPPED
     }
 
-    // ========================================================================
-    // LIFECYCLE METHODS
-    // ========================================================================
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         isServiceRunning = true
         currentState = ServiceState.IDLE
-        logger.i(TAG, "VMAX Accessibility Service connected")
+        logger.info(TAG, "VMAX Accessibility Service connected")
 
-        // Configure service info
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                        AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
             } else {
                 AccessibilityServiceInfo.DEFAULT
             }
@@ -131,29 +81,20 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-
-        // Ignore applications other than IRCTC
-        if (event.packageName?.toString() != IRCTC_PACKAGE) {
-            return
-        }
-
-        if (!sessionActive) {
-            return
-        }
+        if (event.packageName?.toString() != IRCTC_PACKAGE) return
+        if (!sessionActive) return
 
         val rootNode = rootInActiveWindow ?: return
 
         try {
             currentState = ServiceState.OBSERVING
 
-            // Check for security boundary (CAPTCHA/OTP)
             if (containsSecurityBoundary(rootNode)) {
                 currentState = ServiceState.USER_BOUNDARY
-                logger.i(TAG, "Security boundary detected. Waiting for user.")
+                logger.info(TAG, "Security boundary detected. Waiting for user.")
                 return
             }
 
-            // Process UI based on event type
             when (event.eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
@@ -162,18 +103,17 @@ class VMAXAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // UI observation only
             observeRoot(rootNode)
 
         } catch (e: Exception) {
-            logger.e(TAG, "Error processing accessibility event", e)
+            logger.error(TAG, "Error processing accessibility event", e)
         } finally {
             rootNode.recycle()
         }
     }
 
     override fun onInterrupt() {
-        logger.w(TAG, "Accessibility service interrupted")
+        logger.warn(TAG, "Accessibility service interrupted")
         stopSession()
         cleanup()
     }
@@ -184,102 +124,62 @@ class VMAXAccessibilityService : AccessibilityService() {
         stopSession()
         cleanup()
         serviceScope.cancel()
-        logger.i(TAG, "VMAX Accessibility Service destroyed")
+        logger.info(TAG, "VMAX Accessibility Service destroyed")
     }
 
-    // ========================================================================
-    // SESSION MANAGEMENT
-    // ========================================================================
-
-    /**
-     * Starts an observation session.
-     */
     fun startSession(sessionId: String) {
         if (sessionId.isBlank()) {
-            logger.w(TAG, "Ignoring empty session ID")
+            logger.warn(TAG, "Ignoring empty session ID")
             return
         }
 
         if (sessionActive) {
-            logger.w(TAG, "Session already active: $currentSessionId")
+            logger.warn(TAG, "Session already active: $currentSessionId")
             return
         }
 
         currentSessionId = sessionId
         sessionActive = true
         currentState = ServiceState.IDLE
-        logger.i(TAG, "Session started: $sessionId")
+        logger.info(TAG, "Session started: $sessionId")
     }
 
-    /**
-     * Stops the current session.
-     */
     fun stopSession() {
-        if (!sessionActive && currentSessionId == null) {
-            return
-        }
+        if (!sessionActive && currentSessionId == null) return
 
-        logger.i(TAG, "Session stopped: $currentSessionId")
+        logger.info(TAG, "Session stopped: $currentSessionId")
         sessionActive = false
         currentSessionId = null
         currentState = ServiceState.STOPPED
     }
 
-    /**
-     * Returns whether VMAX is currently observing an active session.
-     */
     fun isSessionActive(): Boolean = sessionActive
 
-    /**
-     * Returns the current service state.
-     */
     fun getCurrentState(): String = currentState.name
 
-    /**
-     * Returns the current session ID.
-     */
     fun getCurrentSessionId(): String? = currentSessionId
 
-    // ========================================================================
-    // UI PROCESSING
-    // ========================================================================
-
-    /**
-     * Process current UI state.
-     */
     private fun processUiState(rootNode: AccessibilityNodeInfo) {
-        // 1. Auto-fill form fields
         autoFillFormFields(rootNode)
-
-        // 2. Process captcha if present
         processCaptcha(rootNode)
-
-        // 3. Navigate payment flows
         navigatePayment(rootNode)
     }
 
-    /**
-     * Auto-fill form fields.
-     */
     private fun autoFillFormFields(node: AccessibilityNodeInfo) {
         val editableFields = node.findAccessibilityNodeInfosByViewId("android:id/text1")
-
         for (field in editableFields) {
             val viewId = field.viewIdResourceName
             if (viewId != null) {
                 val value = getFieldValue(viewId)
                 if (value != null) {
                     setTextOnNode(field, value)
-                    logger.d(TAG, "Auto-filled field: $viewId")
+                    logger.debug(TAG, "Auto-filled field: $viewId")
                 }
             }
             field.recycle()
         }
     }
 
-    /**
-     * Process captcha using OCR.
-     */
     private fun processCaptcha(node: AccessibilityNodeInfo) {
         val captchaNode = node.findAccessibilityNodeInfosByViewId(DEFAULT_CAPTCHA_VIEW_ID).firstOrNull()
         if (captchaNode == null) return
@@ -289,36 +189,26 @@ class VMAXAccessibilityService : AccessibilityService() {
                 val bitmap = takeScreenshot(captchaNode)
                 if (bitmap != null) {
                     val result = ocrReader.readFromScreenshot(bitmap)
-                    logger.d(TAG, "Captcha OCR result: ${result.fullText}")
+                    logger.debug(TAG, "Captcha OCR result: ${result.fullText}")
                     handleCaptchaResult(result)
                 }
             } catch (e: Exception) {
-                logger.e(TAG, "Error processing captcha", e)
+                logger.error(TAG, "Error processing captcha", e)
             } finally {
                 captchaNode.recycle()
             }
         }
     }
 
-    /**
-     * Navigate payment flows.
-     */
     private fun navigatePayment(node: AccessibilityNodeInfo) {
         val upiNode = node.findAccessibilityNodeInfosByViewId(DEFAULT_UPI_VIEW_ID).firstOrNull()
         if (upiNode != null) {
             upiNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            logger.d(TAG, "UPI payment option selected")
+            logger.debug(TAG, "UPI payment option selected")
             upiNode.recycle()
         }
     }
 
-    // ========================================================================
-    // SECURITY BOUNDARY DETECTION
-    // ========================================================================
-
-    /**
-     * Detect CAPTCHA / OTP / security verification UI.
-     */
     private fun containsSecurityBoundary(root: AccessibilityNodeInfo): Boolean {
         val securityTexts = listOf(
             "CAPTCHA", "captcha", "OTP", "otp",
@@ -328,9 +218,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         return containsAnyText(root, securityTexts)
     }
 
-    /**
-     * Recursively searches the accessibility tree for text matches.
-     */
     private fun containsAnyText(node: AccessibilityNodeInfo?, targets: List<String>): Boolean {
         if (node == null) return false
 
@@ -362,27 +249,11 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ========================================================================
-    // UI OBSERVATION HOOK
-    // ========================================================================
-
-    /**
-     * UI observation hook.
-     * Keep this method side-effect free.
-     */
     private fun observeRoot(root: AccessibilityNodeInfo) {
         val packageName = root.packageName?.toString() ?: return
-        logger.d(TAG, "Observing package=$packageName state=$currentState")
-        // Intentionally no automatic click, text injection, etc.
+        logger.debug(TAG, "Observing package=$packageName state=$currentState")
     }
 
-    // ========================================================================
-    // HELPER METHODS
-    // ========================================================================
-
-    /**
-     * Set text on a node.
-     */
     private fun setTextOnNode(node: AccessibilityNodeInfo, text: String) {
         val bundle = Bundle().apply {
             putCharSequence(
@@ -393,10 +264,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)
     }
 
-    /**
-     * Get field value based on view ID.
-     * Override based on target app's requirements.
-     */
     private fun getFieldValue(viewId: String): String? {
         return when (viewId) {
             "com.example.app:id/username" -> "your_username"
@@ -407,10 +274,6 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Handle captcha result.
-     * Override based on target app's requirements.
-     */
     private fun handleCaptchaResult(result: OcrResult) {
         val rootNode = rootInActiveWindow ?: return
         try {
@@ -418,7 +281,7 @@ class VMAXAccessibilityService : AccessibilityService() {
             for (input in captchaInputs) {
                 if (input.isEditable) {
                     setTextOnNode(input, result.fullText)
-                    logger.d(TAG, "Captcha filled: ${result.fullText}")
+                    logger.debug(TAG, "Captcha filled: ${result.fullText}")
                     break
                 }
                 input.recycle()
@@ -428,27 +291,18 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Take screenshot of a specific node.
-     * TODO: Implement using MediaProjection or AccessibilityService API.
-     */
     private fun takeScreenshot(node: AccessibilityNodeInfo): android.graphics.Bitmap? {
         val rect = android.graphics.Rect()
         node.getBoundsInScreen(rect)
-        // TODO: Implement actual screenshot capture
-        // Options: MediaProjection API, UiAutomation, performGlobalAction()
-        logger.w(TAG, "takeScreenshot not implemented yet")
+        logger.warn(TAG, "takeScreenshot not implemented yet")
         return null
     }
 
-    /**
-     * Cleanup resources.
-     */
     private fun cleanup() {
         try {
             ocrReader.close()
         } catch (e: Exception) {
-            logger.e(TAG, "Error cleaning up", e)
+            logger.error(TAG, "Error cleaning up", e)
         }
     }
 }
