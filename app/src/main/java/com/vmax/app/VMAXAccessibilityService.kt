@@ -10,40 +10,94 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vmax.common.Logger
 
+/**
+ * VMAX v2.6.1
+ *
+ * Accessibility Service
+ *
+ * Responsibilities:
+ * - Maintain service/session state.
+ * - Observe the IRCTC accessibility tree.
+ * - Detect user/security boundaries.
+ * - Stop processing when CAPTCHA/OTP/verification is present.
+ * - Provide a stable bridge for the rest of the VMAX runtime.
+ *
+ * Security boundary:
+ * CAPTCHA, OTP and verification steps remain user-controlled.
+ */
 class VMAXAccessibilityService : AccessibilityService() {
 
     companion object {
+
         private const val TAG = "VMAXAccessibility"
+
+        /**
+         * IRCTC Rail Connect package.
+         */
         private const val IRCTC_PACKAGE = "cris.org.in.prs.ima"
 
+        /**
+         * External commands.
+         */
         const val ACTION_START = "com.vmax.action.START"
         const val ACTION_STOP = "com.vmax.action.STOP"
 
         @Volatile
         private var isServiceRunning = false
 
-        fun isAccessibilityServiceEnabled(context: Context): Boolean {
+        /**
+         * Checks whether this application's accessibility service
+         * appears in the enabled accessibility services list.
+         */
+        fun isAccessibilityServiceEnabled(
+            context: Context
+        ): Boolean {
+
             val enabledServices = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             )
 
+            if (enabledServices.isNullOrBlank()) {
+                return false
+            }
+
             return enabledServices
-                ?.split(':')
-                ?.any { it.contains(context.packageName, ignoreCase = true) }
-                == true
+                .split(':')
+                .any { serviceName ->
+                    serviceName.contains(
+                        context.packageName,
+                        ignoreCase = true
+                    )
+                }
         }
 
+        /**
+         * Opens Android Accessibility Settings.
+         */
         fun openAccessibilitySettings(context: Context) {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+
+            val intent = Intent(
+                Settings.ACTION_ACCESSIBILITY_SETTINGS
+            ).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+
             context.startActivity(intent)
+        }
+
+        /**
+         * Returns whether the service instance is currently connected.
+         */
+        fun isRunning(): Boolean {
+            return isServiceRunning
         }
     }
 
     private var sessionActive = false
+
     private var currentSessionId: String? = null
+
     private var currentState = ServiceState.IDLE
 
     private val logger: Logger = AndroidLogger()
@@ -55,23 +109,36 @@ class VMAXAccessibilityService : AccessibilityService() {
         STOPPED
     }
 
+    // ---------------------------------------------------------------------
+    // Android AccessibilityService lifecycle
+    // ---------------------------------------------------------------------
+
     override fun onServiceConnected() {
         super.onServiceConnected()
 
         isServiceRunning = true
         currentState = ServiceState.IDLE
 
-        logger.info(TAG, "VMAX Accessibility Service connected")
+        logger.info(
+            TAG,
+            "VMAX Accessibility Service connected"
+        )
 
         serviceInfo = AccessibilityServiceInfo().apply {
+
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+
+            feedbackType =
+                AccessibilityServiceInfo.FEEDBACK_GENERIC
 
             flags =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+
                     AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                         AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+
                 } else {
+
                     AccessibilityServiceInfo.DEFAULT
                 }
 
@@ -79,13 +146,24 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
+    override fun onAccessibilityEvent(
+        event: AccessibilityEvent?
+    ) {
 
+        if (event == null) {
+            return
+        }
+
+        /*
+         * Ignore applications other than IRCTC.
+         */
         if (event.packageName?.toString() != IRCTC_PACKAGE) {
             return
         }
 
+        /*
+         * Do nothing until a VMAX session has explicitly started.
+         */
         if (!sessionActive) {
             return
         }
@@ -93,14 +171,17 @@ class VMAXAccessibilityService : AccessibilityService() {
         val rootNode = rootInActiveWindow ?: return
 
         try {
+
             currentState = ServiceState.OBSERVING
 
             /*
-             * Security boundary:
-             * CAPTCHA, OTP and verification screens are user-controlled.
-             * The service deliberately stops processing when detected.
+             * Security boundary.
+             *
+             * CAPTCHA / OTP / verification must remain
+             * under explicit user control.
              */
             if (containsSecurityBoundary(rootNode)) {
+
                 currentState = ServiceState.USER_BOUNDARY
 
                 logger.info(
@@ -112,52 +193,86 @@ class VMAXAccessibilityService : AccessibilityService() {
             }
 
             when (event.eventType) {
+
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
                 AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+
                     observeRoot(rootNode)
                 }
             }
 
-        } catch (e: Exception) {
+        } catch (exception: Exception) {
+
+            /*
+             * Logger.error() accepts exactly:
+             * error(tag, message)
+             *
+             * Therefore the exception is included in the message.
+             */
             logger.error(
                 TAG,
-                "Error processing accessibility event: ${e.message}"
+                "Error processing accessibility event: ${exception.message}"
             )
+
         } finally {
-            rootNode.recycle()
+
+            /*
+             * rootInActiveWindow is owned by AccessibilityService.
+             * Do not explicitly recycle it here.
+             */
         }
     }
 
     override fun onInterrupt() {
-        logger.warn(TAG, "Accessibility service interrupted")
+
+        logger.warn(
+            TAG,
+            "Accessibility service interrupted"
+        )
 
         stopSession()
         cleanup()
     }
 
     override fun onDestroy() {
-        super.onDestroy()
 
         isServiceRunning = false
 
         stopSession()
         cleanup()
 
-        logger.info(TAG, "VMAX Accessibility Service destroyed")
+        logger.info(
+            TAG,
+            "VMAX Accessibility Service destroyed"
+        )
+
+        super.onDestroy()
     }
 
+    // ---------------------------------------------------------------------
+    // Session management
+    // ---------------------------------------------------------------------
+
     fun startSession(sessionId: String) {
+
         if (sessionId.isBlank()) {
-            logger.warn(TAG, "Ignoring empty session ID")
+
+            logger.warn(
+                TAG,
+                "Ignoring empty session ID"
+            )
+
             return
         }
 
         if (sessionActive) {
+
             logger.warn(
                 TAG,
                 "Session already active: $currentSessionId"
             )
+
             return
         }
 
@@ -165,10 +280,14 @@ class VMAXAccessibilityService : AccessibilityService() {
         sessionActive = true
         currentState = ServiceState.IDLE
 
-        logger.info(TAG, "Session started: $sessionId")
+        logger.info(
+            TAG,
+            "Session started: $sessionId"
+        )
     }
 
     fun stopSession() {
+
         if (!sessionActive && currentSessionId == null) {
             return
         }
@@ -195,9 +314,14 @@ class VMAXAccessibilityService : AccessibilityService() {
         return currentSessionId
     }
 
+    // ---------------------------------------------------------------------
+    // Security boundary detection
+    // ---------------------------------------------------------------------
+
     private fun containsSecurityBoundary(
         root: AccessibilityNodeInfo
     ): Boolean {
+
         val securityTexts = listOf(
             "CAPTCHA",
             "OTP",
@@ -207,17 +331,25 @@ class VMAXAccessibilityService : AccessibilityService() {
             "security verification"
         )
 
-        return containsAnyText(root, securityTexts)
+        return containsAnyText(
+            root,
+            securityTexts
+        )
     }
 
     private fun containsAnyText(
         node: AccessibilityNodeInfo?,
         targets: List<String>
     ): Boolean {
-        if (node == null) return false
+
+        if (node == null) {
+            return false
+        }
 
         val text = node.text?.toString()
-        val description = node.contentDescription?.toString()
+
+        val description =
+            node.contentDescription?.toString()
 
         if (
             matchesTarget(text, targets) ||
@@ -227,13 +359,27 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
 
         for (index in 0 until node.childCount) {
-            val child = node.getChild(index) ?: continue
+
+            val child = node.getChild(index)
+                ?: continue
 
             try {
-                if (containsAnyText(child, targets)) {
+
+                if (
+                    containsAnyText(
+                        child,
+                        targets
+                    )
+                ) {
                     return true
                 }
+
             } finally {
+
+                /*
+                 * Child nodes obtained with getChild()
+                 * should be recycled after use.
+                 */
                 child.recycle()
             }
         }
@@ -245,11 +391,13 @@ class VMAXAccessibilityService : AccessibilityService() {
         value: String?,
         targets: List<String>
     ): Boolean {
+
         if (value.isNullOrBlank()) {
             return false
         }
 
         return targets.any { target ->
+
             value.contains(
                 target,
                 ignoreCase = true
@@ -257,9 +405,14 @@ class VMAXAccessibilityService : AccessibilityService() {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Observation
+    // ---------------------------------------------------------------------
+
     private fun observeRoot(
         root: AccessibilityNodeInfo
     ) {
+
         val packageName =
             root.packageName?.toString()
                 ?: return
@@ -270,11 +423,20 @@ class VMAXAccessibilityService : AccessibilityService() {
         )
     }
 
+    // ---------------------------------------------------------------------
+    // Cleanup
+    // ---------------------------------------------------------------------
+
     private fun cleanup() {
+
         /*
          * Keep cleanup idempotent.
-         * Add non-sensitive resource cleanup here when required.
+         *
+         * Add only non-sensitive resource cleanup here.
          */
-        logger.debug(TAG, "Accessibility service cleanup completed")
+        logger.debug(
+            TAG,
+            "Accessibility service cleanup completed"
+        )
     }
 }
