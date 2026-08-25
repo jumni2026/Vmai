@@ -25,19 +25,4 @@ data class BookingRequest(
     val quota: String
 )
 
-data class PassengerProfile(
-    val profileId: String,
-    val passengers: List<Passenger>,
-    val createdTime: java.time.LocalDateTime,
-    val updatedTime: java.time.LocalDateTime,
-    val version: Int = 1,
-    val berthPreference: BerthPreference = BerthPreference.NO_PREFERENCE,
-    val mealPreference: MealPreference = MealPreference.NO_MEAL,
-    val concession: Concession = Concession.NONE,
-    val bedRoll: Boolean = false
-)
-
 enum class Gender { MALE, FEMALE, OTHER }
-enum class BerthPreference { NO_PREFERENCE, LOWER, MIDDLE, UPPER, SIDE_LOWER, SIDE_UPPER }
-enum class MealPreference { NO_MEAL, VEG, NON_VEG, VEG_JAIN }
-enum class Concession { NONE, SENIOR_CITIZEN, DISABLED }
