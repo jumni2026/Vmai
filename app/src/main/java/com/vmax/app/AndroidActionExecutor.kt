@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit
  * - Translate platform-independent ActionRequest objects into Android Accessibility actions.
  * - Guarantee zero memory leaks via strict AccessibilityNodeInfo recycling.
  * - Provide fallback mechanisms for maximum device compatibility.
+ * - Support dynamic UIs (React Native, Flutter, WebView) via text/hint-based targeting.
  *
  * Architecture rule:
  * - No workflow/business decisions here.
@@ -124,6 +125,166 @@ class AndroidActionExecutor(
     override fun getLastActionResult(): ActionExecutor.ActionResult? = lastActionResult
 
     // -------------------------------------------------------------------------
+    // Advanced / Dynamic UI APIs (New & Upgraded)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Finds a node by its text or content description and clicks it.
+     * Ideal for dynamic UIs where IDs are unstable (e.g., finding a specific Train Number).
+     */
+    fun executeClickByValue(
+        text: String,
+        exactMatch: Boolean = false
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return try {
+            val root = service.rootInActiveWindow ?: return failure(
+                code = "NO_ACTIVE_WINDOW", message = "No active accessibility window",
+                request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK)
+            )
+            
+            val node = findNodeByText(root, text, exactMatch) ?: run {
+                root.recycle()
+                return failure(
+                    code = "NODE_NOT_FOUND", message = "Node with text '$text' not found",
+                    request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK)
+                )
+            }
+
+            val success = performClick(node)
+            node.recycle()
+            root.recycle()
+
+            if (success) success(actionType = ActionExecutor.ActionType.CLICK, message = "Clicked node with text: $text")
+            else failure(code = "CLICK_FAILED", message = "Failed to click node with text: $text", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK))
+        } catch (e: Exception) {
+            failure(code = "CLICK_BY_VALUE_EXCEPTION", message = e.message ?: "Click by value failed", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK), cause = e)
+        }
+    }
+
+    /**
+     * Selects an option from a Dropdown/Spinner.
+     * 1. Finds and clicks the spinner (by ID or Text).
+     * 2. Waits for the dropdown list to appear.
+     * 3. Finds and clicks the target option by text.
+     */
+    fun executeSelectFromList(
+        spinnerTargetId: String? = null,
+        spinnerText: String? = null,
+        optionText: String,
+        waitTimeMs: Long = 800L
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return try {
+            // Step 1: Find and click the spinner
+            val root1 = service.rootInActiveWindow ?: return failure(
+                code = "NO_ACTIVE_WINDOW", message = "No active window",
+                request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK)
+            )
+            
+            val spinnerNode = when {
+                spinnerTargetId != null -> findNodeById(root1, spinnerTargetId)
+                spinnerText != null -> findNodeByText(root1, spinnerText, exactMatch = false)
+                else -> null
+            }
+
+            if (spinnerNode == null) {
+                root1.recycle()
+                return failure(code = "SPINNER_NOT_FOUND", message = "Spinner not found by ID: $spinnerTargetId or Text: $spinnerText", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK))
+            }
+
+            val clickSuccess = performClick(spinnerNode)
+            spinnerNode.recycle()
+            root1.recycle()
+
+            if (!clickSuccess) {
+                return failure(code = "SPINNER_CLICK_FAILED", message = "Failed to click spinner to open list", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK))
+            }
+
+            // Step 2: Wait for dropdown list to appear (UI settlement)
+            Thread.sleep(waitTimeMs)
+
+            // Step 3: Find and click the option in the newly opened list/popup
+            val root2 = service.rootInActiveWindow ?: return failure(
+                code = "NO_ACTIVE_WINDOW_AFTER_WAIT", message = "No active window after waiting for dropdown",
+                request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK)
+            )
+            
+            val optionNode = findNodeByText(root2, optionText, exactMatch = true) ?: run {
+                root2.recycle()
+                return failure(code = "OPTION_NOT_FOUND", message = "Option '$optionText' not found in dropdown list", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK))
+            }
+
+            val optionClickSuccess = performClick(optionNode)
+            optionNode.recycle()
+            root2.recycle()
+
+            if (optionClickSuccess) {
+                success(actionType = ActionExecutor.ActionType.CLICK, message = "Successfully selected '$optionText' from list")
+            } else {
+                failure(code = "OPTION_CLICK_FAILED", message = "Failed to click option '$optionText'", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK))
+            }
+        } catch (e: Exception) {
+            failure(code = "SELECT_FROM_LIST_EXCEPTION", message = e.message ?: "Select from list failed", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.CLICK), cause = e)
+        }
+    }
+
+    /**
+     * Robustly sets text by finding the node via its text, hint, or content description.
+     * Ideal for dynamic UIs (React Native, Flutter, WebView) where IDs are obfuscated or unstable.
+     */
+    fun executeSetTextByText(
+        targetText: String,
+        textToSet: String,
+        exactMatch: Boolean = false
+    ): Result<ActionExecutor.ActionResult, ActionError> {
+        return try {
+            val root = service.rootInActiveWindow ?: return failure(
+                code = "NO_ACTIVE_WINDOW", message = "No active accessibility window",
+                request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.SET_TEXT)
+            )
+            
+            val node = findNodeByTextForInput(root, targetText, exactMatch) ?: run {
+                root.recycle()
+                return failure(code = "INPUT_NODE_NOT_FOUND", message = "Editable node with text/hint '$targetText' not found", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.SET_TEXT))
+            }
+
+            if (!node.isEditable) {
+                node.recycle()
+                root.recycle()
+                return failure(code = "NODE_NOT_EDITABLE", message = "Found node is not editable: $targetText", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.SET_TEXT))
+            }
+
+            // Robust text setting sequence for maximum compatibility
+            performClick(node) // Try to click first to ensure focus and keyboard trigger
+            Thread.sleep(150) // Small delay to ensure focus is registered by the OS
+            
+            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
+            
+            // Pre-clear existing text to avoid appending
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+            })
+            Thread.sleep(50)
+
+            val arguments = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToSet)
+            }
+
+            val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            node.recycle()
+            root.recycle()
+
+            if (success) {
+                success(actionType = ActionExecutor.ActionType.SET_TEXT, message = "Text '$textToSet' set successfully by searching text/hint: '$targetText'")
+            } else {
+                failure(code = "SET_TEXT_FAILED", message = "ACTION_SET_TEXT failed for node with text: $targetText", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.SET_TEXT))
+            }
+        } catch (e: Exception) {
+            failure(code = "SET_TEXT_BY_TEXT_EXCEPTION", message = e.message ?: "Set text by text failed", request = ActionExecutor.ActionRequest(type = ActionExecutor.ActionType.SET_TEXT), cause = e)
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // TAP / CLICK
     // -------------------------------------------------------------------------
 
@@ -193,12 +354,10 @@ class AndroidActionExecutor(
     }
 
     private fun clickByCoordinates(x: Int, y: Int, request: ActionExecutor.ActionRequest): Result<ActionExecutor.ActionResult, ActionError> {
-        // Prefer native GestureDescription for API 24+ (Highly reliable, bypasses node search flakiness)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             return executeGestureClick(x, y, request)
         }
 
-        // Fallback for legacy APIs
         return try {
             val root = service.rootInActiveWindow ?: return failure(code = "NO_ACTIVE_WINDOW", message = "No active accessibility window", request = request)
             val node = findNodeAtCoordinates(root, x, y)
@@ -301,8 +460,6 @@ class AndroidActionExecutor(
             val builder = GestureDescription.Builder()
             val path = Path().apply {
                 moveTo(coords.first.toFloat(), coords.second.toFloat())
-                // Default fallback: 300px downward swipe from the given coordinate.
-                // NOTE: For full directional control, update ActionRequest to include start/end coordinates.
                 lineTo(coords.first.toFloat(), (coords.second + 300).toFloat())
             }
             builder.addStroke(GestureDescription.StrokeDescription(path, 0, 300)) // 300ms duration
@@ -353,7 +510,6 @@ class AndroidActionExecutor(
                 }
             }
 
-            // Validate if scrolling is actually possible to prevent false positives
             val canScroll = when (action) {
                 AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> scrollable.canScrollForward
                 AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> scrollable.canScrollBackward
@@ -378,7 +534,7 @@ class AndroidActionExecutor(
     }
 
     // -------------------------------------------------------------------------
-    // SET TEXT & CLEAR TEXT
+    // SET TEXT & CLEAR TEXT (Legacy ID-based)
     // -------------------------------------------------------------------------
 
     private fun executeSetTextInternal(request: ActionExecutor.ActionRequest): Result<ActionExecutor.ActionResult, ActionError> {
@@ -395,11 +551,9 @@ class AndroidActionExecutor(
                 return failure(code = "NODE_NOT_EDITABLE", message = "Node is not editable: $targetId", request = request)
             }
 
-            // Robust text setting sequence for maximum compatibility
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
             
-            // Pre-clear existing text to avoid appending
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
             })
@@ -449,22 +603,18 @@ class AndroidActionExecutor(
     // -------------------------------------------------------------------------
 
     private fun findNodeById(root: AccessibilityNodeInfo, id: String): AccessibilityNodeInfo? {
-        // 1. Fast path: Use framework's highly optimized native search
         val matches = root.findAccessibilityNodeInfosByViewId(id)
         if (!matches.isNullOrEmpty()) {
             val result = matches[0]
-            // Recycle the rest to prevent memory leaks
             for (i in 1 until matches.size) {
                 matches[i].recycle()
             }
             return result
         }
 
-        // 2. Fallback path: BFS search (e.g., for dynamic IDs or content description matching)
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         val toRecycle = mutableListOf<AccessibilityNodeInfo>()
 
-        // Enqueue children of root (root is owned by the caller, do not add to toRecycle)
         for (i in 0 until root.childCount) {
             root.getChild(i)?.let { queue.addLast(it) }
         }
@@ -472,12 +622,10 @@ class AndroidActionExecutor(
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
 
-            // Match by ID or Content Description (useful for dynamic views)
             if (node.viewIdResourceName == id || node.contentDescription?.toString()?.equals(id, ignoreCase = true) == true) {
-                // Found: recycle everything else we own
                 for (n in queue) n.recycle()
                 for (n in toRecycle) n.recycle()
-                return node // Caller is responsible for recycling this
+                return node
             }
 
             toRecycle.add(node)
@@ -486,11 +634,103 @@ class AndroidActionExecutor(
             }
         }
 
-        // Not found: recycle everything we own
         for (n in queue) n.recycle()
         for (n in toRecycle) n.recycle()
 
         return null
+    }
+
+    private fun findNodeByText(root: AccessibilityNodeInfo, text: String, exactMatch: Boolean): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val toRecycle = mutableListOf<AccessibilityNodeInfo>()
+        var bestMatch: AccessibilityNodeInfo? = null
+
+        for (i in 0 until root.childCount) {
+            root.getChild(i)?.let { queue.addLast(it) }
+        }
+
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val nodeText = node.text?.toString()?.trim() ?: ""
+            val contentDesc = node.contentDescription?.toString()?.trim() ?: ""
+            
+            val matches = if (exactMatch) {
+                nodeText.equals(text, ignoreCase = true) || contentDesc.equals(text, ignoreCase = true)
+            } else {
+                nodeText.contains(text, ignoreCase = true) || contentDesc.contains(text, ignoreCase = true)
+            }
+
+            if (matches) {
+                if (node.isClickable) {
+                    for (n in queue) n.recycle()
+                    for (n in toRecycle) n.recycle()
+                    return node
+                } else if (bestMatch == null) {
+                    bestMatch = node
+                } else {
+                    toRecycle.add(node)
+                }
+            } else {
+                toRecycle.add(node)
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+
+        for (n in queue) n.recycle()
+        for (n in toRecycle) n.recycle()
+        return bestMatch
+    }
+
+    private fun findNodeByTextForInput(root: AccessibilityNodeInfo, targetText: String, exactMatch: Boolean): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val toRecycle = mutableListOf<AccessibilityNodeInfo>()
+        var bestMatch: AccessibilityNodeInfo? = null
+
+        for (i in 0 until root.childCount) {
+            root.getChild(i)?.let { queue.addLast(it) }
+        }
+
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val nodeText = node.text?.toString()?.trim() ?: ""
+            val hint = node.hintText?.toString()?.trim() ?: ""
+            val contentDesc = node.contentDescription?.toString()?.trim() ?: ""
+            
+            val matches = if (exactMatch) {
+                nodeText.equals(targetText, ignoreCase = true) || 
+                hint.equals(targetText, ignoreCase = true) || 
+                contentDesc.equals(targetText, ignoreCase = true)
+            } else {
+                nodeText.contains(targetText, ignoreCase = true) || 
+                hint.contains(targetText, ignoreCase = true) || 
+                contentDesc.contains(targetText, ignoreCase = true)
+            }
+
+            if (matches) {
+                if (node.isEditable) {
+                    for (n in queue) n.recycle()
+                    for (n in toRecycle) n.recycle()
+                    return node
+                } else if (bestMatch == null) {
+                    bestMatch = node
+                } else {
+                    toRecycle.add(node)
+                }
+            } else {
+                toRecycle.add(node)
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.addLast(it) }
+            }
+        }
+
+        for (n in queue) n.recycle()
+        for (n in toRecycle) n.recycle()
+        return bestMatch
     }
 
     private fun findNodeAtCoordinates(root: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
@@ -511,9 +751,8 @@ class AndroidActionExecutor(
 
             if (bounds.contains(x, y)) {
                 val area = bounds.width() * bounds.height()
-                // Prefer clickable nodes, or the smallest bounding box (most specific child)
                 if (node.isClickable || bestMatch == null || area < minArea) {
-                    bestMatch?.let { toRecycle.add(it) } // Recycle previous best match
+                    bestMatch?.let { toRecycle.add(it) }
                     bestMatch = node
                     minArea = area
                 } else {
@@ -528,7 +767,6 @@ class AndroidActionExecutor(
             }
         }
 
-        // Recycle all non-matching nodes to prevent leaks
         for (n in queue) n.recycle()
         for (n in toRecycle) n.recycle()
 
@@ -564,10 +802,30 @@ class AndroidActionExecutor(
         return null
     }
 
+    /**
+     * Upgraded performClick: Tries to click the node, and if it's not clickable, 
+     * it traverses up to 3 levels to find a clickable parent (common in List rows).
+     */
     private fun performClick(node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             return true
         }
+        
+        // Fallback: try to find a clickable parent
+        var current: AccessibilityNodeInfo? = node.parent
+        var attempts = 0
+        while (current != null && attempts < 3) {
+            if (current.isClickable && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                current.recycle()
+                return true
+            }
+            val next = current.parent
+            current.recycle()
+            current = next
+            attempts++
+        }
+        
+        // Final fallback
         return node.performAction(AccessibilityNodeInfo.ACTION_SELECT)
     }
 
