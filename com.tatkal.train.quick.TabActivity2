@@ -1534,3 +1534,242 @@ Ljava/lang/String;)Landroid/database/Cursor;
 move-result-object p0
 return-object p0
 .end method
+.method public final H()V
+.locals 48
+move-object/from16 v0, p0
+iget-object v1, v0, Lcom/tatkal/train/quick/TabActivity2;->e:Ljava/util/HashMap;
+const-string v2,"General"
+const-strin g v3,"GN"
+invoke-virtual{v1, v2, v3}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-string v2,"Tatkal"
+const-string v4,"TQ"
+invoke-virtual{v1, v2, v4}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v2,"Premium Tatkal"
+const-string v4,"PT"
+invoke-virtual{v1, v2, v4}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v2,"Physically Handicapped"
+const-string v5,"HP"
+invoke-virtual{v1, v2, v5}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-strin g v2,"Ladies"
+const-string v5,"LD"
+invoke-virtual{v1, v2, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v2,"Duty Pass"
+const-string v5,"DP"
+invoke-virtual{v1, v2, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v2,"Lower Berth"
+const-string v5,"SS"
+invoke-virtual{v1, v2, v5}, L j ava/util/HashMap ;-> put(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-strin g v1,"Male"
+const-string v2,"M"
+iget-object v6, v0, Lcom/tatkal/train/quick/TabActivity2;->f:Ljava/util/HashMap;
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Female"
+const-string v2,"F"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Transgender"
+const-string v7,"T"
+invoke-virtual{v6, v1, v7}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+iget-object v1, v0, Lcom/tatkal/train/quick/TabActivity2;->s:Ljava/util/HashMap;
+const-string v6,"LOWER"
+const-string v7,"LB"
+invoke-virtual{v1, v6, v7}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v6,"MIDDLE"
+const-string v8,"MB"
+invoke-virtual{v1, v6, v8}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v6,"UPPER"
+const-strin g v8,"UB"
+invoke-virtual{v1, v6, v8}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-string v6,"SIDE LOWER"
+const-string v8,"SL"
+invoke-virtual{v1, v6, v8}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v6,"SIDE UPPER"
+const-string v9,"SU"
+invoke-virtual{v1, v6, v9}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v6,"WINDOW SIDE"
+const-strin g v10,"WS"
+invoke-virtual{v1, v6, v10}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-string v6,"CABIN"
+const-string v11,"CB"
+invoke-virtual{v1, v6, v11}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v6,"COUPE"
+const-string v11,"CP"
+invoke-virtual{v1, v6, v11}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"VEG"
+const-string v6,"V"
+i g et-ob j ect v11, v0,
+Lcom/tatkal/train/ q uick/TabActivit y 2;->t:L j ava/util/HashMa p ;
+invoke-virtual{v11, v1, v6}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-string v1,"NON VEG"
+const-string v6,"N"
+invoke-virtual{v11, v1, v6}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"JAIN MEAL"
+const-string v6,"J"
+invoke-virtual{v11, v1, v6}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"VEG(DIABETIC)"
+invoke-virtual{v11, v1, v2}, L j ava/util/HashMap ;-> put(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-strin g v1,"NON VEG(DIABETIC)"
+const-string v2,"G"
+invoke-virtual{v11, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"NO FOOD"
+const-string v2,"D"
+invoke-virtual{v11, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton5:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-strin g v2,"DEBIT_CARD"
+i g et-ob j ect v6, v0,
+Lcom/tatkal/train/ q uick/TabActivit y 2;->u:L j ava/util/HashMa p ;
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton4:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-string v2,"UPI_VPA"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton6:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-ob j ect v1
+const-strin g v2,"NETBANKING"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton7:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-string v2,"SCAN_AND_PAY"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton8:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-ob j ect v1
+const-strin g v2,"CASH_CARD"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton13:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-string v2,"MULTIPLE_GATEWAY"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton14:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-ob j ect v1
+const-strin g v2,"IRCTC_IPAY"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton10:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-string v2,"E_WALLET"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton11:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-ob j ect v1
+const-strin g v2,"CREDIT_CARD"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton12:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-string v11,"COD"
+invoke-virtual{v6, v1, v11}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-ob j ect v1
+const/4 v6, 0x0
+invoke-static{v6}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v6
+iget-object v11, v0, Lcom/tatkal/train/quick/TabActivity2;->v:Ljava/util/HashMap;
+invoke-virtual{v11, v1, v6}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton2:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const/4 v12, 0x1
+invoke-static{v12}, Lj ava/lan g /Inte g er;->valueOf(I)Lj ava/lan g /Inte g er;
+move-result-ob j ect v12
+invoke-virtual{v11, v1, v12}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+sget v1, Lhw1;->radioButton3:I
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const/4 v13, 0x2
+invoke-static{v13}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v13
+invoke-virtual{v11, v1, v13}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+s g et v1, Lhw1;->radioButton4:I
+invoke-static{v1}, Lj ava/lan g /Inte g er;->valueOf(I)Lj ava/lan g /Inte g er;
+move-result-object v1
+const/4 v14, 0x3
+invoke-static{v14}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v14
+invoke-virtual{v11, v1, v14}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+iget-object v1, v0, Lcom/tatkal/train/quick/TabActivity2;->w:Ljava/util/HashMap;
+const-string v11,"Master Card"
+const-string v15,"MC"
+invoke-virtual{v1, v11, v15}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-strin g v11,"VISA"
+invoke-virtual{v1, v11, v11}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v11,"RuPay"
+move-object/from16 v16, v9
+const-string v9,"RU"
+invoke-virtual{v1, v11, v9}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Personal"
+const-string v11,"R"
+move-object/from16 v17, v5
+i g et-ob j ect v5, v0,
+Lcom/tatkal/train/ q uick/TabActivit y 2;->x:L j ava/util/HashMa p ;
+invoke-virtual{v5, v1, v11}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-string v1,"Corporate"
+const-string v11,"C"
+invoke-virtual{v5, v1, v11}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Below one year"
+iget-object v5, v0, Lcom/tatkal/train/quick/TabActivity2;->y:Ljava/util/HashMap;
+invoke-virtual{v5, v1, v6}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"One year"
+invoke-virtual{v5, v1, v12}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-strin g v1,"Two y ears"
+invoke-virtual{v5, v1, v13}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Three years"
+invoke-virtual{v5, v1, v14}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const/4 v1, 0x4
+invoke-static{v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+move-result-object v1
+const-string v11,"Four years"
+invoke-virtual{v5, v11, v1}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-strin g v5,"State Bank of Bikaner and Jai p ur"
+i g et-ob j ect v11, v0,
+Lcom/tatkal/train/ q uick/TabActivit y 2;->z:L j ava/util/HashMa p ;
+invoke-virtual{v11, v5, v6}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v5,"State Bank of Patiala"
+invoke-virtual{v11, v5, v12}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v5,"State Bank of Hyderabad"
+invoke-virtual{v11, v5, v13}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v5,"State Bank of Travancore"
+invoke-virtual{v11, v5, v14}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-strin g v5,"State Bank of M y sore"
+invoke-virtual{v11, v5, v1}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Handicapped"
+const-string v5,"1"
+iget-object v6, v0, Lcom/tatkal/train/quick/TabActivity2;->C:Ljava/util/HashMap;
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Escort"
+const-string v5,"2"
+invoke-virtual{v6, v1, v5}, L ja va/util/HashMap;->put(Lja va/lang /Object;Lja va/lang /Object;)Lja va/lang /Ob j ect;
+const-strin g v1,"Drivin g Licence"
+const-strin g v5,"DRIVING_LICENSE"
+iget-object v6, v0, Lcom/tatkal/train/quick/TabActivity2;->D:Ljava/util/HashMap;
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Passport/Travel document"
+const-string v5,"PASSPORT"
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"PAN Card"
+const-string v5,"PANCARD"
+invoke-virtual{v6, v1, v5}, L j ava/util/HashMa p ;-> p ut(Lj ava/lan g /Ob j ect;L j ava/lan g /Ob j ect;)Lj ava/lan g /Ob j ect;
+const-strin g v1,"Voter ID-card"
+const-string v5,"VOTER_ICARD"
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Govt Issued ID-Card"
+const-string v5,"GOVT_ICARD"
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Student ID-Card"
+const-string v5,"STUDENT_ICARD"
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-strin g v1,"Bank Passbook"
+const-strin g v5,"BANK_PASSBOOK"
+invoke-virtual{v6, v1, v5}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Credit card with Photo"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+const-string v1,"Aadhaar ID"
+const-string v2,"UNIQUE_ICARD"
+invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
