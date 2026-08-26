@@ -1773,3 +1773,23 @@ invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lan
 const-string v1,"Aadhaar ID"
 const-string v2,"UNIQUE_ICARD"
 invoke-virtual{v6, v1, v2}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang /Object;
+iget-object v3, v0, Lcom/tatkal/train/quick/TabActivity2;->L1:Landroid/widget/EditText;
+new-instance v6, Ljava/lang/String;
+invoke-direct{v6, v9}, Ljava/lang/String;-><init>([B)V
+invoke-virtual{v3, v6}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+iget-object v3, v0, Lcom/tatkal/train/quick/TabActivity2;->M1:Landroid/widget/EditText;
+new-instance v6, Ljava/lang/String;
+invoke-direct{v6, v10}, Ljava/lang/String;-><init>([B)V
+invoke-virtual{v3, v6}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+iget-object v3, v0, Lcom/tatkal/train/quick/TabActivity2;->G1:Landroid/widget/Spinner;
+new-instance v6, Ljava/lang/String;
+invoke-direct{v6, v7}, Ljava/lang/String;-><init>([B)V
+iget-object v7, v0, Lcom/tatkal/train/quick/TabActivity2;->G1:Landroid/widget/Spinner;
+invoke-static{v7, v6}, Lcom/tatkal/train/quick/HomeActivity;->z(Landroid/widget/Spinner;Ljava/ lang/String;)I
+move-result v6
+invoke-virtual{v3, v6}, Landroid/widget/AdapterView;->setSelection(I)V
+:cond_54
+:cond_55
+invoke-interface{v1}, Landroid/database/Cursor;->close()V
+return-void
+.end method
