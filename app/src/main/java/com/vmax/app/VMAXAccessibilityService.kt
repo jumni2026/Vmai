@@ -1,938 +1,139 @@
-package com.vmax.app
-
-import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.Context
-import android.util.Log
-import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Toast
-import com.vmax.action.AndroidActionExecutor
-import com.vmax.common.Result
-import com.vmax.workflow.WorkflowController
-import com.vmax.workflow.WorkflowState
-import java.util.ArrayDeque
-import java.util.Locale
-
-/**
- * Persistent automation data.
- *
- * Responsibilities:
- * - Store armed state.
- * - Store passenger information.
- * - Store current workflow state.
- *
- * This class intentionally contains no UI automation logic.
- */
-class AutomationDataStore(
-    private val context: Context
-) {
-
-    companion object {
-        private const val PREFS_NAME = "vmax_automation_state"
-
-        private const val KEY_IS_ARMED = "is_armed"
-        private const val KEY_STATE = "workflow_state"
-
-        private const val KEY_NAME = "passenger_name"
-        private const val KEY_AGE = "passenger_age"
-        private const val KEY_GENDER = "passenger_gender"
-
-        fun armAutomationSync(
-            context: Context,
-            name: String,
-            age: String,
-            gender: String
-        ): Boolean {
-            return context
-                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_IS_ARMED, true)
-                .putString(KEY_NAME, name.trim())
-                .putString(KEY_AGE, age.trim())
-                .putString(KEY_GENDER, gender.trim())
-                .commit()
-        }
-
-        fun clearAutomationSync(
-            context: Context
-        ): Boolean {
-            return context
-                .getSharedPreferences(
-                    PREFS_NAME,
-                    Context.MODE_PRIVATE
-                )
-                .edit()
-                .clear()
-                .commit()
-        }
-    }
-
-    private val prefs =
-        context.getSharedPreferences(
-            PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
-
-    fun isArmed(): Boolean =
-        prefs.getBoolean(KEY_IS_ARMED, false)
-
-    fun getName(): String =
-        prefs.getString(KEY_NAME, "") ?: ""
-
-    fun getAge(): String =
-        prefs.getString(KEY_AGE, "") ?: ""
-
-    fun getGender(): String =
-        prefs.getString(KEY_GENDER, "") ?: ""
-
-    fun saveWorkflowStateSync(
-        state: WorkflowState
-    ): Boolean {
-        return prefs
-            .edit()
-            .putString(KEY_STATE, state.name)
-            .commit()
-    }
-
-    fun getWorkflowState(): WorkflowState? {
-        val value = prefs.getString(
-            KEY_STATE,
-            null
-        ) ?: return null
-
-        return try {
-            WorkflowState.valueOf(value)
-        } catch (_: IllegalArgumentException) {
-            null
-        }
-    }
-}
-
-/**
- * VMAX Accessibility Service.
- *
- * Responsibilities:
- * - Observe the target application.
- * - Detect relevant UI context.
- * - Perform safe assistive actions.
- * - Persist workflow state.
- * - Stop at CAPTCHA/security and final booking/payment boundaries.
- *
- * CAPTCHA is always completed manually by the user.
- */
-class VMAXAccessibilityService : AccessibilityService() {
-
-    companion object {
-
-        private const val TAG =
-            "VMAX_A11y_Service"
-
-        private const val IRCTC_PACKAGE =
-            "cris.org.in.prs.ima"
-
-        enum class AutomationState {
-            IDLE,
-            RUNNING,
-            WAITING_FOR_CAPTCHA,
-            PAUSED,
-            STOPPED
-        }
-
-        @Volatile
-        var automationState =
-            AutomationState.IDLE
-            private set
-
-        var onAutomationStateChanged:
-                ((AutomationState) -> Unit)? = null
-
-        fun armAutomation(
-            context: Context,
-            name: String,
-            age: String,
-            gender: String
-        ) {
-            val success =
-                AutomationDataStore
-                    .armAutomationSync(
-                        context = context,
-                        name = name,
-                        age = age,
-                        gender = gender
-                    )
-
-            if (success) {
-                setState(
-                    AutomationState.RUNNING
-                )
-
-                Log.i(
-                    TAG,
-                    "Automation armed and persisted"
-                )
-            } else {
-                Log.e(
-                    TAG,
-                    "Failed to persist automation data"
-                )
-
-                setState(
-                    AutomationState.IDLE
-                )
-            }
-        }
-
-        fun stopAutomation(
-            context: Context
-        ) {
-            val success =
-                AutomationDataStore
-                    .clearAutomationSync(context)
-
-            if (success) {
-                setState(
-                    AutomationState.STOPPED
-                )
-
-                Log.i(
-                    TAG,
-                    "Automation stopped"
-                )
-            } else {
-                Log.e(
-                    TAG,
-                    "Failed to clear automation data"
-                )
-            }
-        }
-
-        private fun setState(
-            newState: AutomationState
-        ) {
-            automationState = newState
-            onAutomationStateChanged
-                ?.invoke(newState)
-        }
-    }
-
-    private lateinit var actionExecutor:
-            AndroidActionExecutor
-
-    private lateinit var workflowController:
-            WorkflowController
-
-    private lateinit var dataStore:
-            AutomationDataStore
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-
-        serviceInfo =
-            AccessibilityServiceInfo().apply {
-
-                eventTypes =
-                    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-
-                feedbackType =
-                    AccessibilityServiceInfo.FEEDBACK_GENERIC
-
-                flags =
-                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-
-                notificationTimeout = 100L
-            }
-
-        actionExecutor =
-            AndroidActionExecutor(this)
-
-        workflowController =
-            WorkflowController()
-
-        dataStore =
-            AutomationDataStore(this)
-
-        restorePersistedState()
-
-        Log.i(
-            TAG,
-            "VMAX Accessibility Service connected"
-        )
-    }
-
-    /**
-     * Restores persistent state without inventing
-     * any WorkflowController API.
-     */
-    private fun restorePersistedState() {
-
-        if (!dataStore.isArmed()) {
-            setState(
-                AutomationState.IDLE
-            )
-
-            return
-        }
-
-        val savedState =
-            dataStore.getWorkflowState()
-
-        if (savedState != null) {
-            workflowController.updateState(
-                savedState
-            )
-
-            Log.i(
-                TAG,
-                "Restored workflow state: $savedState"
-            )
-        }
-
-        setState(
-            AutomationState.RUNNING
-        )
-    }
-
-    override fun onAccessibilityEvent(
-        event: AccessibilityEvent?
-    ) {
-
-        if (event == null) {
-            return
-        }
-
-        if (
-            event.packageName
-                ?.toString() != IRCTC_PACKAGE
-        ) {
-            return
-        }
-
-        if (
-            automationState !=
-            AutomationState.RUNNING &&
-            automationState !=
-            AutomationState.WAITING_FOR_CAPTCHA
-        ) {
-            return
-        }
-
-        val root =
-            rootInActiveWindow
-                ?: return
-
-        try {
-
-            /*
-             * Security boundary has priority over
-             * every normal workflow action.
-             */
-            if (
-                containsSecurityBoundary(root)
-            ) {
-                handleSecurityBoundary()
-                return
-            }
-
-            /*
-             * When CAPTCHA disappears, restore the
-             * previously persisted workflow state.
-             */
-            if (
-                automationState ==
-                AutomationState.WAITING_FOR_CAPTCHA
-            ) {
-                handleSecurityBoundaryCleared()
-                return
-            }
-
-            if (
-                automationState ==
-                AutomationState.RUNNING
-            ) {
-                observeAndAct(root)
-            }
-
-        } catch (exception: Exception) {
-
-            Log.e(
-                TAG,
-                "Accessibility event processing failed",
-                exception
-            )
-        }
-    }
-
-    /**
-     * Stop workflow at CAPTCHA/security boundary.
-     */
-    private fun handleSecurityBoundary() {
-
-        if (
-            automationState ==
-            AutomationState.WAITING_FOR_CAPTCHA
-        ) {
-            return
-        }
-
-        val currentState =
-            workflowController.getCurrentState()
-
-        /*
-         * Preserve the exact workflow state before
-         * entering the manual security boundary.
-         */
-        dataStore.saveWorkflowStateSync(
-            currentState
-        )
-
-        setState(
-            AutomationState.WAITING_FOR_CAPTCHA
-        )
-
-        showToast(
-            "CAPTCHA आया है। कृपया इसे मैन्युअली पूरा करें।"
-        )
-
-        Log.w(
-            TAG,
-            "Security boundary detected at $currentState"
-        )
-    }
-
-    /**
-     * Resume the persisted workflow state after
-     * the security boundary disappears.
-     */
-    private fun handleSecurityBoundaryCleared() {
-
-        val savedState =
-            dataStore.getWorkflowState()
-
-        if (savedState != null) {
-
-            workflowController.updateState(
-                savedState
-            )
-
-            Log.i(
-                TAG,
-                "Workflow restored after security boundary: $savedState"
-            )
-        } else {
-
-            Log.w(
-                TAG,
-                "No persisted workflow state available after CAPTCHA"
-            )
-        }
-
-        setState(
-            AutomationState.RUNNING
-        )
-
-        showToast(
-            "CAPTCHA पूरा हो गया। Workflow फिर से शुरू है।"
-        )
-    }
-
-    /**
-     * Main workflow dispatcher.
-     *
-     * Final booking/payment actions intentionally
-     * remain outside this service.
-     */
-    private fun observeAndAct(
-        root: AccessibilityNodeInfo
-    ) {
-
-        when (
-            workflowController.getCurrentState()
-        ) {
-
-            WorkflowState.CONFIGURED -> {
-
-                if (
-                    hasScreenContext(
-                        root,
-                        "from",
-                        "to",
-                        "date"
-                    )
-                ) {
-
-                    val result =
-                        actionExecutor
-                            .executeClickByText(
-                                root,
-                                "search",
-                                "find trains"
-                            )
-
-                    if (
-                        result is Result.Success
-                    ) {
-
-                        transitionTo(
-                            WorkflowState.SEARCHING_TRAINS
-                        )
-                    }
-                }
-            }
-
-            WorkflowState.SEARCHING_TRAINS -> {
-
-                /*
-                 * Do not select/book a train automatically.
-                 *
-                 * Wait for the next user-selected screen.
-                 */
-                if (
-                    hasScreenContext(
-                        root,
-                        "passenger",
-                        "details"
-                    )
-                ) {
-
-                    transitionTo(
-                        WorkflowState.WAITING_FOR_PASSENGER_FORM
-                    )
-                }
-            }
-
-            WorkflowState.WAITING_FOR_PASSENGER_FORM -> {
-
-                if (
-                    hasScreenContext(
-                        root,
-                        "passenger",
-                        "name"
-                    )
-                ) {
-
-                    transitionTo(
-                        WorkflowState.FILLING_PASSENGER_NAME
-                    )
-                }
-            }
-
-            WorkflowState.FILLING_PASSENGER_NAME -> {
-
-                val name =
-                    dataStore.getName()
-
-                if (name.isBlank()) {
-                    Log.w(
-                        TAG,
-                        "Passenger name is empty"
-                    )
-                    return
-                }
-
-                val result =
-                    actionExecutor
-                        .executeSetTextByText(
-                            root,
-                            name,
-                            "passenger name",
-                            "name"
-                        )
-
-                if (
-                    result is Result.Success
-                ) {
-
-                    transitionTo(
-                        WorkflowState.FILLING_PASSENGER_AGE
-                    )
-                }
-            }
-
-            WorkflowState.FILLING_PASSENGER_AGE -> {
-
-                val age =
-                    dataStore.getAge()
-
-                if (age.isBlank()) {
-                    Log.w(
-                        TAG,
-                        "Passenger age is empty"
-                    )
-                    return
-                }
-
-                val result =
-                    actionExecutor
-                        .executeSetTextByText(
-                            root,
-                            age,
-                            "age"
-                        )
-
-                if (
-                    result is Result.Success
-                ) {
-
-                    transitionTo(
-                        WorkflowState.SELECTING_GENDER
-                    )
-                }
-            }
-
-            WorkflowState.SELECTING_GENDER -> {
-
-                val gender =
-                    dataStore
-                        .getGender()
-                        .trim()
-                        .lowercase(Locale.ROOT)
-
-                if (gender.isBlank()) {
-                    Log.w(
-                        TAG,
-                        "Passenger gender is empty"
-                    )
-                    return
-                }
-
-                val result =
-                    actionExecutor
-                        .executeClickByText(
-                            root,
-                            gender
-                        )
-
-                if (
-                    result is Result.Success
-                ) {
-
-                    /*
-                     * Stop at the manual boundary.
-                     *
-                     * No automatic booking/payment/final
-                     * confirmation is performed here.
-                     */
-                    transitionTo(
-                        WorkflowState.USER_BOUNDARY
-                    )
-
-                    showToast(
-                        "Passenger details पूरे हैं। आगे की प्रक्रिया मैन्युअली करें।"
-                    )
-                }
-            }
-
-            WorkflowState.USER_BOUNDARY -> {
-
-                Log.i(
-                    TAG,
-                    "User boundary reached; waiting for manual action"
-                )
-            }
-
-            WorkflowState.WAITING_FOR_PAYMENT -> {
-
-                Log.i(
-                    TAG,
-                    "Payment stage requires manual user action"
-                )
-            }
-
-            else -> Unit
-        }
-    }
-
-    /**
-     * Central state transition.
-     *
-     * Controller = runtime source of truth.
-     * DataStore = persistence layer.
-     */
-    private fun transitionTo(
-        newState: WorkflowState
-    ) {
-
-        workflowController.updateState(
-            newState
-        )
-
-        val persisted =
-            dataStore.saveWorkflowStateSync(
-                newState
-            )
-
-        if (!persisted) {
-
-            Log.e(
-                TAG,
-                "Failed to persist workflow state: $newState"
-            )
-
-        } else {
-
-            Log.d(
-                TAG,
-                "Workflow state -> $newState"
-            )
-        }
-    }
-
-    /**
-     * Requires at least two independent UI keywords.
-     */
-    private fun hasScreenContext(
-        root: AccessibilityNodeInfo,
-        vararg keywords: String
-    ): Boolean {
-
-        val normalizedKeywords =
-            keywords
-                .map {
-                    it.trim()
-                        .lowercase(Locale.ROOT)
-                }
-                .filter {
-                    it.isNotEmpty()
-                }
-                .distinct()
-
-        if (
-            normalizedKeywords.size < 2
-        ) {
-            return false
-        }
-
-        val queue =
-            ArrayDeque<AccessibilityNodeInfo>()
-
-        val owned =
-            mutableListOf<AccessibilityNodeInfo>()
-
-        enqueueChildren(
-            root,
-            queue
-        )
-
-        val matched =
-            mutableSetOf<String>()
-
-        while (queue.isNotEmpty()) {
-
-            val node =
-                queue.removeFirst()
-
-            val text =
-                node.text
-                    ?.toString()
-                    ?.lowercase(Locale.ROOT)
-                    ?: ""
-
-            val description =
-                node.contentDescription
-                    ?.toString()
-                    ?.lowercase(Locale.ROOT)
-                    ?: ""
-
-            val combined =
-                "$text $description"
-
-            normalizedKeywords.forEach { keyword ->
-
-                if (
-                    combined.contains(keyword)
-                ) {
-                    matched.add(keyword)
-                }
-            }
-
-            if (
-                matched.size >= 2
-            ) {
-
-                recycleNodes(
-                    queue,
-                    owned
-                )
-
-                return true
-            }
-
-            owned.add(node)
-
-            enqueueChildren(
-                node,
-                queue
-            )
-        }
-
-        recycleNodes(
-            queue,
-            owned
-        )
-
-        return false
-    }
-
-    /**
-     * Detect explicit CAPTCHA/security boundary.
-     *
-     * This function only detects the boundary.
-     * It does not solve or bypass it.
-     */
-    private fun containsSecurityBoundary(
-        root: AccessibilityNodeInfo
-    ): Boolean {
-
-        val securityKeywords =
-            listOf(
-                "captcha",
-                "enter captcha",
-                "captcha code",
-                "refresh captcha",
-                "verification code",
-                "verify code"
-            )
-
-        val queue =
-            ArrayDeque<AccessibilityNodeInfo>()
-
-        val owned =
-            mutableListOf<AccessibilityNodeInfo>()
-
-        enqueueChildren(
-            root,
-            queue
-        )
-
-        while (queue.isNotEmpty()) {
-
-            val node =
-                queue.removeFirst()
-
-            val text =
-                node.text
-                    ?.toString()
-                    ?.lowercase(Locale.ROOT)
-                    ?: ""
-
-            val description =
-                node.contentDescription
-                    ?.toString()
-                    ?.lowercase(Locale.ROOT)
-                    ?: ""
-
-            val combined =
-                "$text $description"
-
-            if (
-                securityKeywords.any {
-                    combined.contains(it)
-                }
-            ) {
-
-                recycleNodes(
-                    queue,
-                    owned
-                )
-
-                return true
-            }
-
-            owned.add(node)
-
-            enqueueChildren(
-                node,
-                queue
-            )
-        }
-
-        recycleNodes(
-            queue,
-            owned
-        )
-
-        return false
-    }
-
-    private fun enqueueChildren(
-        node: AccessibilityNodeInfo,
-        queue: ArrayDeque<AccessibilityNodeInfo>
-    ) {
-
-        for (
-            index in 0 until node.childCount
-        ) {
-
-            node.getChild(index)
-                ?.let(queue::addLast)
-        }
-    }
-
-    private fun recycleNodes(
-        queue: ArrayDeque<AccessibilityNodeInfo>,
-        owned: MutableList<AccessibilityNodeInfo>
-    ) {
-
-        while (
-            queue.isNotEmpty()
-        ) {
-
-            try {
-                queue
-                    .removeFirst()
-                    .recycle()
-            } catch (_: Exception) {
-            }
-        }
-
-        owned.forEach { node ->
-
-            try {
-                node.recycle()
-            } catch (_: Exception) {
-            }
-        }
-
-        owned.clear()
-    }
-
-    private fun showToast(
-        message: String
-    ) {
-
-        Toast.makeText(
-            applicationContext,
-            message,
-            Toast.LENGTH_LONG
-        ).show()
-    }
-
-    override fun onInterrupt() {
-
-        setState(
-            AutomationState.PAUSED
-        )
-
-        Log.w(
-            TAG,
-            "Accessibility service interrupted"
-        )
-    }
-
-    override fun onDestroy() {
-
-        setState(
-            AutomationState.STOPPED
-        )
-
-        Log.i(
-            TAG,
-            "VMAX Accessibility Service destroyed"
-        )
-
-        super.onDestroy()
-    }
-}
+<html lang="en" dir="ltr">
+<head>  
+    <title>Use of Accessibility Service - VMAX</title>  
+    <style>  
+    .me-s{  
+      color:#0948B3;  
+      font-size: 19px;  
+      margin: 0 auto;  
+    }  
+    .me-d{  
+      font-size: 15px!important;  
+      color: #484848!important;  
+    }  
+    .me-a{  
+      margin-bottom: 10px;  
+      display:inline;  
+    }  
+    .contt2{  
+      background-color:#003895!important;  
+    }  
+    .contt3{  
+      background-color:#ECF1FF!important;  
+    }  
+    </style>  
+    <!-- Primary Meta Tags -->  
+    <meta charset="utf-8">  
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">  
+    <meta name="author" content="Termify">  
+    <link rel="canonical" href="/">  
+    <meta name="description" content="We create customized Privacy Policies and Terms &amp; Conditions in a matter of seconds to keep your business safe from any legal issue.">  
+    <meta name="keywords" content="privacy policy, privacy, tos, terms, terms of use, terms and conditions, terms &amp; conditions, privacy policy generator, generate tos">  
+    <meta itemprop="image" content="https://termify.io/assets/img/termify-background.png">  
+    
+    <!-- Open Graph / Facebook -->  
+    <meta property="og:type" content="website">  
+    <meta property="og:url" content="/">  
+    <meta property="og:title" content="VMAX | Customized Privacy Policies and Terms &amp; Conditions in seconds">  
+    <meta property="og:description" content="We create customized Privacy Policies and Terms &amp; Conditions in a matter of seconds to keep your business safe from any legal issue.">  
+    <meta property="og:image" content="https://termify.io/assets/img/termify-background.png">  
+
+    <!-- Twitter -->  
+    <meta property="twitter:card" content="summary_large_image">  
+    <meta property="twitter:url" content="/">  
+    <meta property="twitter:title" content="VMAX | Customized Privacy Policies and Terms &amp; Conditions in seconds">  
+    <meta property="twitter:description" content="We create customized Privacy Policies and Terms &amp; Conditions in a matter of seconds to keep your business safe from any legal issue.">  
+    <meta property="twitter:image" content="https://termify.io/assets/img/termify-background.png">  
+
+    <!-- Favicon -->  
+    <link rel="apple-touch-icon" sizes="120x120" href="https://termify.io/assets/imgs/termify-white.png">  
+    <link rel="icon" type="image/png" sizes="32x32" href="https://termify.io/assets/img/favicon2-termify.png">  
+    <link rel="icon" type="image/png" sizes="16x16" href="https://termify.io/assets/img/favicon2-termify.png">  
+    <link rel="manifest" href="https://termify.io/assets/img/favicon/site.webmanifest">  
+    <link rel="mask-icon" href="https://termify.io/assets/img/favicon/safari-pinned-tab.svg" color="#ffffff">  
+    <meta name="msapplication-TileColor" content="#ffffff">  
+    <meta name="theme-color" content="#ffffff">  
+
+    <!-- Fontawesome -->  
+    <link type="text/css" href="https://termify.io/node_modules/@fortawesome/fontawesome-free/css/all.min.css" rel="stylesheet">  
+
+    <!-- Prism -->  
+    <link type="text/css" href="https://termify.io/node_modules/prismjs/themes/prism.css" rel="stylesheet">  
+
+    <!-- Rocket CSS -->  
+    <link type="text/css" href="https://termify.io/css/rocket.css" rel="stylesheet">  
+
+    <script type="text/javascript" async="" src="https://www.google-analytics.com/analytics.js"></script>
+    <script src="https://unpkg.com/vue"></script>  
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>  
+
+    <!-- Global site tag (gtag.js) - Google Analytics -->  
+    <script async="" src="https://www.googletagmanager.com/gtag/js?id=UA-175370398-1"></script>  
+    <script>  
+      window.dataLayer = window.dataLayer || [];  
+      function gtag(){dataLayer.push(arguments);}  
+      gtag('js', new Date());  
+      gtag('config', 'UA-175370398-1');  
+    </script>  
+</head>
+<body style="background:#f4f9fd!important;">
+    <div style="display:none"><img src="https://whos.amung.us/swidget/termifyio.png"></div>
+
+    <header class="header-global">  
+        <style>  
+          .navbar{  
+            background-color: #000000;  
+          }  
+          @media screen and (max-width: 1199px){  
+            .responsive-margin{  
+              margin-left: 30px;  
+              margin-right: 30px;  
+            }  
+          }  
+        </style>  
+        <nav style="position: absolute;" id="navbar-main" class="navbar navbar-main navbar-expand-lg navbar-dark navbar-theme-primary headroom py-lg-2 px-lg-6">  
+            <div class="container">  
+                <div style="color: #fff;" class="col-md-12">  
+                    <h1 style="color: #fff;">  
+                        VMAX - Train Ticket Automation              
+                    </h1>  
+                    <p>  
+                        Use of Accessibility Service API  
+                    </p>  
+                </div>  
+            </div>  
+        </nav>  
+    </header>  
+    
+    <div class="container">  
+        <div style="background-color: #fff;" class="section-container pricing-cards-container">  
+            <div style="padding: 150px 0 100px 0!important; max-width: 900px; margin: 30px auto;">  
+                <div class="responsive-margin">  
+                    <div style="text-align: center!important; margin: 0 auto!important;" class="col-12 col-md-8">  
+                        <h3 class="display-2 mb-3" style="color:#3f4554;">Use of Accessibility Service API</h3>  
+                    </div>  
+                    <br><br><br>  
+                    <h3 style="color: #474c52 !important;" class="text-muted">Why Accessibility Service is needed in VMAX?</h3>  
+                    <p class="text-muted">The VMAX app is used to book train tickets (especially in TATKAL quota) on the IRCTC website or IRCTC Rail Connect app. It saves time by filling all the details for you so that you can get a ticket as quickly as possible in the TATKAL quota's first-come, first-serve basis.</p>  
+                    <p class="text-muted">So, in order to automate the IRCTC Rail Connect app and autofill the details, the accessibility service is needed in VMAX so that it can access and control the app securely.</p>  
+                    <br>  
+                    
+                    <h3 style="color: #474c52 !important;" class="text-muted">How is the accessibility service used for the automated ticket booking feature of VMAX?</h3>  
+                    <p class="text-muted">Enabling the accessibility service for VMAX helps it to control other apps (in our case, the IRCTC Rail Connect app). If you have an IRCTC account and want to book TATKAL quota tickets with a good chance of getting a confirmed ticket, you can do so using VMAX.</p>  
+                    <p class="text-muted">There are 2 modes of booking: Using the IRCTC Website & using the IRCTC Rail Connect app. To book using the latter, we have made a video for a complete demonstration of how to use it and explained why it is needed. You can watch the video <a href="https://youtu.be/V_keFEeN4Ek">here</a>.</p>  
+                    <br>  
+
+                    <h3 style="color: #474c52 !important;" class="text-muted">What data is collected by VMAX using the accessibility service and for what purpose?</h3>  
+                    <p class="text-muted">VMAX does not collect or store any of your personal or sensitive data accessed using the Accessibility Service. The service is strictly used to fill the data automatically in the IRCTC Rail Connect app in order to book the train ticket quickly and securely.</p>  
+                    <br>  
+                    
+                    <h3 style="color: #474c52 !important;" class="text-muted">How to enable accessibility service for VMAX?</h3>  
+                    <p class="text-muted">In the VMAX app, go to <strong>Dashboard → Ticket Booking → New Form</strong>. You can fill in all the booking details here, which will be auto-filled while booking the train ticket. In the RAILCONNECT tab, when you click on 'Book Now' to start the booking, it will display a prompt to enable the accessibility service for VMAX, with 'SETTINGS' and 'CANCEL' buttons. By clicking SETTINGS, it will take you to your phone's Accessibility Service settings, where you can find the VMAX app in the list of apps using the accessibility service and enable it.</p>  
+                    <p class="text-muted">If you do not wish to enable the accessibility service, you would not be able to book tickets by autofilling the Rail Connect app. However, you can still use the WEBSITE option to book the ticket on the IRCTC website through automation.</p>  
+                    <br>  
+                </div>  
+            </div>  
+        </div>  
+    </div>  
+</body>
+</html>
