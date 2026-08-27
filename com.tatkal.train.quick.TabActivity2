@@ -12,13 +12,13 @@
 .field public final A0:[Landroid/widget/Spinner;
 .field public A1:Landroid/widget/TextView;
 .field public A2:Landroid/widget/CheckBox;
-.field pub lic final B:L j ava/util/HashMap ;
-.field p ublic final B0:[Landroid/wid g et/S p inner;
-.field p ublic B1:Landroid/wid g et/TextView;
-.field p ublic B2:Landroid/wid g et/CheckBox;
-.field p ublic final C:L j ava/util/HashMa p ;
-.field p ublic final C0:[Landroid/wid g et/S p inner;
-.field p ublic C1:Landroid/wid g et/S p inner;
+.pub lic final B:L j ava/util/HashMap ;
+.p ublic final B0:[Landroid/wid g et/S p inner;
+.p ublic B1:Landroid/wid g et/TextView;
+.p ublic B2:Landroid/wid g et/CheckBox;
+.p ublic final C:L j ava/util/HashMa p ;
+.p ublic final C0:[Landroid/wid g et/S p inner;
+.p ublic C1:Landroid/wid g et/S p inner;
 .fi e l d p ub li c C 2:L a n d r o i d /wi d g et/C h ec kB o x;
 .fi e l d p ub li c fin a l D:L j a v a / util/H as hM a p ;
 .fi e l d p ub li c fin a l D0:[La n d r o i d /wi d g et/C h ec kB o x;
@@ -36,13 +36,13 @@
 .field public final G0:[Landroid/widget/EditText;
 .field public G1:Landroid/widget/Spinner;
 .field public G2:I
-.field pub lic H:[B
-.field p ublic final H0:[Landroid/wid g et/EditText;
-.field p ublic H1:Landroid/wid g et/S p inner;
-.field p ublic H2:Landroid/wid g et/LinearLa y out;
-.field p ublic I:L j ava/lan g /Strin g ;
-.field p ublic final I0:[Landroid/wid g et/S p inner;
-.field p ublic I1:Landroid/wid g et/S p inner;
+.pub lic H:[B
+.p ublic final H0:[Landroid/wid g et/EditText;
+.p ublic H1:Landroid/wid g et/S p inner;
+.p ublic H2:Landroid/wid g et/LinearLa y out;
+.p ublic I:L j ava/lan g /Strin g ;
+.p ublic final I0:[Landroid/wid g et/S p inner;
+.p ublic I1:Landroid/wid g et/S p inner;
 .fi e l d p ub li c I2:L a n d r o i d /wi d g et/Lin ea rL a y out;
 .fi e l d p ub li c J :I
 .fi e l d p ub li c fin a l J 0:[La n d r o i d /wi d g et/S p inn e r;
@@ -60,13 +60,13 @@
 .field public M0:Landroid/widget/CheckBox;
 .field public M1:Landroid/widget/EditText;
 .field public final M2:Ljava/util/LinkedHashMap;
-.field pub lic N:I
-.field p ublic N0:Landroid/wid g et/CheckBox;
-.field p ublic N1:Landroid/wid g et/RadioGrou p ;
-.field p ublic final N2:L j ava/util/Arra y List;
-.field p ublic O:I
-.field p ublic O0:Landroid/wid g et/CheckBox;
-.field p ublic O1:Landroid/wid g et/RelativeLa y out;
+.pub lic N:I
+.p ublic N0:Landroid/wid g et/CheckBox;
+.p ublic N1:Landroid/wid g et/RadioGrou p ;
+.p ublic final N2:L j ava/util/Arra y List;
+.p ublic O:I
+.p ublic O0:Landroid/wid g et/CheckBox;
+.p ublic O1:Landroid/wid g et/RelativeLa y out;
 .fi e l d p ub li c fin a l O 2:L j a v a / util/Link ed H as hM a p ;
 .fi e l d p ub li c P:I
 .fi e l d p ub li c P0:L a n d r o i d /wi d g et/C h ec kB o x;
@@ -84,13 +84,13 @@
 .field public S0:Landroid/widget/EditText;
 .field public S1:Landroid/widget/EditText;
 .field public S2:Landroid/widget/LinearLayout;
-.field pub lic T:Landroid/wid g et/EditText;
-.field p ublic T0:Landroid/wid g et/RadioGrou p ;
-.field p ublic T1:Landroid/wid g et/TextView;
-.field p ublic T2:Landroid/wid g et/LinearLa y out;
-.field p ublic U:Landroid/wid g et/S p inner;
-.field p ublic U0:Landroid/wid g et/S p inner;
-.field p ublic U1:Landroid/wid g et/S p inner;
+.pub lic T:Landroid/wid g et/EditText;
+.p ublic T0:Landroid/wid g et/RadioGrou p ;
+.p ublic T1:Landroid/wid g et/TextView;
+.p ublic T2:Landroid/wid g et/LinearLa y out;
+.p ublic U:Landroid/wid g et/S p inner;
+.p ublic U0:Landroid/wid g et/S p inner;
+.p ublic U1:Landroid/wid g et/S p inner;
 .fi e l d p ub li c U 2:L a n d r o i d /wi d g et/Lin ea rL a y out;
 .fi e l d p ub li c V:L a n d r o i d /wi d g et/Im a g e Vi e w;
 .fi e l d p ub li c V0:L a n d r o i d /wi d g et/C h ec kB o x;
@@ -108,44 +108,37 @@
 .field public Y0:Landroid/widget/ImageView;
 .field public Y1:Landroid/widget/CheckBox;
 .field public Y2:Ljava/util/ArrayList;
-.field pub lic Z:Landroid/wid g et/EditText;
-.field p ublic Z0:Landroid/wid g et/CheckBox;
-.field p ublic Z1:Landroid/wid g et/TextView;
-.field p ublic Z2:Z
-.field p ublic a:Lu3;
-.field p ublic a0:Landroid/wid g et/AutoCom p leteTextView;
-.field p ublic a1:Landroid/wid g et/CheckBox;
+.pub lic Z:Landroid/wid g et/EditText;
+.p ublic Z0:Landroid/wid g et/CheckBox;
+.p ublic Z1:Landroid/wid g et/TextView;
+.p ublic Z2:Z
+.p ublic a:Lu3;
+.p ublic a0:Landroid/wid g et/AutoCom p leteTextView;
+.p ublic a1:Landroid/wid g et/CheckBox;
 .fi e l d p ub li c a 2:L a n d r o i d /wi d g et/Te xtVi e w;
-.fi e l d p ub li c a 3:L co m/ g oo g l e / a n d r o i d / g m s / ads /A d Vi e w;
-.fi e l d p ub li c b :Z
+.p ublic b :Z
 .field public b0:Landroid/widget/AutoCompleteTextView;
 .field public b1:Landroid/widget/EditText;
 .field public b2:Landroid/widget/TextView;
-.field public b3:Lcom/google/android/gms/internal/ads/zzbtd;
 .field public final c:Lcom/tatkal/train/quick/TabActivity2;
 .field public c0:Landroid/widget/EditText;
 .field public c1:Landroid/widget/Spinner;
 .field public c2:Landroid/widget/EditText;
-.field public c3:Landroid/widget/FrameLayout;
 .field public d:Landroid/view/Menu;
 .field public d0:Landroid/widget/TextView;
 .field public d1:Landroid/widget/LinearLayout;
 .field public d2:Landroid/widget/Spinner;
-.field public d3:Landroid/widget/FrameLayout;
-.field pub lic final e:L j ava/util/HashMap ;
-.field p ublic e0:Landroid/wid g et/EditText;
-.field p ublic e1:Landroid/wid g et/EditText;
-.field p ublic e2:Landroid/wid g et/EditText;
-.field p ublic e3:Landroid/wid g et/RelativeLa y out;
-.field p ublic final f:L j ava/util/HashMa p ;
-.field p ublic f0:Landroid/wid g et/S p inner;
+.pub lic final e:L j ava/util/HashMap ;
+.p ublic e0:Landroid/wid g et/EditText;
+.p ublic e1:Landroid/wid g et/EditText;
+.p ublic e2:Landroid/wid g et/EditText;
+.p ublic final f:L j ava/util/HashMa p ;
+.p ublic f0:Landroid/wid g et/S p inner;
 .fi e l d p ub li c f1:L a n d r o i d /wi d g et/C h ec kB o x;
 .fi e l d p ub li c f2:L a n d r o i d /wi d g et/S p inn e r;
-.fi e l d p ub li c f3:L a n d r o i d /wi d g et/Re l ativ e L a y out;
 .field public g0:Landroid/widget/Spinner;
 .field public g1:Landroid/widget/RelativeLayout;
 .field public g2:Landroid/widget/TextView;
-.field public g3:Landroid/widget/RelativeLayout;
 .field public h0:Landroid/widget/AutoCompleteTextView;
 .field public h1:Landroid/widget/RelativeLayout;
 .field public h2:Landroid/widget/TextView;
@@ -156,13 +149,13 @@
 .field public i3:Z
 .field public j0:Landroid/widget/RadioButton;
 .field public j1:Landroid/widget/CheckBox;
-.field pub lic j 2:Landroid/wid g et/EditText;
-.field p ublic j 3:Lkf1;
-.field p ublic k0:Landroid/wid g et/RadioButton;
-.field p ublic k1:Landroid/wid g et/TextView;
-.field p ublic k2:Landroid/wid g et/TextView;
-.field p ublic k3:Z
-.field p ublic l0:Landroid/wid g et/RadioButton;
+.pub lic j 2:Landroid/wid g et/EditText;
+.p ublic j 3:Lkf1;
+.p ublic k0:Landroid/wid g et/RadioButton;
+.p ublic k1:Landroid/wid g et/TextView;
+.p ublic k2:Landroid/wid g et/TextView;
+.p ublic k3:Z
+.p ublic l0:Landroid/wid g et/RadioButton;
 .fi e l d p ub li c l1:L a n d r o i d /wi d g et/Ed itTe xt;
 .fi e l d p ub li c l2:L a n d r o i d /wi d g et/S p inn e r;
 .fi e l d p ub li c l3:Z
@@ -173,20 +166,19 @@
 .field public n0:Landroid/widget/LinearLayout;
 .field public n1:Landroid/widget/Spinner;
 .field public n2:Landroid/widget/EditText;
-.field public n3:Landroid/widget/RelativeLayout;
 .field public final o0:[Landroid/widget/Spinner;
 .field public o1:Landroid/widget/EditText;
 .field public o2:Landroid/widget/EditText;
 .field public o3:I
 .field public final p0:[Landroid/widget/Spinner;
 .field public p1:Landroid/widget/TextView;
-.field pub lic p 2:Landroid/wid g et/EditText;
-.field p ublic p 3:Landroid/wid g et/EditText;
-.field p ublic final q 0:[Landroid/wid g et/TextView;
-.field p ublic q 1:Landroid/wid g et/EditText;
-.field p ublic q 2:Landroid/wid g et/EditText;
-.field p ublic q 3:Z
-.field p ublic final r0:[Landroid/wid g et/EditText;
+.pub lic p 2:Landroid/wid g et/EditText;
+.p ublic p 3:Landroid/wid g et/EditText;
+.p ublic final q 0:[Landroid/wid g et/TextView;
+.p ublic q 1:Landroid/wid g et/EditText;
+.p ublic q 2:Landroid/wid g et/EditText;
+.p ublic q 3:Z
+.p ublic final r0:[Landroid/wid g et/EditText;
 .fi e l d p ub li c r1:L a n d r o i d /wi d g et/Ed itTe xt;
 .fi e l d p ub li c r2:L a n d r o i d /wi d g et/Ed itTe xt;
 .fi e l d p ub li c r3:Z
@@ -204,13 +196,13 @@
 .field public u1:Landroid/widget/Spinner;
 .field public u2:Landroid/widget/LinearLayout;
 .field public final v:Ljava/util/HashMap;
-.field pub lic final v0:[Landroid/wid g et/Sp inner;
-.field p ublic v1:Landroid/wid g et/EditText;
-.field p ublic v2:Landroid/wid g et/LinearLa y out;
-.field p ublic final w:L j ava/util/HashMa p ;
-.field p ublic final w0:[Landroid/wid g et/EditText;
-.field p ublic w1:Landroid/wid g et/S p inner;
-.field p ublic w2:I
+.pub lic final v0:[Landroid/wid g et/Sp inner;
+.p ublic v1:Landroid/wid g et/EditText;
+.p ublic v2:Landroid/wid g et/LinearLa y out;
+.p ublic final w:L j ava/util/HashMa p ;
+.p ublic final w0:[Landroid/wid g et/EditText;
+.p ublic w1:Landroid/wid g et/S p inner;
+.p ublic w2:I
 .fi e l d p ub li c fin a l x:L j a v a / util/H as hM a p ;
 .fi e l d p ub li c fin a l x0:[La n d r o i d /wi d g et/Ed itTe xt;
 .fi e l d p ub li c x1:L a n d r o i d /wi d g et/Ed itTe xt;
@@ -407,204 +399,6 @@ aget-object p0, p0, p1
 invoke-virtual{p0}, Ljava/lang/Object;->toString()Ljava/lang/String;
 move-result-object p0
 return-object p0 .end method
-.method public static y(Lcom/tatkal/train/quick/TabActivity2;Lcom/google/android/gms/internal/ads/zzbzd;Lcom/go ogle/android/gms/ads/nativead/NativeAdView;)V .locals 3
-:try_start_0 sget p0, Lhw1;->ad_media:I
-invoke-virtual{p2, p0}, Landroid/view/View;->findViewById(I)Landroid/view/View;
-move-result-object p0
-check-cast p0, Lcom/google/android/gms/ads/nativead/MediaView;
-invoke-virtual{p2, p0}, Lcom/google/android/gms/ads/nativead/NativeAdView;->setMediaView(Lcom/google/android / g ms/ads/nativead/MediaView;)V
-s g et p 0, Lhw1;->ad_headline:I
-invoke-virtual{p 2, p 0}, Landroid/view/View;->findViewB y Id(I)Landroid/view/View;
-move-result-ob j ect p 0
-invoke-virtual{p 2, p 0}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;->setHeadlineView(Landroid/view/Vie w;)V
-s g et p 0, Lhw1;->ad_bod y :I
-invoke-virtual{p 2, p 0}, Landroid/view/View;->findViewB y Id(I)Landroid/view/View;
-m o v e -r esu lt-ob j ect p 0
-invoke-virtual{p2, p0},
-Lcom/google/android/gms/ads/nativead/NativeAdView;->setBodyView(Landroid/view/View;)
-V
-sget p0, Lhw1;->ad_call_to_action:I
-invoke-virtual{p2, p0}, Landroid/view/View;->findViewById(I)Landroid/view/View;
-move-result-object p0
-invoke-virtual{p2, p0}, Lcom/google/android/gms/ads/nativead/NativeAdView;->setCallToActionView(Landroid/view/ View;)V
-sget p0, Lhw1;->ad_app_icon:I
-invoke-virtual{p2, p0}, Landroid/view/View;->findViewById(I)Landroid/view/View;
-move-result-object p0
-invoke-virtual{p2, p0}, Lcom/google/android/gms/ads/nativead/NativeAdView;->setIconView(Landroid/view/View;)V
-sget p0, Lhw1;->ad_price:I
-invoke-virtual{p2, p0}, Landroid/view/View;->findViewById(I)Landroid/view/View;
-move-result-object p0
-invoke-virtual{p 2, p 0}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;->setPriceView(Landroid/view/View;)
-V
-s g et p 0, Lhw1;->ad_stars:I
-invoke-virtual{p 2, p 0}, Landroid/view/View;->findViewB y Id(I)Landroid/view/View;
-move-result-ob j ect p 0
-invoke-virtual{p 2, p 0}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;->setStarRatin g View(Landroid/view/Vi ew;)V
-s g et p 0, Lhw1;-> ad _ sto r e :I
-inv o k e -virtua l{p 2, p 0}, La n d r o i d /vi e w/Vi e w;->fin d Vi e wB y I d(I)La n d r o i d /vi e w/Vi e w;
-m o v e -r esu lt-ob j ect p 0
-invoke-virtual{p2, p0},
-Lcom/google/android/gms/ads/nativead/NativeAdView;->setStoreView(Landroid/view/View;)
-V
-sget p0, Lhw1;->ad_advertiser:I
-invoke-virtual{p2, p0}, Landroid/view/View;->findViewById(I)Landroid/view/View;
-move-result-object p0
-invoke-virtual{p2, p0}, Lcom/google/android/gms/ads/nativead/NativeAdView;->setAdvertiserView(Landroid/view/Vi ew;)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getHeadlineView()Landroid/view/Vi ew;
-move-result-object p0
-check-cast p0, Landroid/widget/TextView;
-invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getHeadline()Ljava/lang/String;
-move-result-object v0
-invoke-virtual{p0, v0}, Landroid/widget/TextView;->setText(Lja va/lang /CharSequence;)V
-invoke-virtual{p 2}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;-> g etMediaView()Lcom/ g oo g le/androi
-d/ g ms/ads/nativead/MediaView;
-move-result-ob j ect p 0
-invoke-virtual{p 1}, Lcom/ g oo g le/android/ g ms/internal/ads/zzbzd;-> g etMediaContent()Lcom/ g oo g le/android/ g ms
-/ads/MediaContent;
-move-result-ob j ect v0
-invoke-virtual{p 0, v0}, L co m/ g oo g l e / a n d r o i d / g m s / ads /n ativ ead /M ed i a Vi e w;-> setMed i aCo nte nt(Lco m/ g oo g l e / a n d r o i d
-/ g m s / ads /M ed i aCo nte nt;)V
-inv o k e -virtua l{p 1}, L co m/ g oo g l e / a n d r o i d / g m s /inte rn a l/ ads /zz b z d ;-> g etBod y()Lj a v a /l a n g / Strin g ;
-move-result-object p0
-const/4 v0, 0x4
-const/4 v1, 0x0
-if-nez p0,:cond_0
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getBodyView()Landroid/view/View;
-move-result-object p0
-invoke-virtual{p0, v0}, Landroid/view/View;->setVisibility(I)V
-goto:goto_0
-:cond_0 invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getBodyView()Landroid/view/View;
-move-result-object p0
-invoke-virtual{p0, v1}, Landroid/view/View;->setVisibility(I)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getBodyView()Landroid/view/View;
-move-result-ob j ect p 0
-check-cast p 0, Landroid/wid g et/TextView;
-invoke-virtual{p 1}, Lcom/ g oo g le/android/ g ms/internal/ads/zzbzd;-> g etBod y()Lj ava/lan g /Strin g ;
-move-result-ob j ect v2
-invoke-virtual{p 0, v2}, Landroid/wid g et/TextView;->setText(Lj ava/lan g /CharSe q uence;)V
-: g oto_0 invoke-virtual{p 1}, Lcom/ g oo g le/android/ g ms/internal/ads/zzbzd;-> g etCallToAction()Lj ava/lan g /Strin g ;
-m o v e -r esu lt-ob j ect p 0
-if-n e z p 0,: co n d _1
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getCallToActionView()Landroid/vie w/View;
-move-result-object p0
-invoke-virtual{p0, v0}, Landroid/view/View;->setVisibility(I)V
-goto:goto_1
-:cond_1 invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getCallToActionView()Landroid/vie w/View;
-move-result-object p0
-invoke-virtual{p0, v1}, Landroid/view/View;->setVisibility(I)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getCallToActionView()Landroid/vie w/View;
-move-result-object p0
-check-cast p0, Landroid/widget/Button;
-invoke-virtual{p1}, Lcom/ goog le/android/ g ms/internal/ads/zzbzd;-> getCallToAction()Lja va/lang /Strin g ;
-move-result-ob j ect v2
-invoke-virtual{p 0, v2}, Landroid/wid g et/TextView;->setText(Lj ava/lan g /CharSe q uence;)V
-: g oto_1 invoke-virtual{p 1}, Lcom/ g oo g le/android/ g ms/internal/ads/zzbzd;-> g etIcon()Lcom/ g oo g le/android/ g ms/ads/nativ
-ead/NativeAd$Ima g e;
-move-result-ob j ect p 0
-if-nez p 0,:cond_2
-inv o k e -virtua l{p 2}, L co m/ g oo g l e / a n d r o i d / g m s / ads /n ativ ead /N ativ e A d Vi e w;-> g etIco nVi e w()La n d r o i d /vi e w/Vi e w;
-m o v e -r esu lt-ob j ect p 0
-const/16 v2, 0x8
-invoke-virtual{p0, v2}, Landroid/view/View;->setVisibility(I)V
-goto:goto_2
-:cond_2 invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getIconView()Landroid/view/View;
-move-result-object p0
-check-cast p0, Landroid/widget/ImageView;
-invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getIcon()Lcom/google/android/gms/ads/nativ ead/NativeAd$Image;
-move-result-object v2
-invoke-virtual{v2}, Lcom/google/android/gms/ads/nativead/NativeAd$Image;->getDrawable()Landroid/graphics/ drawable/Drawable;
-move-result-object v2
-invoke-virtual{p0, v2}, Landroid/widget/ImageView;->setImageDrawable(Landroid/graphics/drawable/Drawable;)V
-invoke-virtual{p 2}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;-> g etIconView()Landroid/view/View;
-move-result-ob j ect p 0
-invoke-virtual{p 0, v1}, Landroid/view/View;->setVisibilit y(I)V
-: g oto_2 invoke-virtual{p 1}, Lcom/ g oo g le/android/ g ms/internal/ads/zzbzd;-> g etPrice()Lj ava/lan g /Strin g ;
-move-result-ob j ect p 0
-if-nez p 0,:cond_3
-inv o k e -virtua l{p 2}, L co m/ g oo g l e / a n d r o i d / g m s / ads /n ativ ead /N ativ e A d Vi e w;-> g etPri ce Vi e w()La n d r o i d /vi e w/Vi e w;
-m o v e -r esu lt-ob j ect p 0
-invoke-virtual{p0, v0}, Landroid/view/View;->setVisibility(I)V
-goto:goto_3
-:cond_3 invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getPriceView()Landroid/view/View;
-move-result-object p0
-invoke-virtual{p0, v1}, Landroid/view/View;->setVisibility(I)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getPriceView()Landroid/view/View;
-move-result-object p0
-check-cast p0, Landroid/widget/TextView;
-invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getPrice()Ljava/lang/String;
-move-result-object v2
-invoke-virtual{p0, v2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-:goto_3 invoke-virtual{p1}, Lcom/ g oo g le/android/ g ms/internal/ads/zzbzd;-> g etStore()Lj ava/lan g /Strin g ;
-move-result-ob j ect p 0
-if-nez p 0,:cond_4
-invoke-virtual{p 2}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;-> g etStoreView()Landroid/view/View;
-move-result-ob j ect p 0
-invoke-virtual{p 0, v0}, Landroid/view/View;->setVisibilit y(I)V
-g oto: g oto_4
-: co n d _4
-inv o k e -virtua l{p 2}, L co m/ g oo g l e / a n d r o i d / g m s / ads /n ativ ead /N ativ e A d Vi e w;-> g etSto r e Vi e w()La n d r o i d /vi e w/Vi e w;
-move-result-object p0
-invoke-virtual{p0, v1}, Landroid/view/View;->setVisibility(I)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getStoreView()Landroid/view/View;
-move-result-object p0
-check-cast p0, Landroid/widget/TextView;
-invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getStore()Ljava/lang/String;
-move-result-object v2
-invoke-virtual{p0, v2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-:goto_4 invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getStarRating()Ljava/lang/Double;
-move-result-object p0
-if-nez p0,:cond_5
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getStarRatingView()Landroid/view/ View;
-move-result-ob j ect p 0
-invoke-virtual{p 0, v0}, Landroid/view/View;->setVisibilit y(I)V
-g oto: g oto_5
-:cond_5 invoke-virtual{p 2}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;-> g etStarRatin g View()Landroid/view/ View;
-move-result-ob j ect p 0
-c h ec k-cast p 0, L a n d r o i d /wi d g et/Ratin g B a r;
-inv o k e -virtua l{p 1}, L co m/ g oo g l e / a n d r o i d / g m s /inte rn a l/ ads /zz b z d ;-> g etSta rR atin g()Lj a v a /l a n g /D oub l e ;
-move-result-object v2
-invoke-virtual{v2}, Ljava/lang/Double;->floatValue()F
-move-result v2
-invoke-virtual{p0, v2}, Landroid/widget/RatingBar;->setRating(F)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getStarRatingView()Landroid/view/ View;
-move-result-object p0
-invoke-virtual{p0, v1}, Landroid/view/View;->setVisibility(I)V
-:goto_5 invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getAdvertiser()Ljava/lang/String;
-move-result-object p0
-if-nez p0,:cond_6
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getAdvertiserView()Landroid/view/V iew;
-move-result-object p0
-invoke-virtual{p 0, v0}, Landroid/view/View;->setVisibilit y(I)V
-g oto: g oto_6
-:cond_6 invoke-virtual{p 2}, Lcom/ g oo g le/android/ g ms/ads/nativead/NativeAdView;-> g etAdvertiserView()Landroid/view/V iew;
-move-result-ob j ect p 0
-check-cast p 0, Landroid/wid g et/TextView;
-inv o k e -virtua l{p 1}, L co m/ g oo g l e / a n d r o i d / g m s /inte rn a l/ ads /zz b z d ;-> g etAd v e rti se r()Lj a v a /l a n g / Strin g ;
-m o v e -r esu lt-ob j ect v0
-invoke-virtual{p0, v0}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-invoke-virtual{p2}, Lcom/google/android/gms/ads/nativead/NativeAdView;->getAdvertiserView()Landroid/view/V iew;
-move-result-object p0
-invoke-virtual{p0, v1}, Landroid/view/View;->setVisibility(I)V
-:goto_6 invoke-virtual{p2, p1}, Lcom/google/android/gms/ads/nativead/NativeAdView;->setNativeAd(Lcom/google/android/g ms/ads/nativead/NativeAd;)V
-invoke-virtual{p1}, Lcom/google/android/gms/internal/ads/zzbzd;->getMediaContent()Lcom/google/android/gms /ads/MediaContent;
-move-result-object p0
-invoke-interface{p0}, Lcom/google/android/gms/ads/MediaContent;->getVideoController()Lcom/google/android/gm s/ads/VideoController;
-move-result-object p0
-invoke-virtual{p0}, Lcom/google/android/gms/ads/VideoController;->a()Z
-move-result p 1
-if-e q z p 1,:cond_7
-new-instance p 1, Lzi2;
-invoke-direct{p 1}, Lj ava/lan g /Ob j ect;-><init>()V
-invoke-virtual{p 0, p 1}, Lcom/ g oo g le/android/ g ms/ads/VideoController;->b(Lcom/ g oo g le/android/ g ms/ads/VideoCont
-roller$VideoLifec y cleCallbacks;)V :tr y _end_0
-.catch L j ava/lan g /Exce p tion;{:try _start_0..:tr y _end_0}:catch_0
-: co n d _7
-r etu rn-v o i d
-: catc h_0
-m o v e -e x ce p ti o n p 0
-invoke-virtual{p0}, Ljava/lang/Throwable;->printStackTrace()V
-return-void
-.end method
 .method public static z(Lcom/tatkal/train/quick/TabActivity2;I)V .locals 9
 invoke-static{}, Ljava/util/Calendar;->getInstance()Ljava/util/Calendar;
 move-result-object v0
