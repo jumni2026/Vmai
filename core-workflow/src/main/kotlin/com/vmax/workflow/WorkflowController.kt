@@ -18,10 +18,6 @@ import java.util.UUID
  * - Validate passenger workflow data.
  * - Provide safe state transitions.
  * - Provide safe singleton access.
- *
- * NOTE:
- * Dependencies are intentionally nullable for compatibility with
- * the current modular architecture.
  */
 class WorkflowController(
     @Suppress("UNUSED_PARAMETER")
@@ -38,23 +34,18 @@ class WorkflowController(
 ) {
 
     companion object {
-
         @Volatile
         private var instance: WorkflowController? = null
 
         @JvmStatic
         fun getInstance(): WorkflowController {
             return instance ?: synchronized(this) {
-                instance ?: WorkflowController().also { controller ->
-                    instance = controller
-                }
+                instance ?: WorkflowController().also { instance = it }
             }
         }
 
         @JvmStatic
-        fun getInstanceOrNull(): WorkflowController? {
-            return instance
-        }
+        fun getInstanceOrNull(): WorkflowController? = instance
 
         @JvmStatic
         fun initialize(controller: WorkflowController) {
@@ -80,27 +71,19 @@ class WorkflowController(
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Passenger data (UPGRADED with new fields)
-    // ---------------------------------------------------------------------
-
     data class PassengerDetails(
         val from: String,
         val to: String,
         val date: String,
-        val trainNumber: String,      
-        val classType: String,        
-        val quota: String,            
-        val berthPreference: String,  
+        val trainNumber: String,
+        val classType: String,
+        val quota: String,
+        val berthPreference: String,
         val name: String,
         val age: String,
         val gender: String,
-        val mealPreference: String = "" 
+        val mealPreference: String = ""
     )
-
-    // ---------------------------------------------------------------------
-    // Workflow state
-    // ---------------------------------------------------------------------
 
     private val _state = MutableStateFlow(WorkflowState.IDLE)
 
@@ -112,10 +95,6 @@ class WorkflowController(
             _state.value = value
         }
 
-    // ---------------------------------------------------------------------
-    // Session
-    // ---------------------------------------------------------------------
-
     @Volatile
     private var currentSessionId: String = ""
 
@@ -123,10 +102,6 @@ class WorkflowController(
     private var passengerDetails: PassengerDetails? = null
 
     private val lifecycleLock = Any()
-
-    // ---------------------------------------------------------------------
-    // Workflow start
-    // ---------------------------------------------------------------------
 
     fun start(
         bookingRequest: BookingRequest,
@@ -143,7 +118,8 @@ class WorkflowController(
                 return false
             }
 
-            val passenger = bookingRequest.passengers.firstOrNull() ?: return false
+            val passenger = bookingRequest.passengers.firstOrNull()
+                ?: return false
 
             val details = try {
                 PassengerDetails(
@@ -152,17 +128,19 @@ class WorkflowController(
                     date = bookingRequest.date.trim(),
                     trainNumber = bookingRequest.train.number.trim(),
                     classType = bookingRequest.train.classType.trim(),
-                    
-                    // FIXED: Removed 'dynamic' cast. Using safe, standard Kotlin property access.
-                    quota = bookingRequest.quota?.trim() ?: "GN", 
-                    berthPreference = bookingRequest.berth?.trim() ?: "No Preference",
-                    
+
+                    // BookingRequest.quota is a non-null String.
+                    quota = bookingRequest.quota.trim(),
+
+                    // Current BookingRequest/Passenger model has no berth field.
+                    berthPreference = "No Preference",
+
                     name = passenger.name.trim(),
-                    age = passenger.age.toString().trim(),
+                    age = passenger.age.toString(),
                     gender = passenger.gender.trim(),
-                    
-                    // FIXED: Removed 'dynamic' cast. Using safe property access.
-                    mealPreference = passenger.mealPreference?.trim() ?: ""
+
+                    // Current Passenger model has no mealPreference field.
+                    mealPreference = ""
                 )
             } catch (_: Exception) {
                 return false
@@ -191,10 +169,6 @@ class WorkflowController(
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Internal workflow start
-    // ---------------------------------------------------------------------
-
     private fun startWorkflowLocked(
         details: PassengerDetails,
         sessionId: String
@@ -205,6 +179,7 @@ class WorkflowController(
         }
 
         val normalizedSessionId = sessionId.trim()
+
         if (normalizedSessionId.isBlank()) {
             return false
         }
@@ -224,22 +199,22 @@ class WorkflowController(
         return true
     }
 
-    // ---------------------------------------------------------------------
-    // Stop & Reset
-    // ---------------------------------------------------------------------
-
     fun stopWorkflow() {
         synchronized(lifecycleLock) {
-            if (workflowState == WorkflowState.IDLE || workflowState == WorkflowState.STOPPED) {
+            if (
+                workflowState == WorkflowState.IDLE ||
+                workflowState == WorkflowState.STOPPED
+            ) {
                 return
             }
+
             workflowState = WorkflowState.STOPPED
-            _state.value = WorkflowState.STOPPED
         }
     }
 
     fun reset(): Boolean {
         synchronized(lifecycleLock) {
+
             if (isActive()) {
                 return false
             }
@@ -247,15 +222,10 @@ class WorkflowController(
             currentSessionId = ""
             passengerDetails = null
             workflowState = WorkflowState.IDLE
-            _state.value = WorkflowState.IDLE
 
             return true
         }
     }
-
-    // ---------------------------------------------------------------------
-    // Getters
-    // ---------------------------------------------------------------------
 
     fun getCurrentState(): WorkflowState {
         return workflowState
@@ -269,12 +239,9 @@ class WorkflowController(
         return passengerDetails
     }
 
-    // ---------------------------------------------------------------------
-    // Active state (UPGRADED with new states)
-    // ---------------------------------------------------------------------
-
     fun isActive(): Boolean {
         return when (workflowState) {
+
             WorkflowState.CONFIGURED,
             WorkflowState.RUNNING,
             WorkflowState.ARMED,
@@ -298,53 +265,61 @@ class WorkflowController(
         }
     }
 
-    // ---------------------------------------------------------------------
-    // State Transition Logic (NEW & UPGRADED)
-    // ---------------------------------------------------------------------
-
-    /**
-     * Safely transitions to a new state after validating the transition path.
-     * @return true if transition was successful, false if invalid.
-     */
     fun transitionTo(newState: WorkflowState): Boolean {
         synchronized(lifecycleLock) {
+
             if (!canTransitionTo(workflowState, newState)) {
                 return false
             }
+
             workflowState = newState
-            _state.value = newState
             return true
         }
     }
 
-    /**
-     * Validates if a state transition is allowed.
-     * Prevents jumping out of terminal states (STOPPED, ERROR).
-     */
-    private fun canTransitionTo(current: WorkflowState, next: WorkflowState): Boolean {
-        if (next == WorkflowState.IDLE) return true
+    private fun canTransitionTo(
+        current: WorkflowState,
+        next: WorkflowState
+    ): Boolean {
 
-        if (current == WorkflowState.STOPPED || current == WorkflowState.ERROR) {
+        if (next == WorkflowState.IDLE) {
+            return true
+        }
+
+        if (
+            current == WorkflowState.STOPPED ||
+            current == WorkflowState.ERROR
+        ) {
             return false
         }
 
         return when (next) {
-            WorkflowState.IDLE, WorkflowState.STOPPED, WorkflowState.ERROR -> true
-            WorkflowState.USER_BOUNDARY, WorkflowState.WAITING_FOR_PAYMENT -> true
-            else -> current == WorkflowState.RUNNING || current == WorkflowState.ARMED || current == WorkflowState.CONFIGURED
+
+            WorkflowState.IDLE,
+            WorkflowState.STOPPED,
+            WorkflowState.ERROR -> true
+
+            WorkflowState.USER_BOUNDARY,
+            WorkflowState.WAITING_FOR_PAYMENT -> true
+
+            else ->
+                current == WorkflowState.RUNNING ||
+                current == WorkflowState.ARMED ||
+                current == WorkflowState.CONFIGURED
         }
     }
 
-    @Deprecated("Use transitionTo() for safer state updates", ReplaceWith("transitionTo(newState)"))
+    @Deprecated(
+        "Use transitionTo() for safer state updates",
+        ReplaceWith("transitionTo(newState)")
+    )
     fun updateState(newState: WorkflowState) {
         transitionTo(newState)
     }
 
-    // ---------------------------------------------------------------------
-    // Normalization (UPGRADED)
-    // ---------------------------------------------------------------------
-
-    private fun normalizePassengerDetails(details: PassengerDetails): PassengerDetails {
+    private fun normalizePassengerDetails(
+        details: PassengerDetails
+    ): PassengerDetails {
         return details.copy(
             from = details.from.trim(),
             to = details.to.trim(),
@@ -360,21 +335,19 @@ class WorkflowController(
         )
     }
 
-    // ---------------------------------------------------------------------
-    // Validation (UPGRADED)
-    // ---------------------------------------------------------------------
-
-    private fun isValidPassengerDetails(details: PassengerDetails): Boolean {
+    private fun isValidPassengerDetails(
+        details: PassengerDetails
+    ): Boolean {
         return details.from.isNotBlank() &&
-                details.to.isNotBlank() &&
-                details.date.isNotBlank() &&
-                details.trainNumber.isNotBlank() &&
-                details.classType.isNotBlank() &&
-                details.quota.isNotBlank() &&
-                details.berthPreference.isNotBlank() &&
-                details.name.isNotBlank() &&
-                details.age.isNotBlank() &&
-                details.gender.isNotBlank()
+            details.to.isNotBlank() &&
+            details.date.isNotBlank() &&
+            details.trainNumber.isNotBlank() &&
+            details.classType.isNotBlank() &&
+            details.quota.isNotBlank() &&
+            details.berthPreference.isNotBlank() &&
+            details.name.isNotBlank() &&
+            details.age.isNotBlank() &&
+            details.gender.isNotBlank()
     }
 }
 
