@@ -54,14 +54,22 @@ data class Passenger(
     val quota: Quota? = null,
 
     // Passenger Specific Preferences
-    val berthPreference: BerthPreference = BerthPreference.NO_PREFERENCE,
-    val mealPreference: MealPreference = MealPreference.NO_MEAL,
-    val concession: Concession = Concession.NONE,
+    val berthPreference: BerthPreference =
+        BerthPreference.NO_PREFERENCE,
+
+    val mealPreference: MealPreference =
+        MealPreference.NO_MEAL,
+
+    val concession: Concession =
+        Concession.NONE,
 
     // Identity & Metadata
     val isPrimary: Boolean = false,
     val idProofType: String? = null,
-    val idProofNumber: String? = null
+    val idProofNumber: String? = null,
+
+    // Contact
+    val mobile: String? = null
 )
 
 /**
