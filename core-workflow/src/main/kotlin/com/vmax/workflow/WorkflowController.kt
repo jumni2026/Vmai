@@ -129,17 +129,16 @@ class WorkflowController(
                     trainNumber = bookingRequest.train.number.trim(),
                     classType = bookingRequest.train.classType.trim(),
 
-                    // BookingRequest.quota is a non-null String.
                     quota = bookingRequest.quota.trim(),
 
-                    // Current BookingRequest/Passenger model has no berth field.
                     berthPreference = "No Preference",
 
                     name = passenger.name.trim(),
                     age = passenger.age.toString(),
-                    gender = passenger.gender.trim(),
 
-                    // Current Passenger model has no mealPreference field.
+                    // Gender is an enum in the current model.
+                    gender = passenger.gender.name,
+
                     mealPreference = ""
                 )
             } catch (_: Exception) {
