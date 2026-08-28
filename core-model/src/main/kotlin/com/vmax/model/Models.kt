@@ -7,13 +7,9 @@ data class Train(
     val quota: String? = null
 )
 
-data class Station(val code: String, val name: String)
-
-data class Passenger(
-    val name: String,
-    val age: Int,
-    val gender: String,
-    val mobile: String? = null
+data class Station(
+    val code: String,
+    val name: String
 )
 
 data class BookingRequest(
@@ -24,6 +20,3 @@ data class BookingRequest(
     val passengers: List<Passenger>,
     val quota: String
 )
-
-// सिर्फ Gender यहाँ रहेगा, क्योंकि यह कहीं और नहीं है
-enum class Gender { MALE, FEMALE, OTHER }
