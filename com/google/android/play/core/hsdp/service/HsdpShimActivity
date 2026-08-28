@@ -1,0 +1,428 @@
+.class public Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;
+.super Landroid/app/Activity;
+.source "SourceFile"
+
+
+# instance fields
+.field public a:Ljava/lang/String;
+
+.field public b:Z
+
+
+# direct methods
+.method public constructor <init>()V
+    .locals 1
+
+    invoke-direct {p0}, Landroid/app/Activity;-><init>()V
+
+    const/4 v0, 0x0
+
+    iput-object v0, p0, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->a:Ljava/lang/String;
+
+    const/4 v0, 0x0
+
+    iput-boolean v0, p0, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->b:Z
+
+    return-void
+.end method
+
+
+# virtual methods
+.method public final a(Z)V
+    .locals 10
+
+    invoke-virtual {p0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+
+    move-result-object v0
+
+    invoke-virtual {v0}, Landroid/view/Window;->getDecorView()Landroid/view/View;
+
+    move-result-object v0
+
+    invoke-virtual {v0}, Landroid/view/View;->getWindowToken()Landroid/os/IBinder;
+
+    move-result-object v4
+
+    if-eqz v4, :cond_8
+
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+
+    move-result-object v0
+
+    const-string v1, "target_package_name"
+
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v2
+
+    if-eqz v2, :cond_7
+
+    invoke-static {}, Lcom/google/android/play/core/hsdp/service/HsdpDeepLinkServiceFactory;->createHsdpServiceIntent()Landroid/content/Intent;
+
+    move-result-object v1
+
+    invoke-static {p0, v1}, Lda3;->s(Landroid/content/Context;Landroid/content/Intent;)Laa3;
+
+    move-result-object v1
+
+    if-nez p1, :cond_1
+
+    iget-object p1, p0, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->a:Ljava/lang/String;
+
+    invoke-virtual {v2, p1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+
+    move-result p1
+
+    if-eqz p1, :cond_1
+
+    move-object p1, v1
+
+    check-cast p1, Lb23;
+
+    iget-object p1, p1, Lb23;->c:Ljava/util/concurrent/ConcurrentHashMap;
+
+    invoke-virtual {p1, v2}, Ljava/util/concurrent/ConcurrentHashMap;->get(Ljava/lang/Object;)Ljava/lang/Object;
+
+    move-result-object p1
+
+    check-cast p1, Lj33;
+
+    if-eqz p1, :cond_1
+
+    iget p1, p1, Lj33;->a:I
+
+    const/4 v3, 0x2
+
+    if-ne p1, v3, :cond_1
+
+    const/4 p0, 0x4
+
+    const-string p1, "HsdpShimActivity"
+
+    invoke-static {p1, p0}, Landroid/util/Log;->isLoggable(Ljava/lang/String;I)Z
+
+    move-result p0
+
+    if-eqz p0, :cond_0
+
+    new-instance p0, Ljava/lang/StringBuilder;
+
+    const-string v0, "HSDP is already showing for "
+
+    invoke-direct {p0, v0}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+
+    invoke-virtual {p0, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    const-string v0, ", ignore."
+
+    invoke-virtual {p0, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {p0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object p0
+
+    invoke-static {p1, p0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    :cond_0
+    return-void
+
+    :cond_1
+    iput-object v2, p0, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->a:Ljava/lang/String;
+
+    const/4 p1, 0x0
+
+    iput-boolean p1, p0, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->b:Z
+
+    const-string v3, "referrer"
+
+    invoke-virtual {v0, v3}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v3
+
+    if-eqz v3, :cond_6
+
+    const-string v5, "deeplink_url"
+
+    invoke-virtual {v0, v5}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v5
+
+    if-eqz v5, :cond_5
+
+    const-string v6, "auto_trigger"
+
+    invoke-virtual {v0, v6, p1}, Landroid/content/Intent;->getBooleanExtra(Ljava/lang/String;Z)Z
+
+    move-result v7
+
+    const-string p1, "extra_query_params_bundle"
+
+    invoke-virtual {v0, p1}, Landroid/content/Intent;->getBundleExtra(Ljava/lang/String;)Landroid/os/Bundle;
+
+    move-result-object p1
+
+    if-eqz p1, :cond_3
+
+    new-instance v0, Ljava/util/HashMap;
+
+    invoke-direct {v0}, Ljava/util/HashMap;-><init>()V
+
+    invoke-virtual {p1}, Landroid/os/BaseBundle;->keySet()Ljava/util/Set;
+
+    move-result-object v6
+
+    invoke-interface {v6}, Ljava/util/Set;->iterator()Ljava/util/Iterator;
+
+    move-result-object v6
+
+    :goto_0
+    invoke-interface {v6}, Ljava/util/Iterator;->hasNext()Z
+
+    move-result v8
+
+    if-eqz v8, :cond_4
+
+    invoke-interface {v6}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+
+    move-result-object v8
+
+    check-cast v8, Ljava/lang/String;
+
+    invoke-virtual {p1, v8}, Landroid/os/BaseBundle;->getString(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v9
+
+    if-nez v9, :cond_2
+
+    const-string v9, ""
+
+    :cond_2
+    invoke-virtual {v0, v8, v9}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+
+    goto :goto_0
+
+    :cond_3
+    const/4 v0, 0x0
+
+    :cond_4
+    invoke-virtual {p0}, Landroid/content/Context;->getResources()Landroid/content/res/Resources;
+
+    move-result-object p1
+
+    invoke-virtual {p1}, Landroid/content/res/Resources;->getConfiguration()Landroid/content/res/Configuration;
+
+    move-result-object p1
+
+    iget p1, p1, Landroid/content/res/Configuration;->screenWidthDp:I
+
+    invoke-static {p0, p1}, Lp6;->p(Landroid/app/Activity;I)I
+
+    move-result p1
+
+    invoke-static {p0}, Lp6;->q(Landroid/app/Activity;)I
+
+    move-result v6
+
+    new-instance v8, Lz82;
+
+    invoke-direct {v8, p0, v2, v3, v0}, Lz82;-><init>(Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;Ljava/lang/String;Ljava/lang/String;Ljava/util/HashMap;)V
+
+    check-cast v1, Lb23;
+
+    move-object v3, v5
+
+    move v5, p1
+
+    invoke-virtual/range {v1 .. v8}, Lb23;->a(Ljava/lang/String;Ljava/lang/String;Landroid/os/IBinder;IIZLyp0;)V
+
+    return-void
+
+    :cond_5
+    const-string p0, "deeplinkUrl is null"
+
+    invoke-static {p0}, Lvc;->l(Ljava/lang/String;)V
+
+    return-void
+
+    :cond_6
+    const-string p0, "referrer is null"
+
+    invoke-static {p0}, Lvc;->l(Ljava/lang/String;)V
+
+    return-void
+
+    :cond_7
+    const-string p0, "targetPackageName is null"
+
+    invoke-static {p0}, Lvc;->l(Ljava/lang/String;)V
+
+    return-void
+
+    :cond_8
+    const-string p0, "windowToken is null"
+
+    invoke-static {p0}, Lvc;->l(Ljava/lang/String;)V
+
+    return-void
+.end method
+
+.method public final onAttachedToWindow()V
+    .locals 2
+
+    invoke-super {p0}, Landroid/app/Activity;->onAttachedToWindow()V
+
+    const-string v0, "HsdpShimActivity"
+
+    const-string v1, "shim activity onAttachedToWindow"
+
+    invoke-static {v0, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    const/4 v0, 0x0
+
+    invoke-virtual {p0, v0}, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->a(Z)V
+
+    return-void
+.end method
+
+.method public final onConfigurationChanged(Landroid/content/res/Configuration;)V
+    .locals 1
+
+    invoke-super {p0, p1}, Landroid/app/Activity;->onConfigurationChanged(Landroid/content/res/Configuration;)V
+
+    const-string p1, "HsdpShimActivity"
+
+    const-string v0, "shim activity onConfigurationChanged"
+
+    invoke-static {p1, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    const/4 p1, 0x1
+
+    invoke-virtual {p0, p1}, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->a(Z)V
+
+    return-void
+.end method
+
+.method public final onCreate(Landroid/os/Bundle;)V
+    .locals 1
+
+    invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+
+    sget p1, Lnw1;->hsdp_shim_activity:I
+
+    invoke-virtual {p0, p1}, Landroid/app/Activity;->setContentView(I)V
+
+    invoke-virtual {p0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+
+    move-result-object p0
+
+    const/4 p1, -0x1
+
+    invoke-virtual {p0, p1, p1}, Landroid/view/Window;->setLayout(II)V
+
+    sget p1, Landroid/os/Build$VERSION;->SDK_INT:I
+
+    const/16 v0, 0x1c
+
+    if-lt p1, v0, :cond_0
+
+    invoke-virtual {p0}, Landroid/view/Window;->getAttributes()Landroid/view/WindowManager$LayoutParams;
+
+    move-result-object p1
+
+    invoke-static {p1}, Lvr;->t(Landroid/view/WindowManager$LayoutParams;)V
+
+    invoke-virtual {p0, p1}, Landroid/view/Window;->setAttributes(Landroid/view/WindowManager$LayoutParams;)V
+
+    :cond_0
+    return-void
+.end method
+
+.method public final onDestroy()V
+    .locals 1
+
+    invoke-super {p0}, Landroid/app/Activity;->onDestroy()V
+
+    const-string p0, "HsdpShimActivity"
+
+    const-string v0, "shim activity onDestroy"
+
+    invoke-static {p0, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    return-void
+.end method
+
+.method public final onNewIntent(Landroid/content/Intent;)V
+    .locals 2
+
+    invoke-super {p0, p1}, Landroid/app/Activity;->onNewIntent(Landroid/content/Intent;)V
+
+    const-string v0, "HsdpShimActivity"
+
+    const-string v1, "shim activity onNewIntent"
+
+    invoke-static {v0, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    invoke-virtual {p0, p1}, Landroid/app/Activity;->setIntent(Landroid/content/Intent;)V
+
+    const/4 p1, 0x0
+
+    invoke-virtual {p0, p1}, Lcom/google/android/play/core/hsdp/service/HsdpShimActivity;->a(Z)V
+
+    return-void
+.end method
+
+.method public final onPause()V
+    .locals 1
+
+    invoke-super {p0}, Landroid/app/Activity;->onPause()V
+
+    const-string p0, "HsdpShimActivity"
+
+    const-string v0, "shim activity onPause"
+
+    invoke-static {p0, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    return-void
+.end method
+
+.method public final onResume()V
+    .locals 1
+
+    invoke-super {p0}, Landroid/app/Activity;->onResume()V
+
+    const-string p0, "HsdpShimActivity"
+
+    const-string v0, "shim activity onResume"
+
+    invoke-static {p0, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    return-void
+.end method
+
+.method public final onStart()V
+    .locals 1
+
+    invoke-super {p0}, Landroid/app/Activity;->onStart()V
+
+    const-string p0, "HsdpShimActivity"
+
+    const-string v0, "shim activity onStart"
+
+    invoke-static {p0, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    return-void
+.end method
+
+.method public final onStop()V
+    .locals 1
+
+    invoke-super {p0}, Landroid/app/Activity;->onStop()V
+
+    const-string p0, "HsdpShimActivity"
+
+    const-string v0, "shim activity onStop"
+
+    invoke-static {p0, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    return-void
+.end method
