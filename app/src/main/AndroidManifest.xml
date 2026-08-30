@@ -2,7 +2,6 @@
 <manifest
     android:compileSdkVersion="37"
     android:compileSdkVersionCodename="17"
-    package="com.tatkal.train.quick"
     platformBuildVersionCode="37"
     platformBuildVersionName="17"
     xmlns:android="http://schemas.android.com/apk/res/android">
