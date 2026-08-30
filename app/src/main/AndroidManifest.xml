@@ -4,7 +4,8 @@
     android:compileSdkVersionCodename="17"
     platformBuildVersionCode="37"
     platformBuildVersionName="17"
-    xmlns:android="http://schemas.android.com/apk/res/android">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <queries>
         <package
             android:name="cris.org.in.prs.ima" />
@@ -1266,7 +1267,8 @@
             android:name="com.google.mlkit.common.internal.MlKitInitProvider"
             android:exported="false"
             android:authorities="com.tatkal.train.quick.mlkitinitprovider"
-            android:initOrder="99" />
+            android:initOrder="99"
+            tools:replace="android:authorities" />
         <activity
             android:theme="@style/com_facebook_activity_theme"
             android:name="com.facebook.FacebookActivity"
