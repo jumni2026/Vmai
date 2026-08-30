@@ -1407,7 +1407,8 @@
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:exported="false"
-            android:authorities="com.tatkal.train.quick.androidx-startup">
+            android:authorities="com.tatkal.train.quick.androidx-startup"
+            tools:replace="android:authorities">
             <meta-data
                 android:name="com.razorpay.RazorpayInitializer"
                 android:value="androidx.startup" />
