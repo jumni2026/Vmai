@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.tatkal.train.quick"
     android:versionCode="26"
     android:versionName="26.8.6"
     android:compileSdkVersion="37"
