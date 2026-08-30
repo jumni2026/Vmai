@@ -98,7 +98,7 @@
         <TextView  
             android:layout_width="match_parent"  
             android:layout_height="wrap_content"  
-            android:text="There are 2 modes of booking: Using the IRCTC Website & using the IRCTC Rail Connect app. To book using the latter, we have made a video for a complete demonstration of how to use it and explained why it is needed."  
+            android:text="There are 2 modes of booking: Using the IRCTC Website &amp; using the IRCTC Rail Connect app. To book using the latter, we have made a video for a complete demonstration of how to use it and explained why it is needed."  
             android:textColor="#484848"  
             android:textSize="15sp"  
             android:lineSpacingExtra="4dp"  
@@ -151,4 +151,4 @@
             android:lineSpacingExtra="4dp" />
 
     </LinearLayout>  
-</ScrollView>  
+</ScrollView>
