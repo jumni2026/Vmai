@@ -1688,6 +1688,7 @@
             android:name="com.razorpay.UpiChooserSelectionReceiver"
             android:exported="false" />
         <activity
+            android:name="com.pairip.licensecheck.LicenseActivity"
             android:exported="false" />
     </application>
 </manifest>
